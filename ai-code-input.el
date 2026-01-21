@@ -30,9 +30,8 @@ This function combines candidate-list with history for better completion."
     ;; to prevent initial-input from being highlighted
     (minibuffer-with-setup-hook
         (lambda ()
-          (when (minibufferp)
-            (goto-char (point-max))
-            (deactivate-mark)))
+          (goto-char (point-max))
+          (deactivate-mark))
       ;; Use completing-read with the combined candidates
       (completing-read prompt
                        completion-candidates
