@@ -201,16 +201,17 @@ Shows the current backend label to the right."
     ("q" "Ask question (C-u: clipboard)" ai-code-ask-question)
     ("x" "Explain code in scope" ai-code-explain)
     ("<SPC>" "Send command (C-u: clipboard)" ai-code-send-command)
-    ("@" "Add context (C-u: clear)" ai-code-context-action)]
+    ("@" "Add context (C-u: clear)" ai-code-context-action)
+    ("K" "Create or open task file" ai-code-create-or-open-task-file)]
 
    ["AI Agile Development"
     ("r" "Refactor Code"               ai-code-refactor-book-method)
     ("t" "Test Driven Development"     ai-code-tdd-cycle)
     ("v" "Pull or Review Code Change"  ai-code-pull-or-review-diff-file)
-    ("p" "Open prompt file" ai-code-open-prompt-file)
-    ("b" "Send prompt block to AI" ai-code-prompt-send-block)
+    ;; ("b" "Send prompt block to AI" ai-code-prompt-send-block)
     ("!" "Run Current File or Command" ai-code-run-current-file-or-shell-cmd)
-    ("B" "Build project"               ai-code-build-project)
+    ("b" "Build project"               ai-code-build-project)
+    ("p" "Open prompt history file" ai-code-open-prompt-file)
     ("I" "Insert function name at point" ai-code-insert-function-at-point)]
 
    ["Other Tools"
