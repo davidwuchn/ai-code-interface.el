@@ -252,7 +252,7 @@ It trims leading/trailing whitespace."
 ;; ai coding task feature
 
 ;;;###autoload
-(defconst ai-code-task-dir-name ".ai.code.tasks"
+(defconst ai-code-files-dir-name ".ai.code"
   "Directory name for storing AI task files.")
 
 ;;;###autoload
@@ -269,7 +269,7 @@ If in a git repository, return `.ai.code.tasks/` under git root.
 Otherwise, return the current `default-directory`."
   (let ((git-root (magit-toplevel)))
     (if git-root
-        (expand-file-name ai-code-task-dir-name git-root)
+        (expand-file-name ai-code-files-dir-name git-root)
       default-directory)))
 
 (defun ai-code--ensure-task-directory ()
