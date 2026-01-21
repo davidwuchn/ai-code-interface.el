@@ -251,11 +251,9 @@ It trims leading/trailing whitespace."
 
 ;; ai coding task feature
 
+;;;###autoload
 (defconst ai-code-task-dir-name ".ai.code.tasks"
   "Directory name for storing AI task files.")
-
-
-;; DONE: similar to ai-code-notes-use-gptel-headline, add ai-code-task-use-gptel-filename. by default it is nil. when it is t, use gptel to generate filename for task file. otherwise, use user input task name + .org as filename.
 
 ;;;###autoload
 (defcustom ai-code-task-use-gptel-filename nil
