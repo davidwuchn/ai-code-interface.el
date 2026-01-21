@@ -263,7 +263,7 @@ based on the task name. Otherwise, use cleaned-up task name directly."
   :type 'boolean
   :group 'ai-code)
 
-(defun ai-code--get-task-directory ()
+(defun ai-code--get-files-directory ()
   "Get the task directory path.
 If in a git repository, return `.ai.code.tasks/` under git root.
 Otherwise, return the current `default-directory`."
@@ -272,9 +272,9 @@ Otherwise, return the current `default-directory`."
         (expand-file-name ai-code-files-dir-name git-root)
       default-directory)))
 
-(defun ai-code--ensure-task-directory ()
+(defun ai-code--ensure-files-directory ()
   "Ensure the task directory exists and return its path."
-  (let ((task-dir (ai-code--get-task-directory)))
+  (let ((task-dir (ai-code--get-files-directory)))
     (unless (file-directory-p task-dir)
       (make-directory task-dir t))
     task-dir))
@@ -319,12 +319,12 @@ using GPTel, and creates the task file."
   (let ((task-name (read-string "Task name (empty to open task directory): ")))
     (if (string-empty-p task-name)
         ;; Open the task directory
-        (let ((task-dir (ai-code--ensure-task-directory)))
+        (let ((task-dir (ai-code--ensure-files-directory)))
           (dired-other-window task-dir)
           (message "Opened task directory: %s" task-dir))
       ;; Create a new task file
       (let* ((task-url (read-string "URL (optional, press Enter to skip): "))
-             (task-dir (ai-code--ensure-task-directory))
+             (task-dir (ai-code--ensure-files-directory))
              (generated-filename (ai-code--generate-task-filename task-name))
              (confirmed-filename (read-string "Confirm task filename: " generated-filename))
              (task-file (expand-file-name confirmed-filename task-dir)))
