@@ -21,6 +21,8 @@
   "Read a string from the user with PROMPT and optional INITIAL-INPUT.
 CANDIDATE-LIST provides additional completion options if provided.
 This function combines candidate-list with history for better completion."
+  ;; Deactivate mark to prevent highlighting in minibuffer
+  (deactivate-mark)
   ;; Combine candidate-list with history, removing duplicates
   (let ((completion-candidates
          (delete-dups (append candidate-list
@@ -41,6 +43,8 @@ PROMPT is the prompt string.
 HISTORY-FILE-NAME is the base name for history file.
 INITIAL-INPUT is optional initial input string.
 CANDIDATE-LIST is an optional list of candidate strings to show before history."
+  ;; Deactivate mark to prevent highlighting in minibuffer
+  (deactivate-mark)
   ;; Load history from file
   (let* ((helm-history-file (expand-file-name history-file-name user-emacs-directory))
          (helm-history (if (file-exists-p helm-history-file)
