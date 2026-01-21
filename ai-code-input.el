@@ -21,19 +21,23 @@
   "Read a string from the user with PROMPT and optional INITIAL-INPUT.
 CANDIDATE-LIST provides additional completion options if provided.
 This function combines candidate-list with history for better completion."
-  ;; Deactivate mark to prevent highlighting in minibuffer
-  (when (region-active-p)
-    (deactivate-mark))
   ;; Combine candidate-list with history, removing duplicates
   (let ((completion-candidates
          (delete-dups (append candidate-list
                               (when (boundp 'ai-code-read-string-history)
                                 ai-code-read-string-history)))))
-    ;; Use completing-read with the combined candidates
-    (completing-read prompt
-                     completion-candidates
-                     nil nil initial-input
-                     'ai-code-read-string-history)))
+    ;; Use minibuffer-setup-hook to deactivate mark in minibuffer
+    ;; to prevent initial-input from being highlighted
+    (minibuffer-with-setup-hook
+        (lambda ()
+          (when (minibufferp)
+            (goto-char (point-max))
+            (deactivate-mark)))
+      ;; Use completing-read with the combined candidates
+      (completing-read prompt
+                       completion-candidates
+                       nil nil initial-input
+                       'ai-code-read-string-history))))
 
 ;;;###autoload
 (defalias 'ai-code-read-string #'ai-code-plain-read-string)
@@ -44,9 +48,6 @@ PROMPT is the prompt string.
 HISTORY-FILE-NAME is the base name for history file.
 INITIAL-INPUT is optional initial input string.
 CANDIDATE-LIST is an optional list of candidate strings to show before history."
-  ;; Deactivate mark to prevent highlighting in minibuffer
-  (when (region-active-p)
-    (deactivate-mark))
   ;; Load history from file
   (let* ((helm-history-file (expand-file-name history-file-name user-emacs-directory))
          (helm-history (if (file-exists-p helm-history-file)
