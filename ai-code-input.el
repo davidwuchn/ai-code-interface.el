@@ -26,12 +26,13 @@ This function combines candidate-list with history for better completion."
          (delete-dups (append candidate-list
                               (when (boundp 'ai-code-read-string-history)
                                 ai-code-read-string-history)))))
-    ;; Use minibuffer-setup-hook to deactivate mark in minibuffer
+    ;; Use minibuffer-setup-hook to disable transient-mark-mode in minibuffer
     ;; to prevent initial-input from being highlighted
     (minibuffer-with-setup-hook
         (lambda ()
-          (goto-char (point-max))
-          (deactivate-mark))
+          ;; Disable transient-mark-mode locally to prevent highlighting
+          (setq-local transient-mark-mode nil)
+          (goto-char (point-max)))
       ;; Use completing-read with the combined candidates
       (completing-read prompt
                        completion-candidates
