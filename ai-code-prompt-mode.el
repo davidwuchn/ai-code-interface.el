@@ -252,7 +252,7 @@ It trims leading/trailing whitespace."
 ;; ai coding task feature
 
 ;;;###autoload
-(defconst ai-code-files-dir-name ".ai.code"
+(defconst ai-code-files-dir-name ".ai.code.files"
   "Directory name for storing AI task files.")
 
 ;;;###autoload
