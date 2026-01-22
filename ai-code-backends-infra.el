@@ -142,7 +142,7 @@ Returns non-nil if a pattern was matched."
       (let* ((buffer-name (buffer-name buffer))
              (backend-match (cl-find-if
                             (lambda (entry)
-                              (string-match-p (car entry) buffer-name))
+                              (string-match-p (downcase (car entry)) (downcase buffer-name)))
                             ai-code-backends-infra-notification-patterns))
              (pattern (cdr backend-match)))
         (when (and pattern

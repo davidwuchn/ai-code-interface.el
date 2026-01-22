@@ -117,9 +117,7 @@ Desktop notifications require:
 
 On systems without notification support, the package will fall back to displaying messages in the echo area.
 
-#+end_src
-
-*** Required Dependencies
+** Dependencies
 - Emacs 28.1 or later
 - `org`: Org-mode support
 - `magit`: Git integration
