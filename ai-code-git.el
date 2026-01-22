@@ -30,6 +30,8 @@ Candidate values:
 (declare-function ai-code--insert-prompt "ai-code-prompt-mode" (prompt-text))
 (declare-function ai-code--ensure-files-directory "ai-code-prompt-mode" ())
 
+(defvar ai-code-files-dir-name)
+
 ;;;###autoload
 (defun ai-code-pull-or-review-diff-file ()
   "Review a diff file with AI Code or generate one if not viewing a diff.
@@ -575,8 +577,7 @@ If not inside a Git repository, do nothing."
     (if (not git-root)
         (message "ai-code-update-git-ignore: not in a git repository, skipped")
       (let* ((gitignore-path (expand-file-name ".gitignore" git-root))
-             (required-entries (list ai-code-prompt-file-name
-                                     ai-code-notes-file-name
+             (required-entries (list (concat ai-code-files-dir-name "/")
                                      ".projectile"
                                      "GTAGS"
                                      "GRTAGS"
