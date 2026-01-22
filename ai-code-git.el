@@ -28,6 +28,7 @@ Candidate values:
   :group 'ai-code)
 
 (declare-function ai-code--insert-prompt "ai-code-prompt-mode" (prompt-text))
+(declare-function ai-code--ensure-files-directory "ai-code-prompt-mode" ())
 
 ;;;###autoload
 (defun ai-code-pull-or-review-diff-file ()
@@ -175,19 +176,20 @@ DIFF-PARAMS is a plist with :type (`'commit`, `'base-vs-head`, `'branch-range`),
   (find-file diff-file)
   (message "Generated diff file: %s" diff-file))
 
-(defun ai-code--handle-staged-diff-generation (git-root)
+(defun ai-code--handle-staged-diff-generation (_git-root)
   "Handle generation of diff for staged change.
-GIT-ROOT is the root directory of the Git repository."
-  (let* ((diff-file-name-part "staged")
-         (diff-file (expand-file-name (concat diff-file-name-part ".diff") git-root)))
+_GIT-ROOT is unused but kept for API compatibility."
+  (let* ((files-dir (ai-code--ensure-files-directory))
+         (diff-file-name-part "staged")
+         (diff-file (expand-file-name (concat diff-file-name-part ".diff") files-dir)))
     (ai-code--generate-staged-diff diff-file)
     diff-file))
 
-(defun ai-code--handle-base-vs-head-diff-generation (git-root
+(defun ai-code--handle-base-vs-head-diff-generation (_git-root
                                                       &optional
                                                       open-in-browser)
   "Handle generation of diff between a base branch and HEAD.
-GIT-ROOT is the root directory of the Git repository.
+_GIT-ROOT is unused but kept for API compatibility.
 If OPEN-IN-BROWSER is non-nil, only open the diff in GitHub web
 interface without generating file."
   (let* ((base-branch (ai-code-read-string "Base branch name: "))
@@ -196,8 +198,9 @@ interface without generating file."
         (progn
           (ai-code--open-git-web-compare base-branch (or current-branch "HEAD"))
           nil)  ; Return nil since no file was generated
-      (let* ((diff-file-name-part (concat (replace-regexp-in-string "/" "-" base-branch) ".HEAD"))
-             (diff-file (expand-file-name (concat diff-file-name-part ".diff") git-root))
+      (let* ((files-dir (ai-code--ensure-files-directory))
+             (diff-file-name-part (concat (replace-regexp-in-string "/" "-" base-branch) ".HEAD"))
+             (diff-file (expand-file-name (concat diff-file-name-part ".diff") files-dir))
              (diff-params (list :type 'base-vs-head
                                 :base-branch base-branch
                                 :feature-branch "HEAD"
@@ -205,11 +208,11 @@ interface without generating file."
         (ai-code--generate-branch-or-commit-diff diff-params diff-file)
         diff-file))))
 
-(defun ai-code--handle-branch-range-diff-generation (git-root
+(defun ai-code--handle-branch-range-diff-generation (_git-root
                                                       &optional
                                                       open-in-browser)
   "Handle generation of diff between a base and a feature branch.
-GIT-ROOT is the root directory of the Git repository.
+_GIT-ROOT is unused but kept for API compatibility.
 If OPEN-IN-BROWSER is non-nil, only open the diff in GitHub web
 interface without generating file."
   (let* ((base-branch (ai-code-read-string "Base branch name: "))
@@ -228,10 +231,11 @@ interface without generating file."
               (if (consp raw-scope-choice)
                   (cdr raw-scope-choice)
                 (cdr (assoc raw-scope-choice scope-alist))))
-        (let* ((diff-file-name-part (concat (replace-regexp-in-string "/" "-" base-branch)
+        (let* ((files-dir (ai-code--ensure-files-directory))
+               (diff-file-name-part (concat (replace-regexp-in-string "/" "-" base-branch)
                                            "."
                                            (replace-regexp-in-string "/" "-" feature-branch)))
-               (diff-file (expand-file-name (concat diff-file-name-part ".diff") git-root))
+               (diff-file (expand-file-name (concat diff-file-name-part ".diff") files-dir))
                (diff-params (list :type 'branch-range
                                    :base-branch base-branch
                                    :feature-branch feature-branch
@@ -240,10 +244,10 @@ interface without generating file."
           (ai-code--generate-branch-or-commit-diff diff-params diff-file)
           diff-file)))))
 
-(defun ai-code--handle-commit-diff-generation (git-root
+(defun ai-code--handle-commit-diff-generation (_git-root
                                                 &optional open-in-browser)
   "Handle generation of diff for a single commit.
-GIT-ROOT is the root directory of the Git repository.
+_GIT-ROOT is unused but kept for API compatibility.
 If OPEN-IN-BROWSER is non-nil, only open the commit in GitHub web
 interface without generating file."
   (let* ((commit-hash (ai-code-read-string "Commit hash: ")))
@@ -251,10 +255,11 @@ interface without generating file."
         (progn
           (ai-code--open-git-web-commit commit-hash)
           nil)  ; Return nil since no file was generated
-      (let* ((base-branch (concat commit-hash "^"))  ; Diff against parent
+      (let* ((files-dir (ai-code--ensure-files-directory))
+             (base-branch (concat commit-hash "^"))  ; Diff against parent
              (feature-branch commit-hash)
              (diff-file-name-part commit-hash)
-             (diff-file (expand-file-name (concat diff-file-name-part ".diff") git-root))
+             (diff-file (expand-file-name (concat diff-file-name-part ".diff") files-dir))
              (diff-params (list :type 'commit
                                 :base-branch base-branch
                                 :feature-branch feature-branch
@@ -279,9 +284,9 @@ interface without generating file."
       (cdr (assoc raw-diff-type-choice diff-type-alist)))))
 
 ;;; New helper for commit ranges
-(defun ai-code--handle-commit-range-diff-generation (git-root &optional open-in-browser)
+(defun ai-code--handle-commit-range-diff-generation (_git-root &optional open-in-browser)
   "Handle generation of diff between two commits (commit range).
-GIT-ROOT is the repository root directory.
+_GIT-ROOT is unused but kept for API compatibility.
 If OPEN-IN-BROWSER is non-nil, only open the diff in GitHub web interface
 without generating file."
   (let* ((raw-start (ai-code-read-string "Start commit or branch: "))
@@ -294,10 +299,11 @@ without generating file."
           (ai-code--open-git-web-compare start end)
           nil)  ; Return nil since no file was generated
       ;; Sanitize branch names for file path (replace "/" with "-")
-      (let* ((name-sanitized (concat (replace-regexp-in-string "/" "-" start)
+      (let* ((files-dir (ai-code--ensure-files-directory))
+             (name-sanitized (concat (replace-regexp-in-string "/" "-" start)
                                      ".."
                                      (replace-regexp-in-string "/" "-" end)))
-             (file      (expand-file-name (concat name-sanitized ".diff") git-root))
+             (file      (expand-file-name (concat name-sanitized ".diff") files-dir))
              ;; reuse branch-range plumbing (it will fetch and verify)
              (params    (list :type 'branch-range
                               :base-branch start
