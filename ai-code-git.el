@@ -40,11 +40,15 @@ Otherwise, generate the diff."
       (let* ((file-name (file-name-nondirectory buffer-file-name))
              (init-prompt (format "Code review for %s. Use relevant file in repository as context.
 
-**Focus**: Quality, security, performance, patterns
-**Format**: Location, issue, solution, priority (High/Medium/Low)
+**Review Steps**:
+1. **Requirement Fit** (Top Priority): Verify if the code change fulfills the requirement below. Identify gaps or missing implementations.
+2. **Code Quality**: Check for quality, security, performance, and coding patterns.
+3. **Issues Found**: For each issue: Location, Issue, Solution, Priority (High/Medium/Low)
 
-Provide overall assessment." file-name))
-             (prompt (ai-code-read-string "Enter diff review prompt: " init-prompt)))
+Provide overall assessment.
+
+**Requirement**: " file-name))
+             (prompt (ai-code-read-string "Enter review prompt (type requirement at end): " init-prompt)))
         (ai-code--insert-prompt prompt))
     (ai-code--magit-generate-feature-branch-diff-file)))
 
