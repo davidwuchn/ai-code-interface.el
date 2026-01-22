@@ -16,6 +16,7 @@
 
 (require 'cl-lib)
 (require 'project)
+(require 'ai-code-notifications)
 
 ;; Silence native-compiler warnings.
 (declare-function vterm "vterm" (&optional buffer-name))
@@ -99,6 +100,21 @@ Can be either `vterm' or `eat'."
   :type 'boolean
   :group 'ai-code-backends-infra)
 
+(defcustom ai-code-backends-infra-notification-patterns
+  '(("Codex" . "\\(^>\\|100% context left\\)")
+    ("Claude" . "^<claude>")
+    ("Gemini" . "^Gemini>")
+    ("Copilot" . "^>")
+    ("Grok" . "^>")
+    ("Cursor" . "^>")
+    ("Kiro" . "^>")
+    ("Opencode" . "^>"))
+  "Alist of backend names to regex patterns that indicate response completion.
+Each entry is (BACKEND-NAME . REGEX-PATTERN).
+When the pattern is matched in terminal output, a notification is sent."
+  :type '(alist :key-type string :value-type string)
+  :group 'ai-code-backends-infra)
+
 ;;; Variables
 
 (defvar ai-code-backends-infra--processes (make-hash-table :test 'equal)
@@ -107,10 +123,38 @@ Can be either `vterm' or `eat'."
 (defvar ai-code-backends-infra--last-accessed-buffer nil
   "The most recently accessed AI Code buffer.")
 
+(defvar-local ai-code-backends-infra--last-output-time nil
+  "Timestamp of the last output received in this buffer.")
+
+(defvar-local ai-code-backends-infra--notification-sent nil
+  "Whether a completion notification has been sent for current response.")
+
 ;;; Vterm Rendering Optimization
 
 (defvar-local ai-code-backends-infra--vterm-render-queue nil)
 (defvar-local ai-code-backends-infra--vterm-render-timer nil)
+
+(defun ai-code-backends-infra--check-completion-pattern (buffer input)
+  "Check if INPUT matches a completion pattern for BUFFER and send notification.
+Returns non-nil if a pattern was matched."
+  (when (buffer-live-p buffer)
+    (with-current-buffer buffer
+      (let* ((buffer-name (buffer-name buffer))
+             (backend-match (cl-find-if
+                            (lambda (entry)
+                              (string-match-p (car entry) buffer-name))
+                            ai-code-backends-infra-notification-patterns))
+             (pattern (cdr backend-match)))
+        (when (and pattern
+                   (string-match-p pattern input)
+                   (not ai-code-backends-infra--notification-sent))
+          (setq ai-code-backends-infra--notification-sent t)
+          (ai-code-notifications-response-complete buffer)
+          t)))))
+
+(defun ai-code-backends-infra--reset-notification-state ()
+  "Reset notification state when new input is received."
+  (setq ai-code-backends-infra--notification-sent nil))
 
 (defun ai-code-backends-infra--vterm-smart-renderer (orig-fun process input)
   "Smart rendering filter for optimized vterm display updates."
@@ -118,6 +162,8 @@ Can be either `vterm' or `eat'."
           (not (ai-code-backends-infra--session-buffer-p (process-buffer process))))
       (funcall orig-fun process input)
     (with-current-buffer (process-buffer process)
+      ;; Check for completion patterns and send notifications
+      (ai-code-backends-infra--check-completion-pattern (current-buffer) input)
       (let* ((complex-redraw-detected
               (string-match-p "\033\\[[0-9]*A.*\033\\[K.*\033\\[[0-9]*A.*\033\\[K" input))
              (clear-count (cl-count-if (lambda (s) (string= s "\033[K"))
@@ -146,6 +192,14 @@ Can be either `vterm' or `eat'."
                                            (funcall orig-fun (get-buffer-process buf) data))))))
                                  (current-buffer))))
           (funcall orig-fun process input))))))
+
+(defun ai-code-backends-infra--process-output-filter (process output)
+  "Filter function to monitor process OUTPUT and trigger notifications.
+PROCESS is the terminal process."
+  (when (process-buffer process)
+    (ai-code-backends-infra--check-completion-pattern
+     (process-buffer process)
+     output)))
 
 (defun ai-code-backends-infra--configure-vterm-buffer ()
   "Configure vterm for enhanced performance."
@@ -218,7 +272,13 @@ Can be either `vterm' or `eat'."
   "Check if BUFFER belongs to an AI session."
   (when-let ((name (if (stringp buffer) buffer (buffer-name buffer))))
     (or (string-prefix-p "*claude-code[" name)
-        (string-prefix-p "*codex[" name))))
+        (string-prefix-p "*codex[" name)
+        (string-prefix-p "*gemini[" name)
+        (string-prefix-p "*copilot[" name)
+        (string-prefix-p "*grok[" name)
+        (string-prefix-p "*cursor[" name)
+        (string-prefix-p "*kiro[" name)
+        (string-prefix-p "*opencode[" name))))
 
 (defun ai-code-backends-infra--terminal-reflow-filter (original-fn &rest args)
   "Filter terminal reflows to prevent height-only resize triggers."
@@ -301,9 +361,14 @@ CLEANUP-FN is called with no arguments when the process exits."
              (new-buffer (car buffer-and-process))
              (process (cdr buffer-and-process)))
         (puthash working-dir process process-table)
-        (when cleanup-fn
-          (set-process-sentinel process
-                                (lambda (_proc _event)
+        (set-process-sentinel process
+                              (lambda (proc event)
+                                ;; Send notification on session end
+                                (when (and (buffer-live-p (process-buffer proc))
+                                          (string-match-p "\\(finished\\|exited\\)" event))
+                                  (ai-code-notifications-session-end (process-buffer proc)))
+                                ;; Call user cleanup function if provided
+                                (when cleanup-fn
                                   (funcall cleanup-fn))))
         (when escape-fn
           (with-current-buffer new-buffer
@@ -323,6 +388,8 @@ CLEANUP-FN is called with no arguments when the process exits."
   "Send LINE to BUFFER-NAME or signal MISSING-MESSAGE."
   (if-let ((buffer (get-buffer buffer-name)))
       (with-current-buffer buffer
+        ;; Reset notification state when sending a new command
+        (ai-code-backends-infra--reset-notification-state)
         (ai-code-backends-infra--terminal-send-string line)
         (sit-for 0.1)
         (ai-code-backends-infra--terminal-send-return))
@@ -356,6 +423,10 @@ ENV-VARS is a list of environment variables."
           (unless (eq major-mode 'eat-mode) (eat-mode))
           (setq-local process-environment (append env-vars process-environment))
           (eat-exec buffer buffer-name program nil args)
+          ;; Add process filter for notifications
+          (when-let ((proc (get-buffer-process buffer)))
+            (add-function :after (process-filter proc)
+                         #'ai-code-backends-infra--process-output-filter))
           (cons buffer (get-buffer-process buffer)))))
      (t (error "Unknown backend")))))
 

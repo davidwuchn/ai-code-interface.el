@@ -79,7 +79,45 @@ Enable installation of packages from MELPA by adding an entry to package-archive
       (ai-code-magit-setup-transients)))
 #+end_src
 
-** Dependencies
+** Desktop Notifications
+
+The package includes support for desktop notifications to alert you when AI responses are complete. This is especially useful when:
+- Working with multiple AI sessions
+- Switching between tasks while waiting for AI responses
+- The AI session buffer is not currently visible
+
+*** Enabling Notifications
+
+Notifications are enabled by default. To configure them, add the following to your configuration:
+
+#+begin_src emacs-lisp
+  ;; Enable/disable notifications (enabled by default)
+  (setq ai-code-notifications-enabled t)
+  
+  ;; Configure which events trigger notifications
+  (setq ai-code-notifications-on-response-complete t)  ; Notify when AI completes a response
+  (setq ai-code-notifications-on-error t)              ; Notify on errors
+  (setq ai-code-notifications-on-session-end t)        ; Notify when session terminates
+  
+  ;; Only notify when the AI buffer is not in focus (default: t)
+  (setq ai-code-notifications-only-when-not-focused t)
+  
+  ;; Set notification urgency level: 'low, 'normal, or 'critical
+  (setq ai-code-notifications-urgency 'normal)
+  
+  ;; Set notification timeout in milliseconds (0 = no timeout, -1 = system default)
+  (setq ai-code-notifications-timeout 5000)
+#+end_src
+
+*** Requirements
+
+Desktop notifications require:
+- GNU/Linux or other systems with D-Bus support
+- The =notifications= package (included with Emacs on supported systems)
+
+On systems without notification support, the package will fall back to displaying messages in the echo area.
+
+#+end_src
 
 *** Required Dependencies
 - Emacs 28.1 or later
