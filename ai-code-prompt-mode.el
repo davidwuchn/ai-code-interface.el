@@ -53,30 +53,25 @@ This is the file name without path."
 
 ;;;###autoload
 (defun ai-code-open-prompt-file ()
-  "Open AI prompt file under git repo root.
+  "Open AI prompt file under .ai.code.files/ directory.
 If file doesn't exist, create it with sample prompt."
   (interactive)
-  (let* ((git-root (magit-toplevel))
-         (prompt-file (when git-root
-                        (expand-file-name ai-code-prompt-file-name git-root))))
-    (if prompt-file
-        (progn
-          (find-file-other-window prompt-file)
-          (unless (file-exists-p prompt-file)
-            ;; Insert initial content for new file
-            (insert "# AI Prompt File\n")
-            (insert "# This file is for storing AI prompts and instructions\n")
-            (insert "# Use this file to save reusable prompts for your AI assistant\n\n")
-            (insert "* Sample prompt:\n\n")
-            (insert "Explain the architecture of this codebase\n")
-            (save-buffer)))
-      (message "Not in a git repository"))))
+  (let* ((files-dir (ai-code--ensure-files-directory))
+         (prompt-file (expand-file-name ai-code-prompt-file-name files-dir)))
+    (find-file-other-window prompt-file)
+    (unless (file-exists-p prompt-file)
+      ;; Insert initial content for new file
+      (insert "# AI Prompt File\n")
+      (insert "# This file is for storing AI prompts and instructions\n")
+      (insert "# Use this file to save reusable prompts for your AI assistant\n\n")
+      (insert "* Sample prompt:\n\n")
+      (insert "Explain the architecture of this codebase\n")
+      (save-buffer))))
 
 (defun ai-code--get-ai-code-prompt-file-path ()
-  "Get the path to the AI prompt file in the current git repository."
-  (let* ((git-root (magit-toplevel)))
-    (when git-root
-      (expand-file-name ai-code-prompt-file-name git-root))))
+  "Get the path to the AI prompt file in the .ai.code.files/ directory."
+  (let ((files-dir (ai-code--get-files-directory)))
+    (expand-file-name ai-code-prompt-file-name files-dir)))
 
 (defun ai-code--execute-command (command)
   "Execute COMMAND directly without saving to prompt file."
