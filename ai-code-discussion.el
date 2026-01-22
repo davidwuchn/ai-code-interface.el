@@ -18,6 +18,7 @@
 (declare-function ai-code--insert-prompt "ai-code-prompt-mode")
 (declare-function ai-code--get-clipboard-text "ai-code-interface")
 (declare-function ai-code-call-gptel-sync "ai-code-prompt-mode")
+(declare-function ai-code--ensure-files-directory "ai-code-prompt-mode")
 (declare-function magit-toplevel "magit" (&optional dir))
 (declare-function ai-code--format-repo-context-info "ai-code-file")
 
@@ -466,16 +467,12 @@ DEFAULT-NOTE-FILE is included in the list. Visible org buffers are prioritized."
 (defun ai-code-take-notes ()
   "Take notes from selected region and save to a note file.
 When there is a selected region, prompt to select from currently open
-org buffers or the default note file path \(.ai.code.notes.org in the
-git root).  Add the section title as a headline at the end of the note
-file, and put the selected region as content of that section."
+org buffers or the default note file path (.ai.code.notes.org in the
+.ai.code.files/ directory).  Add the section title as a headline at the
+end of the note file, and put the selected region as content of that section."
   (interactive)
-  (let* ((git-root (condition-case nil
-                       (magit-toplevel)
-                     (error nil)))
-         (default-note-file (if git-root
-                                (expand-file-name ai-code-notes-file-name git-root)
-                              (expand-file-name ai-code-notes-file-name default-directory))))
+  (let* ((files-dir (ai-code--ensure-files-directory))
+         (default-note-file (expand-file-name ai-code-notes-file-name files-dir)))
     (if (not (region-active-p))
         (find-file-other-window default-note-file)
       (let* ((region-text (filter-buffer-substring (region-beginning) (region-end) nil))
