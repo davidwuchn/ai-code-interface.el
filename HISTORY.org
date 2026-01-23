@@ -2,6 +2,8 @@
 * Release history
 
 ** Main branch change
+
+** 0.10.0
 - Fix: add back multiple session support
 - Feat: add kiro-cli support, by jenkinsjb
 - Feat: add cursor-cli support, by donneyluck
