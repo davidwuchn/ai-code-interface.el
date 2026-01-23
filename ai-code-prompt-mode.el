@@ -260,7 +260,7 @@ based on the task name. Otherwise, use cleaned-up task name directly."
 
 (defun ai-code--get-files-directory ()
   "Get the task directory path.
-If in a git repository, return `.ai.code.tasks/` under git root.
+If in a git repository, return `.ai.code.files/` under git root.
 Otherwise, return the current `default-directory`."
   (let ((git-root (magit-toplevel)))
     (if git-root
