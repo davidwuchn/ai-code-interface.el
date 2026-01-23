@@ -269,10 +269,10 @@ Otherwise, return the current `default-directory`."
 
 (defun ai-code--ensure-files-directory ()
   "Ensure the task directory exists and return its path."
-  (let ((task-dir (ai-code--get-files-directory)))
-    (unless (file-directory-p task-dir)
-      (make-directory task-dir t))
-    task-dir))
+  (let ((ai-code-files-dir (ai-code--get-files-directory)))
+    (unless (file-directory-p ai-code-files-dir)
+      (make-directory ai-code-files-dir t))
+    ai-code-files-dir))
 
 (defun ai-code--generate-task-filename (task-name)
   "Generate a task filename from TASK-NAME.
@@ -314,15 +314,15 @@ using GPTel, and creates the task file."
   (let ((task-name (read-string "Task name (empty to open task directory): ")))
     (if (string-empty-p task-name)
         ;; Open the task directory
-        (let ((task-dir (ai-code--ensure-files-directory)))
-          (dired-other-window task-dir)
-          (message "Opened task directory: %s" task-dir))
+        (let ((ai-code-files-dir (ai-code--ensure-files-directory)))
+          (dired-other-window ai-code-files-dir)
+          (message "Opened task directory: %s" ai-code-files-dir))
       ;; Create a new task file
       (let* ((task-url (read-string "URL (optional, press Enter to skip): "))
-             (task-dir (ai-code--ensure-files-directory))
+             (ai-code-files-dir (ai-code--ensure-files-directory))
              (generated-filename (ai-code--generate-task-filename task-name))
              (confirmed-filename (read-string "Confirm task filename: " generated-filename))
-             (task-file (expand-file-name confirmed-filename task-dir)))
+             (task-file (expand-file-name confirmed-filename ai-code-files-dir)))
         ;; Ensure filename has .org extension
         (unless (string-suffix-p ".org" confirmed-filename)
           (setq task-file (concat task-file ".org")))
