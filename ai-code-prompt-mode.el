@@ -291,7 +291,7 @@ Returns a filename with .org suffix."
               ;; Use GPTel to generate filename
               (condition-case nil
                   (ai-code-call-gptel-sync
-                   (format "Generate a short english filename (max 60 chars, lowercase, use underscores for spaces, no extension) for this task: %s" task-name))
+                   (format "Generate a short English filename (max 60 chars, lowercase, use underscores for spaces, no extension) for this task: %s" task-name))
                 (error (replace-regexp-in-string "[^a-z0-9_]" "_" (downcase task-name))))
             ;; Use task name directly (cleaned up)
             (replace-regexp-in-string "[^a-z0-9_]" "_" (downcase task-name)))))
