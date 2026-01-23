@@ -79,6 +79,7 @@
 (declare-function ai-code-select-backend "ai-code-backends")
 (declare-function ai-code-open-backend-config "ai-code-backends")
 (declare-function ai-code-upgrade-backend "ai-code-backends")
+(declare-function ai-code-backends-infra--session-buffer-p "ai-code-backends-infra" (buffer))
 
 (declare-function ai-code--process-word-for-filepath "ai-code-prompt-mode" (word git-root-truename))
 
@@ -156,10 +157,10 @@ ARG is the prefix argument."
   "Hide current buffer if its name starts and ends with '*'.
 Otherwise switch to AI CLI buffer."
   (interactive)
-  (if (and (string-prefix-p "*" (buffer-name))
-           (string-suffix-p "*" (buffer-name)))
+  (if (and current-prefix-arg
+           (ai-code-backends-infra--session-buffer-p (current-buffer)))
       (quit-window)
-    (ai-code-cli-switch-to-buffer)))
+    (ai-code-cli-switch-to-buffer t)))
 
 (defclass ai-code--use-prompt-suffix-type (transient-lisp-variable)
   ((variable :initform 'ai-code-use-prompt-suffix)
@@ -187,7 +188,7 @@ Shows the current backend label to the right."
    ["AI CLI session"
     ("a" "Start AI CLI" ai-code-cli-start)
     ("R" "Resume AI CLI" ai-code-cli-resume)
-    ("z" "Switch to AI CLI" ai-code-cli-switch-to-buffer-or-hide)
+    ("z" "Switch to AI CLI (C-u: hide)" ai-code-cli-switch-to-buffer-or-hide)
     ;; Use plist style to provide a dynamic description function.
     ("s" ai-code-select-backend :description ai-code--select-backend-description)
     ("u" "Install / Upgrade AI CLI" ai-code-upgrade-backend)
