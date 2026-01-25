@@ -139,7 +139,7 @@ When called from Lisp code, sends CMD directly without prompting."
      :require claude-code
      :start   claude-code
      :switch  claude-code-switch-to-buffer
-     :send    ai-code-claude-code-send-command
+     :send    claude-code--do-send-command
      :resume  claude-code-resume
      :config  "~/.claude.json"
      :upgrade "npm install -g @anthropic-ai/claude-code@latest"
