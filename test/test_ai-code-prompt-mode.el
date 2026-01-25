@@ -304,9 +304,9 @@ and ensures everything is cleaned up afterward."
                                          (file-name-directory (file-truename lib-path)))))
       ;; Snippet directory should exist
       (should (file-directory-p snippet-dir))
-      ;; Snippet directory should contain the ai-prompt-mode subdirectory
-      (let ((ai-prompt-mode-dir (expand-file-name "ai-prompt-mode" snippet-dir)))
-        (should (file-directory-p ai-prompt-mode-dir))))))
+      ;; Snippet directory should contain the ai-code-prompt-mode subdirectory
+      (let ((ai-code-prompt-mode-dir (expand-file-name "ai-code-prompt-mode" snippet-dir)))
+        (should (file-directory-p ai-code-prompt-mode-dir))))))
 
 (ert-deftest ai-code-test-auto-mode-alist-pattern ()
   "Test that auto-mode-alist correctly matches .ai.code.prompt.org file."
