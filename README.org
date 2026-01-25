@@ -144,7 +144,7 @@ The generated prompt will include the function/region scope, visible file list, 
    - Pick one of the supported backends and the integration will switch immediately.
    - The selection updates the start/switch/send commands and the CLI used by `ai-code-apply-prompt-on-current-file`.
 
-   Native supported options:
+   Natively supported options:
    - Claude Code (`[[./ai-code-claude-code.el][ai-code-claude-code.el]]`)
    - [[https://github.com/google-gemini/gemini-cli][Gemini CLI]] (`[[./ai-code-gemini-cli.el][ai-code-gemini-cli.el]]`)
    - [[https://github.com/openai/codex][OpenAI codex CLI]] (`[[./ai-code-codex-cli.el][ai-code-codex-cli.el]]`)
