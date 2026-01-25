@@ -154,7 +154,7 @@ The generated prompt will include the function/region scope, visible file list, 
    - [[https://docs.cursor.com/en/cli][Cursor CLI]] (`[[./ai-code-cursor-cli.el][ai-code-cursor-cli.el]]`)
    - [[https://kiro.dev/cli/][Kiro CLI]] (`[[./ai-code-kiro-cli.el][ai-code-kiro-cli.el]]`)
    
-   It also support external backends, through `ai-code-backends` variable customization, currently it includes:
+   It also supports external backends through customization of the `ai-code-backends` variable; currently it includes:
    - Claude Code IDE (`[[https://github.com/manzaltu/claude-code-ide.el][claude-code-ide.el]]`)
    - Claude Code (`[[https://github.com/stevemolitor/claude-code.el][claude-code.el]]`)
 
