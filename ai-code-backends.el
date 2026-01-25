@@ -45,22 +45,12 @@ When called from Lisp code, sends CMD directly without prompting."
 ;;;###autoload
 (defcustom ai-code-backends
   '((claude-code
-     :label "claude-code.el"
-     :require claude-code
-     :start   claude-code
-     :switch  claude-code-switch-to-buffer
+     :label "Claude Code"
+     :require ai-code-claude-code
+     :start   ai-code-claude-code
+     :switch  ai-code-claude-code-switch-to-buffer
      :send    ai-code-claude-code-send-command
-     :resume  claude-code-resume
-     :config  "~/.claude.json"
-     :upgrade "npm install -g @anthropic-ai/claude-code@latest"
-     :cli     "claude")
-    (claude-code-ide
-     :label "claude-code-ide.el"
-     :require claude-code-ide
-     :start   claude-code-ide--start-if-no-session
-     :switch  claude-code-ide-switch-to-buffer
-     :send    claude-code-ide-send-prompt
-     :resume  claude-code-ide-resume
+     :resume  ai-code-claude-code-resume
      :config  "~/.claude.json"
      :upgrade "npm install -g @anthropic-ai/claude-code@latest"
      :cli     "claude")
@@ -133,7 +123,27 @@ When called from Lisp code, sends CMD directly without prompting."
      :resume  ai-code-kiro-cli-resume
      :config  "~/.kiro/settings/cli.json"
      :upgrade "kiro-cli update"
-     :cli     "kiro-cli"))
+     :cli     "kiro-cli")
+    (claude-code-ide  ; external backend, requires claude-code-ide.el package
+     :label "claude-code-ide.el"
+     :require claude-code-ide
+     :start   claude-code-ide--start-if-no-session
+     :switch  claude-code-ide-switch-to-buffer
+     :send    claude-code-ide-send-prompt
+     :resume  claude-code-ide-resume
+     :config  "~/.claude.json"
+     :upgrade "npm install -g @anthropic-ai/claude-code@latest"
+     :cli     "claude")
+    (claude-code-el  ; external backend, requires claude-code.el package
+     :label "claude-code.el"
+     :require claude-code
+     :start   claude-code
+     :switch  claude-code-switch-to-buffer
+     :send    ai-code-claude-code-send-command
+     :resume  claude-code-resume
+     :config  "~/.claude.json"
+     :upgrade "npm install -g @anthropic-ai/claude-code@latest"
+     :cli     "claude"))
   "Available AI backends and how to integrate with them.
 Each entry is (KEY :label STRING :require FEATURE :start FN :switch FN
 :send FN :resume FN-or-nil :upgrade STRING-or-nil :cli STRING).

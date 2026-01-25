@@ -16,7 +16,7 @@
 ;; URL: https://github.com/tninja/ai-code-interface.el
 ;;
 ;; Supported AI coding CLIs include:
-;;   - Claude Code (claude-code.el)
+;;   - Claude Code
 ;;   - Gemini CLI
 ;;   - OpenAI Codex
 ;;   - GitHub Copilot CLI
@@ -29,7 +29,7 @@
 ;;
 ;; (use-package ai-code
 ;;   :config
-;;   ;; use codex as backend, other options are 'gemini, 'github-copilot-cli, 'opencode, 'grok, 'claude-code-ide, 'claude-code, 'cursor, 'kiro
+;;   ;; use codex as backend, other options are 'gemini, 'github-copilot-cli, 'opencode, 'grok, 'claude-code-ide, 'claude-code-el, 'claude-code, 'cursor, 'kiro
 ;;   (ai-code-set-backend 'codex) ;; set your preferred backend
 ;;   (global-set-key (kbd "C-c a") #'ai-code-menu)
 ;;   (global-auto-revert-mode 1)

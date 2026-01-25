@@ -18,7 +18,7 @@ An Emacs interface for AI-assisted software development. *The purpose is to prov
   - [[https://docs.cursor.com/en/cli][Cursor CLI]]
   - [[https://kiro.dev/cli/][Kiro CLI]]
 
-- I switch between different CLI-based AI tools in Emacs: Claude Code / Gemini CLI / Aider / OpenAI Codex. If you also use different AI tools inside Emacs, but want to keep the same user interface and experience, this package is for you.
+- I switch between different CLI-based AI tools in Emacs: Claude Code / OpenAI Codex / Gemini CLI / etc. If you also use different AI tools inside Emacs, but want to keep the same user interface and experience, this package is for you.
 
 - Lots of features and tools are ported from [[https://github.com/tninja/aider.el][aider.el]]. If you like the features in aider.el, but wish to switch to modern AI coding CLI, this package is also for you.
 
@@ -45,7 +45,7 @@ Enable installation of packages from MELPA by adding an entry to package-archive
 #+begin_src emacs-lisp
   (use-package ai-code
     :config
-    ;; use codex as backend, other options are 'gemini, 'github-copilot-cli, 'opencode, 'grok, 'claude-code-ide, 'claude-code, 'cursor, 'kiro
+    ;; use codex as backend, other options are 'claude-code, 'gemini, 'github-copilot-cli, 'opencode, 'grok, 'cursor, 'kiro, 'claude-code-ide, 'claude-code-el
     (ai-code-set-backend 'codex)
     ;; Enable global keybinding for the main menu
     (global-set-key (kbd "C-c a") #'ai-code-menu)
@@ -65,7 +65,7 @@ Enable installation of packages from MELPA by adding an entry to package-archive
   (use-package ai-code
     :straight (:host github :repo "tninja/ai-code-interface.el")
     :config
-    ;; use codex as backend, other options are 'gemini, 'github-copilot-cli, 'opencode, 'grok, 'claude-code-ide, 'claude-code, 'cursor, 'kiro
+    ;; use codex as backend, other options are 'claude-code, 'gemini, 'github-copilot-cli, 'opencode, 'grok, 'cursor, 'kiro, 'claude-code-ide, 'claude-code-el
     (ai-code-set-backend 'codex)
     ;; Enable global keybinding for the main menu
     (global-set-key (kbd "C-c a") #'ai-code-menu)
@@ -144,9 +144,8 @@ The generated prompt will include the function/region scope, visible file list, 
    - Pick one of the supported backends and the integration will switch immediately.
    - The selection updates the start/switch/send commands and the CLI used by `ai-code-apply-prompt-on-current-file`.
 
-   Supported options:
-   - Claude Code (`[[https://github.com/stevemolitor/claude-code.el][claude-code.el]]`)
-   - Claude Code IDE (`[[https://github.com/manzaltu/claude-code-ide.el][claude-code-ide.el]]`)
+   Native supported options:
+   - Claude Code (`[[./ai-code-claude-code.el][ai-code-claude-code.el]]`)
    - [[https://github.com/google-gemini/gemini-cli][Gemini CLI]] (`[[./ai-code-gemini-cli.el][ai-code-gemini-cli.el]]`)
    - [[https://github.com/openai/codex][OpenAI codex CLI]] (`[[./ai-code-codex-cli.el][ai-code-codex-cli.el]]`)
    - [[https://docs.github.com/en/copilot/how-tos/use-copilot-agents/use-copilot-cli][GitHub Copilot CLI]] (`[[./ai-code-github-copilot-cli.el][ai-code-github-copilot-cli.el]]`)
@@ -154,6 +153,10 @@ The generated prompt will include the function/region scope, visible file list, 
    - [[https://grokcli.io/][Grok CLI]] (`[[./ai-code-grok-cli.el][ai-code-grok-cli.el]]`)
    - [[https://docs.cursor.com/en/cli][Cursor CLI]] (`[[./ai-code-cursor-cli.el][ai-code-cursor-cli.el]]`)
    - [[https://kiro.dev/cli/][Kiro CLI]] (`[[./ai-code-kiro-cli.el][ai-code-kiro-cli.el]]`)
+   
+   It also support external backends, through `ai-code-backends` variable customization, currently it includes:
+   - Claude Code IDE (`[[https://github.com/manzaltu/claude-code-ide.el][claude-code-ide.el]]`)
+   - Claude Code (`[[https://github.com/stevemolitor/claude-code.el][claude-code.el]]`)
 
 **** Grok CLI setup
      Install [[https://grokcli.io/][grok-cli]] and ensure the `grok` executable is on your PATH.
