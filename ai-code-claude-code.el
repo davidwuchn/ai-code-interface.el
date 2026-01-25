@@ -74,8 +74,10 @@ When FORCE-PROMPT is non-nil, prompt to select a session."
      force-prompt)))
 
 ;;;###autoload
-(defun ai-code-claude-code-send-command (line)
-  "Send LINE to Claude Code CLI."
+(defun ai-code-claude-code--native-send-command (line)
+  "Send LINE to Claude Code CLI (native backend).
+This function is specific to the native ai-code-claude-code backend
+and distinct from the external claude-code.el backend wrapper."
   (interactive "sClaude Code> ")
   (let ((working-dir (ai-code-backends-infra--session-working-directory)))
     (ai-code-backends-infra--send-line-to-session
