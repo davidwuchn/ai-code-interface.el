@@ -43,7 +43,7 @@ This is the file name without path."
   (condition-case _err
       (when (require 'yasnippet nil t)
         (let ((snippet-dir (expand-file-name "snippets"
-                                             (file-name-directory (file-truename (locate-library "ai-code-prompt-mode"))))))
+                                             (file-name-directory (file-truename (locate-library "ai-code"))))))
           (when (file-directory-p snippet-dir)
             (unless (boundp 'yas-snippet-dirs)
               (setq yas-snippet-dirs nil))

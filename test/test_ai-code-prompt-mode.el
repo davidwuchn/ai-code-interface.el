@@ -296,7 +296,7 @@ and ensures everything is cleaned up afterward."
   "Test that ai-code--setup-snippets can locate the snippets directory."
   ;; This test verifies that locate-library can find the correct library
   ;; and that the snippets directory path is constructed correctly
-  (let ((lib-path (locate-library "ai-code-prompt-mode")))
+  (let ((lib-path (locate-library "ai-code")))
     ;; Library should be found
     (should lib-path)
     ;; Construct expected snippet directory path
