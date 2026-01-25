@@ -291,5 +291,22 @@ and ensures everything is cleaned up afterward."
        (when (file-directory-p files-dir)
          (delete-directory files-dir t))))))
 
+
+(ert-deftest ai-code-test-setup-snippets-finds-directory ()
+  "Test that ai-code--setup-snippets can locate the snippets directory."
+  ;; This test verifies that locate-library can find the correct library
+  ;; and that the snippets directory path is constructed correctly
+  (let ((lib-path (locate-library "ai-code-prompt-mode")))
+    ;; Library should be found
+    (should lib-path)
+    ;; Construct expected snippet directory path
+    (let ((snippet-dir (expand-file-name "snippets"
+                                         (file-name-directory (file-truename lib-path)))))
+      ;; Snippet directory should exist
+      (should (file-directory-p snippet-dir))
+      ;; Snippet directory should contain the ai-prompt-mode subdirectory
+      (let ((ai-prompt-mode-dir (expand-file-name "ai-prompt-mode" snippet-dir)))
+        (should (file-directory-p ai-prompt-mode-dir))))))
+
 (provide 'test-ai-code-prompt-mode)
 ;;; test_ai-code-prompt-mode.el ends here
