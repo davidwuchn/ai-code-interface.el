@@ -308,5 +308,18 @@ and ensures everything is cleaned up afterward."
       (let ((ai-prompt-mode-dir (expand-file-name "ai-prompt-mode" snippet-dir)))
         (should (file-directory-p ai-prompt-mode-dir))))))
 
+(ert-deftest ai-code-test-auto-mode-alist-pattern ()
+  "Test that auto-mode-alist correctly matches .ai.code.prompt.org file."
+  (let* ((test-file-name ".ai.code.prompt.org")
+         (test-path (concat "/some/path/" test-file-name))
+         (matched-mode nil))
+    ;; Find the matching entry in auto-mode-alist
+    (dolist (entry auto-mode-alist)
+      (when (string-match (car entry) test-path)
+        (setq matched-mode (cdr entry))
+        (cl-return)))
+    ;; Verify that the matched mode is ai-code-prompt-mode
+    (should (eq matched-mode 'ai-code-prompt-mode))))
+
 (provide 'test-ai-code-prompt-mode)
 ;;; test_ai-code-prompt-mode.el ends here

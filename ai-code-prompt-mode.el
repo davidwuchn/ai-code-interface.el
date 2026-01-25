@@ -343,7 +343,7 @@ using GPTel, and creates the task file."
 
 ;;;###autoload
 (add-to-list 'auto-mode-alist
-             `(,(concat "/" (regexp-quote ai-code-prompt-file-name) "\'") . ai-code-prompt-mode))
+             `(,(concat "/" (regexp-quote ai-code-prompt-file-name) "\\'") . ai-code-prompt-mode))
 
 (provide 'ai-code-prompt-mode)
 
