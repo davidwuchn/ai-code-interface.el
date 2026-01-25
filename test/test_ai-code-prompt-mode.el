@@ -312,12 +312,11 @@ and ensures everything is cleaned up afterward."
   "Test that auto-mode-alist correctly matches .ai.code.prompt.org file."
   (let* ((test-file-name ".ai.code.prompt.org")
          (test-path (concat "/some/path/" test-file-name))
-         (matched-mode nil))
-    ;; Find the matching entry in auto-mode-alist
-    (dolist (entry auto-mode-alist)
-      (when (string-match (car entry) test-path)
-        (setq matched-mode (cdr entry))
-        (cl-return)))
+         ;; Find the first matching entry in auto-mode-alist
+         (matched-mode (cl-some (lambda (entry)
+                                  (when (string-match (car entry) test-path)
+                                    (cdr entry)))
+                                auto-mode-alist)))
     ;; Verify that the matched mode is ai-code-prompt-mode
     (should (eq matched-mode 'ai-code-prompt-mode))))
 
