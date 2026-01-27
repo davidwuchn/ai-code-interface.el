@@ -15,8 +15,8 @@
 (require 'imenu)
 
 (declare-function helm-comp-read "helm-mode" (prompt collection &rest args))
-(declare-function evil-visual-state-p "evil-states" ())
-(declare-function evil-emacs-state "evil-states" ())
+(declare-function evil-visual-state-p "evil-core" ())
+(declare-function evil-emacs-state "evil-core" ())
 
 ;;;###autoload
 (defun ai-code-plain-read-string (prompt &optional initial-input candidate-list)
