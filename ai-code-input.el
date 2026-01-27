@@ -15,6 +15,8 @@
 (require 'imenu)
 
 (declare-function helm-comp-read "helm-mode" (prompt collection &rest args))
+(declare-function evil-visual-state-p "evil-states" ())
+(declare-function evil-emacs-state "evil-states" ())
 
 ;;;###autoload
 (defun ai-code-plain-read-string (prompt &optional initial-input candidate-list)
@@ -26,12 +28,17 @@ This function combines candidate-list with history for better completion."
          (delete-dups (append candidate-list
                               (when (boundp 'ai-code-read-string-history)
                                 ai-code-read-string-history)))))
-    ;; Use minibuffer-setup-hook to disable transient-mark-mode in minibuffer
+    ;; Use minibuffer-setup-hook to disable highlighting in minibuffer
     ;; to prevent initial-input from being highlighted
     (minibuffer-with-setup-hook
         (lambda ()
           ;; Disable transient-mark-mode locally to prevent highlighting
           (setq-local transient-mark-mode nil)
+          ;; If Evil mode is active and in visual state, switch to emacs state
+          (when (and (fboundp 'evil-visual-state-p)
+                     (evil-visual-state-p))
+            (evil-emacs-state))
+          ;; Move cursor to end of initial input
           (goto-char (point-max)))
       ;; Use completing-read with the combined candidates
       (completing-read prompt
