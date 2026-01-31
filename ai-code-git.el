@@ -664,4 +664,3 @@ buffer from which this command was invoked, instead of visiting the file."
 (provide 'ai-code-git)
 
 ;;; ai-code-git.el ends here
- 
