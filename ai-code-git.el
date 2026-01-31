@@ -32,6 +32,13 @@ Candidate values:
 
 (defvar ai-code-files-dir-name)
 
+(defun ai-code--git-ignored-repo-file-p (file root)
+  "Return non-nil when FILE should be ignored for repo candidates."
+  (when (and file root)
+    (let ((ignore-dir (file-truename (expand-file-name ai-code-files-dir-name root)))
+          (truename (file-truename file)))
+      (string-prefix-p ignore-dir truename))))
+
 ;;;###autoload
 (defun ai-code-pull-or-review-diff-file ()
   "Review a diff file with AI Code or generate one if not viewing a diff.
@@ -617,7 +624,6 @@ If not inside a Git repository, do nothing."
 If BASE-DIR is in a Git repository, use `git ls-files' to enumerate files."
   (let* ((git-root (magit-toplevel base-dir))
          (root (or git-root base-dir))
-         (ignore-dir (expand-file-name ai-code-files-dir-name root))
          (files (if git-root
                     (mapcar (lambda (path)
                               (expand-file-name path root))
@@ -626,8 +632,7 @@ If BASE-DIR is in a Git repository, use `git ls-files' to enumerate files."
          (file-times nil))
     (dolist (file files)
       (when (and (file-regular-p file)
-                 (not (string-prefix-p (file-truename ignore-dir)
-                                       (file-truename file))))
+                 (not (ai-code--git-ignored-repo-file-p file root)))
         (let* ((attrs (file-attributes file))
                (mtime (file-attribute-modification-time attrs)))
           (push (cons file mtime) file-times))))

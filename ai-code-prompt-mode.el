@@ -24,6 +24,7 @@
 (declare-function gptel-request "gptel" (prompt &rest args))
 (declare-function gptel-abort "gptel" (buffer))
 (declare-function ai-code--git-repo-recent-modified-files "ai-code-git" (base-dir limit))
+(declare-function ai-code--git-ignored-repo-file-p "ai-code-git" (file root))
 
 (defcustom ai-code-prompt-preprocess-filepaths t
   "When non-nil, preprocess the prompt to replace file paths.
@@ -211,14 +212,6 @@ NOTE: This does not handle file paths containing spaces."
       (and (file-regular-p truename)
            (string-prefix-p git-root-truename truename)))))
 
-(defun ai-code--ignored-repo-file-p (file git-root-truename)
-  "Return non-nil when FILE should be ignored for repo candidates."
-  (when file
-    (let ((ignore-dir (file-truename (expand-file-name ai-code-files-dir-name
-                                                       git-root-truename)))
-          (truename (file-truename file)))
-      (string-prefix-p ignore-dir truename))))
-
 (defun ai-code--relative-filepath (file git-root-truename)
   "Return FILE relative to GIT-ROOT-TRUENAME, prefixed with '@'."
   (concat "@" (file-relative-name (file-truename file) git-root-truename)))
@@ -232,7 +225,7 @@ NOTE: This does not handle file paths containing spaces."
       (let* ((buf (window-buffer win))
              (file (buffer-file-name buf)))
         (when (and (ai-code--file-in-git-repo-p file git-root-truename)
-                   (not (ai-code--ignored-repo-file-p file git-root-truename)))
+                   (not (ai-code--git-ignored-repo-file-p file git-root-truename)))
           (push file files))))
     (nreverse (delete-dups files))))
 
@@ -242,7 +235,7 @@ NOTE: This does not handle file paths containing spaces."
     (dolist (buf (buffer-list))
       (let ((file (buffer-file-name buf)))
         (when (and (ai-code--file-in-git-repo-p file git-root-truename)
-                   (not (ai-code--ignored-repo-file-p file git-root-truename))
+                   (not (ai-code--git-ignored-repo-file-p file git-root-truename))
                    (not (member (file-truename file) skip-files)))
           (push file files))))
     (nreverse files)))
