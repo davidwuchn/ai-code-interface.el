@@ -258,6 +258,7 @@ NOTE: This does not handle file paths containing spaces."
   "Return file path candidates for prompt completion."
   (when-let ((git-root (magit-toplevel)))
     (let* ((git-root-truename (file-truename git-root))
+           (current-file (buffer-file-name (current-buffer)))
            (visible-files (ai-code--visible-window-files git-root-truename))
            (skip-files (mapcar #'file-truename visible-files))
            (buffer-files (ai-code--buffer-file-list git-root-truename skip-files))
@@ -276,7 +277,9 @@ NOTE: This does not handle file paths containing spaces."
            (deduped (ai-code--dedupe-preserve-order combined))
            (filtered '()))
       (dolist (item deduped)
-        (unless (string-prefix-p ignore-prefix item)
+        (unless (or (string-prefix-p ignore-prefix item)
+                    (and current-file
+                         (string= item (ai-code--relative-filepath current-file git-root-truename))))
           (push item filtered)))
       (nreverse filtered))))
 
