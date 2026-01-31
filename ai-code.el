@@ -241,6 +241,7 @@ Shows the current backend label to the right."
     ("f" "Fix Flycheck errors in scope" ai-code-flycheck-fix-errors-in-scope)
     ("k" "Copy Cur File Name (C-u: full)" ai-code-copy-buffer-file-name-to-clipboard)
     ("d" "Toggle current buffer dedicated" ai-code-toggle-current-buffer-dedicated)
+    ("o" "Open recent file (C-u: insert)" ai-code-git-repo-recent-modified-files)
     ;; ("o" "Open Clipboard file dir" ai-code-open-clipboard-file-path-as-dired)
     ("m" "Debug python MCP server" ai-code-debug-mcp)
     ("n" "Take notes from AI session region" ai-code-take-notes)
