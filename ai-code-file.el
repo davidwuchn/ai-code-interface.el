@@ -22,6 +22,7 @@
 (declare-function ai-code--insert-prompt "ai-code-prompt-mode" (prompt-text))
 (declare-function ai-code--process-word-for-filepath "ai-code-prompt-mode" (word git-root-truename))
 (declare-function ai-code-call-gptel-sync "ai-code-prompt-mode" (prompt))
+(declare-function ai-code-backends-infra--session-buffer-p "ai-code-backends-infra" (buffer))
 (declare-function projectile-project-root "projectile")
 
 (defcustom ai-code-sed-command "sed"
@@ -366,6 +367,7 @@ When no region is selected, use the full file path and current function
 \(if any).  When a region is active, use the file path with line range
 in the form filepath#Lstart-Lend."
   (interactive)
+  ;; DONE: I want to let context session candidates to be added, have all repo with ai-code session opened. is it doable? 
   (let* ((current-root (magit-toplevel))
          (all-roots (let ((roots '()))
                       (walk-windows
@@ -375,6 +377,13 @@ in the form filepath#Lstart-Lend."
                              (when (and root (not (member root roots)))
                                (push root roots)))))
                        nil 'current-frame)
+                      (when (fboundp 'ai-code-backends-infra--session-buffer-p)
+                        (dolist (buf (buffer-list))
+                          (when (ai-code-backends-infra--session-buffer-p buf)
+                            (with-current-buffer buf
+                              (let ((root (ignore-errors (magit-toplevel))))
+                                (when (and root (not (member root roots)))
+                                  (push root roots)))))))
                       (nreverse roots)))
          (ordered-roots (if (and current-root (member current-root all-roots))
                             (cons current-root (remove current-root all-roots))
