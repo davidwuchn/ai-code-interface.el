@@ -612,9 +612,9 @@ If not inside a Git repository, do nothing."
           (message "ai-code-update-git-ignore: no updates needed"))))))
 
 ;;;###autoload
-(defun ai-code-git-repo-recent-modified-files ()
+(defun ai-code-git-repo-recent-modified-files (prefix)
   "Open one of the most recently modified files in the repo or current dir."
-  (interactive)
+  (interactive "P")
   (let* ((git-root (magit-toplevel))
          (base-dir (or git-root default-directory))
          (files (if git-root
@@ -622,7 +622,8 @@ If not inside a Git repository, do nothing."
                               (expand-file-name path git-root))
                             (magit-git-lines "ls-files"))
                   (directory-files base-dir t directory-files-no-dot-files-regexp)))
-         (file-times nil))
+         (file-times nil)
+         (origin-buffer (current-buffer)))
     (dolist (file files)
       (when (file-regular-p file)
         (let* ((attrs (file-attributes file))
@@ -636,7 +637,7 @@ If not inside a Git repository, do nothing."
              (top nil)
              (count 0))
         (dolist (item sorted)
-          (when (< count 10)
+          (when (< count 20)
             (push item top)
             (setq count (1+ count))))
         (setq top (nreverse top))
@@ -648,7 +649,11 @@ If not inside a Git repository, do nothing."
                  (choice (completing-read "Recent modified file: "
                                           candidates nil t)))
             (unless (string= choice "")
-              (find-file (expand-file-name choice base-dir)))))))))
+              (if prefix
+                  (when (buffer-live-p origin-buffer)
+                    (with-current-buffer origin-buffer
+                      (insert "@" choice)))
+                (find-file (expand-file-name choice base-dir))))))))))
 
 (provide 'ai-code-git)
 
