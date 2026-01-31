@@ -23,6 +23,7 @@
 (declare-function ai-code-cli-switch-to-buffer "ai-code-interface" ())
 (declare-function gptel-request "gptel" (prompt &rest args))
 (declare-function gptel-abort "gptel" (buffer))
+(declare-function ai-code--git-repo-recent-modified-files "ai-code-git" (base-dir limit))
 
 (defcustom ai-code-prompt-preprocess-filepaths t
   "When non-nil, preprocess the prompt to replace file paths.
@@ -210,17 +211,28 @@ NOTE: This does not handle file paths containing spaces."
       (and (file-regular-p truename)
            (string-prefix-p git-root-truename truename)))))
 
+(defun ai-code--ignored-repo-file-p (file git-root-truename)
+  "Return non-nil when FILE should be ignored for repo candidates."
+  (when file
+    (let ((ignore-dir (file-truename (expand-file-name ai-code-files-dir-name
+                                                       git-root-truename)))
+          (truename (file-truename file)))
+      (string-prefix-p ignore-dir truename))))
+
 (defun ai-code--relative-filepath (file git-root-truename)
   "Return FILE relative to GIT-ROOT-TRUENAME, prefixed with '@'."
   (concat "@" (file-relative-name (file-truename file) git-root-truename)))
 
 (defun ai-code--visible-window-files (git-root-truename)
   "Return visible window file list under GIT-ROOT-TRUENAME."
-  (let ((files '()))
-    (dolist (win (window-list nil 'no-minibuffer))
+  (let ((files '())
+        (selected (selected-window)))
+    (dolist (win (cons selected
+                       (delq selected (window-list nil 'no-minibuffer))))
       (let* ((buf (window-buffer win))
              (file (buffer-file-name buf)))
-        (when (ai-code--file-in-git-repo-p file git-root-truename)
+        (when (and (ai-code--file-in-git-repo-p file git-root-truename)
+                   (not (ai-code--ignored-repo-file-p file git-root-truename)))
           (push file files))))
     (nreverse (delete-dups files))))
 
@@ -230,31 +242,24 @@ NOTE: This does not handle file paths containing spaces."
     (dolist (buf (buffer-list))
       (let ((file (buffer-file-name buf)))
         (when (and (ai-code--file-in-git-repo-p file git-root-truename)
+                   (not (ai-code--ignored-repo-file-p file git-root-truename))
                    (not (member (file-truename file) skip-files)))
           (push file files))))
     (nreverse files)))
 
 (defun ai-code--repo-recent-files (git-root)
   "Return top 1000 most recently modified files under GIT-ROOT."
-  (let* ((git-root-truename (file-truename git-root))
-         (files (directory-files-recursively git-root-truename ".*" nil
-                                             (lambda (path)
-                                               (not (string-match-p "/\\.git/" path)))))
-         (file-info '()))
-    (dolist (file files)
-      (when (file-regular-p file)
-        (let ((attrs (file-attributes file)))
-          (when attrs
-            (push (cons (file-attribute-modification-time attrs) file) file-info)))))
-    (setq file-info
-          (sort file-info (lambda (a b) (time-less-p (car b) (car a)))))
-    (let ((recent-files '())
-          (count 0))
-      (dolist (entry file-info)
-        (when (< count 1000)
-          (push (cdr entry) recent-files)
-          (setq count (1+ count))))
-      (nreverse recent-files))))
+  (ai-code--git-repo-recent-modified-files git-root 1000))
+
+(defun ai-code--dedupe-preserve-order (items)
+  "Return ITEMS with duplicates removed while preserving order."
+  (let ((seen (make-hash-table :test #'equal))
+        (result '()))
+    (dolist (item items)
+      (unless (gethash item seen)
+        (puthash item t seen)
+        (push item result)))
+    (nreverse result)))
 
 (defun ai-code--prompt-filepath-candidates ()
   "Return file path candidates for prompt completion."
@@ -264,14 +269,23 @@ NOTE: This does not handle file paths containing spaces."
            (skip-files (mapcar #'file-truename visible-files))
            (buffer-files (ai-code--buffer-file-list git-root-truename skip-files))
            (recent-files (ai-code--repo-recent-files git-root-truename))
-           (candidates '()))
-      (dolist (file visible-files)
-        (push (ai-code--relative-filepath file git-root-truename) candidates))
-      (dolist (file buffer-files)
-        (push (ai-code--relative-filepath file git-root-truename) candidates))
-      (dolist (file recent-files)
-        (push (ai-code--relative-filepath file git-root-truename) candidates))
-      (nreverse (delete-dups candidates)))))
+           (ignore-prefix (concat "@" ai-code-files-dir-name "/"))
+           (visible-paths (mapcar (lambda (file)
+                                    (ai-code--relative-filepath file git-root-truename))
+                                  visible-files))
+           (buffer-paths (mapcar (lambda (file)
+                                   (ai-code--relative-filepath file git-root-truename))
+                                 buffer-files))
+           (recent-paths (mapcar (lambda (file)
+                                   (ai-code--relative-filepath file git-root-truename))
+                                 recent-files))
+           (combined (append visible-paths buffer-paths recent-paths))
+           (deduped (ai-code--dedupe-preserve-order combined))
+           (filtered '()))
+      (dolist (item deduped)
+        (unless (string-prefix-p ignore-prefix item)
+          (push item filtered)))
+      (nreverse filtered))))
 
 (defun ai-code--prompt-filepath-capf ()
   "Provide completion candidates for @file paths in prompt buffer."
