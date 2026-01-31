@@ -613,7 +613,13 @@ If not inside a Git repository, do nothing."
 
 ;;;###autoload
 (defun ai-code-git-repo-recent-modified-files (prefix)
-  "Open one of the most recently modified files in the repo or current dir."
+  "Open or insert one of the most recently modified files in the repo or current dir.
+With no PREFIX argument, prompt for a recently modified file and open it
+with `find-file'.
+
+With a PREFIX argument (e.g., when called via `C-u'), prompt for a recently
+modified file and insert \"@\" followed by the selected filename into the
+buffer from which this command was invoked, instead of visiting the file."
   (interactive "P")
   (let* ((git-root (magit-toplevel))
          (base-dir (or git-root default-directory))
