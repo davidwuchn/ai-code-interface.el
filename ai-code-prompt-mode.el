@@ -332,7 +332,7 @@ Special commands:
   (define-key ai-code-prompt-mode-map (kbd "C-c C-c") #'ai-code-prompt-send-block)
   (add-hook 'completion-at-point-functions #'ai-code--prompt-filepath-capf nil t)
   (add-hook 'post-self-insert-hook #'ai-code--prompt-auto-trigger-filepath-completion nil t)
-  ;; Add cleanup hook to remove our hooks when mode changes or buffer is killed
+  ;; Add cleanup hook to remove our hooks when mode changes
   (add-hook 'change-major-mode-hook #'ai-code--prompt-mode-cleanup nil t)
   ;; YASnippet support
   (when (require 'yasnippet nil t)
