@@ -313,6 +313,11 @@ If PROMPT-TEXT is a command (starts with /), execute it directly instead."
         (ai-code--execute-command processed-prompt)
       (ai-code--write-prompt-to-file-and-send processed-prompt))))
 
+(defun ai-code--prompt-mode-cleanup ()
+  "Clean up hooks when leaving ai-code-prompt-mode."
+  (remove-hook 'completion-at-point-functions #'ai-code--prompt-filepath-capf t)
+  (remove-hook 'post-self-insert-hook #'ai-code--prompt-auto-trigger-filepath-completion t))
+
 ;; Define the AI Prompt Mode (derived from org-mode)
 ;;;###autoload
 (define-derived-mode ai-code-prompt-mode org-mode "AI Prompt"
@@ -326,6 +331,8 @@ Special commands:
   (define-key ai-code-prompt-mode-map (kbd "C-c C-c") #'ai-code-prompt-send-block)
   (add-hook 'completion-at-point-functions #'ai-code--prompt-filepath-capf nil t)
   (add-hook 'post-self-insert-hook #'ai-code--prompt-auto-trigger-filepath-completion nil t)
+  ;; Add cleanup hook to remove our hooks when mode changes or buffer is killed
+  (add-hook 'change-major-mode-hook #'ai-code--prompt-mode-cleanup nil t)
   ;; YASnippet support
   (when (require 'yasnippet nil t)
     (yas-minor-mode 1)

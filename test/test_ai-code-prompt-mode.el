@@ -622,5 +622,23 @@ and ensures everything is cleaned up afterward."
          ;; Should NOT have called completion-at-point
          (should-not completion-called))))))
 
+(ert-deftest ai-code-test-prompt-mode-cleanup-on-mode-change ()
+  "Test that hooks are properly cleaned up when changing major mode."
+  (with-temp-buffer
+    ;; Enable ai-code-prompt-mode
+    (ai-code-prompt-mode)
+    
+    ;; Verify hooks are installed
+    (should (memq #'ai-code--prompt-filepath-capf completion-at-point-functions))
+    (should (memq #'ai-code--prompt-auto-trigger-filepath-completion post-self-insert-hook))
+    (should (memq #'ai-code--prompt-mode-cleanup change-major-mode-hook))
+    
+    ;; Switch to a different mode (fundamental-mode)
+    (fundamental-mode)
+    
+    ;; Verify hooks are removed
+    (should-not (memq #'ai-code--prompt-filepath-capf completion-at-point-functions))
+    (should-not (memq #'ai-code--prompt-auto-trigger-filepath-completion post-self-insert-hook))))
+
 (provide 'test-ai-code-prompt-mode)
 ;;; test_ai-code-prompt-mode.el ends here
