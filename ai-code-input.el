@@ -17,6 +17,8 @@
 
 (declare-function helm-comp-read "helm-mode" (prompt collection &rest args))
 (declare-function ai-code-backends-infra--session-buffer-p "ai-code-backends-infra" (buffer))
+(declare-function ai-code-backends-infra--terminal-send-string "ai-code-backends-infra" (string))
+(declare-function ai-code-backends-infra--terminal-send-backspace "ai-code-backends-infra" ())
 (declare-function ai-code--prompt-filepath-candidates "ai-code-prompt-mode" ())
 
 ;;;###autoload
@@ -206,10 +208,42 @@ The current buffer's file is always first."
              (eq (char-before) ?@))
     (let ((candidates (ai-code--prompt-filepath-candidates)))
       (when candidates
-        (delete-char -1)  ; Remove the '@' we just typed
         (let ((choice (completing-read "File: " candidates nil nil)))
           (when (and choice (not (string-empty-p choice)))
-            (insert "@" choice)))))))
+            (delete-char -1)  ; Remove the '@' we just typed
+            (insert choice)))))))
+
+(defun ai-code--session-auto-trigger-filepath-completion ()
+  "Auto trigger file path completion in AI session buffers when '@' is inserted."
+  (when (and ai-code-prompt-comment-filepath-completion-enabled
+             (fboundp 'ai-code-backends-infra--session-buffer-p)
+             (ai-code-backends-infra--session-buffer-p (current-buffer))
+             (not (minibufferp))
+             (eq (char-before) ?@)
+             (magit-toplevel))
+    (let ((candidates (ai-code--prompt-filepath-candidates)))
+      (when candidates
+        (let ((choice (completing-read "File: " candidates nil nil)))
+          (when (and choice (not (string-empty-p choice)))
+            (ai-code-backends-infra--terminal-send-backspace)
+            (ai-code-backends-infra--terminal-send-string choice)))))))
+
+(defun ai-code--session-handle-at-input ()
+  "Handle '@' input in AI session buffers with optional filepath completion."
+  (interactive)
+  (let ((should-complete
+         (and ai-code-prompt-comment-filepath-completion-enabled
+              (fboundp 'ai-code-backends-infra--session-buffer-p)
+              (ai-code-backends-infra--session-buffer-p (current-buffer))
+              (not (minibufferp))
+              (magit-toplevel))))
+    (when should-complete
+      (let ((candidates (ai-code--prompt-filepath-candidates)))
+        (when candidates
+          (let ((choice (completing-read "File: " candidates nil nil)))
+            (when (and choice (not (string-empty-p choice)))
+              (ai-code-backends-infra--terminal-send-backspace)
+              (ai-code-backends-infra--terminal-send-string choice))))))))
 
 (defun ai-code--comment-filepath-setup ()
   "Ensure comment @ completion is available in the current buffer."
@@ -225,12 +259,16 @@ The current buffer's file is always first."
       (progn
         (add-hook 'post-self-insert-hook
                   #'ai-code--comment-auto-trigger-filepath-completion)
+        (add-hook 'post-self-insert-hook
+                  #'ai-code--session-auto-trigger-filepath-completion)
         (add-hook 'after-change-major-mode-hook #'ai-code--comment-filepath-setup)
         (dolist (buf (buffer-list))
           (with-current-buffer buf
             (ai-code--comment-filepath-setup))))
     (remove-hook 'post-self-insert-hook
                  #'ai-code--comment-auto-trigger-filepath-completion)
+    (remove-hook 'post-self-insert-hook
+                 #'ai-code--session-auto-trigger-filepath-completion)
     (remove-hook 'after-change-major-mode-hook #'ai-code--comment-filepath-setup)
     (dolist (buf (buffer-list))
       (with-current-buffer buf

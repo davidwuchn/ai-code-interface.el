@@ -28,6 +28,7 @@
 (declare-function eat--adjust-process-window-size "eat" (&rest args))
 (declare-function eat-mode "eat" ())
 (declare-function eat-exec "eat" (&rest args))
+(declare-function ai-code--session-handle-at-input "ai-code-input" ())
 
 ;; Declare vterm dynamic variables for let-binding to work with lexical-binding
 (defvar vterm-shell)
@@ -220,6 +221,8 @@ Activity tracking for notifications is handled separately by
   (setq-local vterm-scroll-to-bottom-on-output nil)
   (when (boundp 'vterm--redraw-immididately)
     (setq-local vterm--redraw-immididately nil))
+  (when (fboundp 'ai-code--session-handle-at-input)
+    (local-set-key (kbd "@") #'ai-code--session-handle-at-input))
   (setq-local cursor-in-non-selected-windows nil)
   (setq-local blink-cursor-mode nil)
   (setq-local cursor-type nil)
@@ -277,6 +280,16 @@ Activity tracking for notifications is handled separately by
    ((eq ai-code-backends-infra-terminal-backend 'eat)
     (when (bound-and-true-p eat-terminal)
       (eat-term-send-string eat-terminal "\r")))
+   (t (error "Unknown terminal backend: %s" ai-code-backends-infra-terminal-backend))))
+
+(defun ai-code-backends-infra--terminal-send-backspace ()
+  "Send backspace key to the terminal in the current buffer."
+  (cond
+   ((eq ai-code-backends-infra-terminal-backend 'vterm)
+    (vterm-send-string "\177"))
+   ((eq ai-code-backends-infra-terminal-backend 'eat)
+    (when (bound-and-true-p eat-terminal)
+      (eat-term-send-string eat-terminal "\177")))
    (t (error "Unknown terminal backend: %s" ai-code-backends-infra-terminal-backend))))
 
 ;;; Reflow and Window Management
@@ -645,6 +658,8 @@ ENV-VARS is a list of environment variables."
              (args (cdr parts)))
         (with-current-buffer buffer
           (unless (eq major-mode 'eat-mode) (eat-mode))
+          (when (fboundp 'ai-code--session-handle-at-input)
+            (local-set-key (kbd "@") #'ai-code--session-handle-at-input))
           (setq-local process-environment (append env-vars process-environment))
           (eat-exec buffer buffer-name program nil args)
           ;; Add process filter to track activity for notifications
