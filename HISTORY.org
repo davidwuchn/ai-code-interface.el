@@ -3,6 +3,8 @@
 
 ** Main branch change
 
+** 1.30
+- Feat: Enable @ completion in ai coding session window
 - Feat: @ in ai-code-prompt-mode will trigger filename completion
   - It will also work when ai-code-toggle-filepath-completion is triggered in config
 - Feat: Add command to open recently modified files in Git repo or directory
