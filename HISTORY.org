@@ -3,6 +3,9 @@
 
 ** Main branch change
 
+- Feat: @ in ai-code-prompt-mode will trigger filename completion
+- Feat: Add command to open recently modified files in Git repo or directory
+
 ** 1.22
 - Chore: Better error handling when AI coding CLI failed to start 
 - Fix notification after visible response, by Silex
