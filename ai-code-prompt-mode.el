@@ -25,7 +25,6 @@
 (declare-function gptel-abort "gptel" (buffer))
 (declare-function ai-code--git-repo-recent-modified-files "ai-code-git" (base-dir limit))
 (declare-function ai-code--git-ignored-repo-file-p "ai-code-git" (file root))
-(declare-function ai-code-backends-infra--session-buffer-p "ai-code-backends-infra" (buffer))
 
 (defcustom ai-code-prompt-preprocess-filepaths t
   "When non-nil, preprocess the prompt to replace file paths.
@@ -302,85 +301,6 @@ NOTE: This does not handle file paths containing spaces."
   (when (and (not (minibufferp))
              (eq (char-before) ?@))
     (completion-at-point)))
-
-(defvar ai-code-prompt-comment-filepath-completion-enabled nil
-  "Non-nil enables @ file completion inside comments in file buffers.")
-
-(defun ai-code--any-ai-session-active-p ()
-  "Return non-nil when any AI session buffer is active."
-  (when (fboundp 'ai-code-backends-infra--session-buffer-p)
-    (let ((active nil))
-      (dolist (buf (buffer-list))
-        (when (and (not active)
-                   (ai-code-backends-infra--session-buffer-p buf))
-          (setq active t)))
-      active)))
-
-(defun ai-code--comment-context-p ()
-  "Return non-nil when point is inside a comment."
-  (nth 4 (syntax-ppss)))
-
-(defun ai-code--comment-filepath-capf ()
-  "Provide completion candidates for @file paths inside comments."
-  (when (and ai-code-prompt-comment-filepath-completion-enabled
-             (ai-code--any-ai-session-active-p)
-             (ai-code--comment-context-p)
-             (buffer-file-name)
-             (not (minibufferp))
-             (magit-toplevel))
-    (let ((end (point))
-          (start (save-excursion
-                   (skip-chars-backward "A-Za-z0-9_./-")
-                   (when (eq (char-before) ?@)
-                     (1- (point))))))
-      (when start
-        (let ((candidates (ai-code--prompt-filepath-candidates)))
-          (when candidates
-            (list start end candidates :exclusive 'no)))))))
-
-(defun ai-code--comment-auto-trigger-filepath-completion ()
-  "Auto trigger file path completion in comments when '@' is inserted."
-  (when (and ai-code-prompt-comment-filepath-completion-enabled
-             (ai-code--any-ai-session-active-p)
-             (ai-code--comment-context-p)
-             (buffer-file-name)
-             (not (minibufferp))
-             (eq (char-before) ?@))
-    (completion-at-point)))
-
-(defun ai-code--comment-filepath-setup ()
-  "Ensure comment @ completion is available in the current buffer."
-  (add-hook 'completion-at-point-functions #'ai-code--comment-filepath-capf nil t))
-
-;;;###autoload
-(define-minor-mode ai-code-prompt-comment-filepath-completion-mode
-  "Toggle @ file completion inside comments across all buffers."
-  :global t
-  (setq ai-code-prompt-comment-filepath-completion-enabled
-        ai-code-prompt-comment-filepath-completion-mode)
-  (if ai-code-prompt-comment-filepath-completion-mode
-      (progn
-        (add-hook 'post-self-insert-hook
-                  #'ai-code--comment-auto-trigger-filepath-completion)
-        (add-hook 'after-change-major-mode-hook #'ai-code--comment-filepath-setup)
-        (dolist (buf (buffer-list))
-          (with-current-buffer buf
-            (ai-code--comment-filepath-setup))))
-    (remove-hook 'post-self-insert-hook
-                 #'ai-code--comment-auto-trigger-filepath-completion)
-    (remove-hook 'after-change-major-mode-hook #'ai-code--comment-filepath-setup)
-    (dolist (buf (buffer-list))
-      (with-current-buffer buf
-        (remove-hook 'completion-at-point-functions
-                     #'ai-code--comment-filepath-capf t)))))
-
-;;;###autoload
-(defun ai-code-toggle-comment-filepath-completion ()
-  "Toggle @ file completion inside comments across all buffers."
-  (interactive)
-  (if ai-code-prompt-comment-filepath-completion-mode
-      (ai-code-prompt-comment-filepath-completion-mode -1)
-    (ai-code-prompt-comment-filepath-completion-mode 1)))
 
 (defun ai-code--insert-prompt (prompt-text)
   "Preprocess and insert PROMPT-TEXT into the AI prompt file.

@@ -13,8 +13,11 @@
 
 (require 'cl-lib)  ; For `cl-subseq`
 (require 'imenu)
+(require 'magit)
 
 (declare-function helm-comp-read "helm-mode" (prompt collection &rest args))
+(declare-function ai-code-backends-infra--session-buffer-p "ai-code-backends-infra" (buffer))
+(declare-function ai-code--prompt-filepath-candidates "ai-code-prompt-mode" ())
 
 ;;;###autoload
 (defun ai-code-plain-read-string (prompt &optional initial-input candidate-list)
@@ -154,9 +157,90 @@ The current buffer's file is always first."
       (let ((buffer (window-buffer window)))
         (setq functions (append (ai-code--get-functions-from-buffer buffer) functions))))
     (setq functions (sort (delete-dups (cl-remove-if-not #'stringp functions)) #'string<))
-    (let ((selected (completing-read "Insert function: " functions nil nil)))
-      (when (and selected (not (string-empty-p selected)))
-        (insert selected)))))
+      (let ((selected (completing-read "Insert function: " functions nil nil)))
+        (when (and selected (not (string-empty-p selected)))
+          (insert selected)))))
+
+(defvar ai-code-prompt-comment-filepath-completion-enabled nil
+  "Non-nil enables @ file completion inside comments in file buffers.")
+
+(defun ai-code--any-ai-session-active-p ()
+  "Return non-nil when any AI session buffer is active."
+  (when (fboundp 'ai-code-backends-infra--session-buffer-p)
+    (let ((active nil))
+      (dolist (buf (buffer-list))
+        (when (and (not active)
+                   (ai-code-backends-infra--session-buffer-p buf))
+          (setq active t)))
+      active)))
+
+(defun ai-code--comment-context-p ()
+  "Return non-nil when point is inside a comment."
+  (nth 4 (syntax-ppss)))
+
+(defun ai-code--comment-filepath-capf ()
+  "Provide completion candidates for @file paths inside comments."
+  (when (and ai-code-prompt-comment-filepath-completion-enabled
+             (ai-code--any-ai-session-active-p)
+             (ai-code--comment-context-p)
+             (buffer-file-name)
+             (not (minibufferp))
+             (magit-toplevel))
+    (let ((end (point))
+          (start (save-excursion
+                   (skip-chars-backward "A-Za-z0-9_./-")
+                   (when (eq (char-before) ?@)
+                     (1- (point))))))
+      (when start
+        (let ((candidates (ai-code--prompt-filepath-candidates)))
+          (when candidates
+            (list start end candidates :exclusive 'no)))))))
+
+(defun ai-code--comment-auto-trigger-filepath-completion ()
+  "Auto trigger file path completion in comments when '@' is inserted."
+  (when (and ai-code-prompt-comment-filepath-completion-enabled
+             (ai-code--any-ai-session-active-p)
+             (ai-code--comment-context-p)
+             (buffer-file-name)
+             (not (minibufferp))
+             (eq (char-before) ?@))
+    (completion-at-point)))
+
+(defun ai-code--comment-filepath-setup ()
+  "Ensure comment @ completion is available in the current buffer."
+  (add-hook 'completion-at-point-functions #'ai-code--comment-filepath-capf nil t))
+
+;;;###autoload
+(define-minor-mode ai-code-prompt-comment-filepath-completion-mode
+  "Toggle @ file completion inside comments across all buffers."
+  :global t
+  (setq ai-code-prompt-comment-filepath-completion-enabled
+        ai-code-prompt-comment-filepath-completion-mode)
+  (if ai-code-prompt-comment-filepath-completion-mode
+      (progn
+        (add-hook 'post-self-insert-hook
+                  #'ai-code--comment-auto-trigger-filepath-completion)
+        (add-hook 'after-change-major-mode-hook #'ai-code--comment-filepath-setup)
+        (dolist (buf (buffer-list))
+          (with-current-buffer buf
+            (ai-code--comment-filepath-setup))))
+    (remove-hook 'post-self-insert-hook
+                 #'ai-code--comment-auto-trigger-filepath-completion)
+    (remove-hook 'after-change-major-mode-hook #'ai-code--comment-filepath-setup)
+    (dolist (buf (buffer-list))
+      (with-current-buffer buf
+        (remove-hook 'completion-at-point-functions
+                     #'ai-code--comment-filepath-capf t)))))
+
+;;;###autoload
+(defun ai-code-toggle-comment-filepath-completion ()
+  "Toggle @ file completion inside comments across all buffers."
+  (interactive)
+  (if ai-code-prompt-comment-filepath-completion-mode
+      (ai-code-prompt-comment-filepath-completion-mode -1)
+    (ai-code-prompt-comment-filepath-completion-mode 1))
+  (message "Comment @ completion is %s"
+           (if ai-code-prompt-comment-filepath-completion-mode "enabled" "disabled")))
 
 (provide 'ai-code-input)
 ;;; ai-code-input.el ends here
