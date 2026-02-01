@@ -368,14 +368,12 @@ and ensures everything is cleaned up afterward."
   "Test that ai-code--visible-window-files returns files from visible windows."
   (ai-code-with-test-repo
    (let ((test-file-1 (expand-file-name "file1.el" git-root))
-         (test-file-2 (expand-file-name "file2.el" git-root))
-         (ignored-file (expand-file-name ".gitignore" git-root)))
+         (test-file-2 (expand-file-name "file2.el" git-root)))
      (unwind-protect
          (progn
            ;; Create test files
            (with-temp-file test-file-1 (insert "content1"))
            (with-temp-file test-file-2 (insert "content2"))
-           (with-temp-file ignored-file (insert "*.log"))
            
            ;; Mock ai-code--git-ignored-repo-file-p to return nil for all files
            (cl-letf (((symbol-function 'ai-code--git-ignored-repo-file-p)
@@ -399,8 +397,7 @@ and ensures everything is cleaned up afterward."
        
        ;; Cleanup
        (when (file-exists-p test-file-1) (delete-file test-file-1))
-       (when (file-exists-p test-file-2) (delete-file test-file-2))
-       (when (file-exists-p ignored-file) (delete-file ignored-file))))))
+       (when (file-exists-p test-file-2) (delete-file test-file-2))))))
 
 (ert-deftest ai-code-test-buffer-file-list ()
   "Test that ai-code--buffer-file-list returns buffer files excluding skip-files."
@@ -546,13 +543,17 @@ and ensures everything is cleaned up afterward."
      (cl-letf (((symbol-function 'ai-code--prompt-filepath-candidates)
                 (lambda () '("@file1.el" "@file2.el"))))
        
-       (let ((result (ai-code--prompt-filepath-capf)))
+       (let* ((result (ai-code--prompt-filepath-capf))
+              (start (nth 0 result))
+              (end (nth 1 result))
+              (candidates (nth 2 result))
+              (props (nthcdr 3 result)))
          ;; Should return completion table
          (should result)
-         (should (= (nth 0 result) (- (point) 1))) ; start position
-         (should (= (nth 1 result) (point)))        ; end position
-         (should (equal (nth 2 result) '("@file1.el" "@file2.el"))) ; candidates
-         (should (eq (plist-get (nthcdr 3 result) :exclusive) 'no)))))))
+         (should (= start (- (point) 1)))  ; start position at @
+         (should (= end (point)))          ; end position at current point
+         (should (equal candidates '("@file1.el" "@file2.el"))) ; candidates
+         (should (eq (plist-get props :exclusive) 'no)))))))
 
 (ert-deftest ai-code-test-prompt-filepath-capf-no-candidates-without-at ()
   "Test that ai-code--prompt-filepath-capf returns nil when '@' is not present."
@@ -570,17 +571,20 @@ and ensures everything is cleaned up afterward."
    (with-temp-buffer
      ;; Insert text with @ and partial path
      (insert "Check @src/ma")
-     
-     ;; Mock dependencies
-     (cl-letf (((symbol-function 'ai-code--prompt-filepath-candidates)
-                (lambda () '("@src/main.el" "@src/main.js"))))
-       
-       (let ((result (ai-code--prompt-filepath-capf)))
-         ;; Should return completion table
-         (should result)
-         (should (= (nth 0 result) (- (point) 7))) ; start at @
-         (should (= (nth 1 result) (point)))        ; end at current position
-         (should (equal (nth 2 result) '("@src/main.el" "@src/main.js"))))))))
+     (let ((at-position (- (point) (length "src/ma"))))
+       ;; Mock dependencies
+       (cl-letf (((symbol-function 'ai-code--prompt-filepath-candidates)
+                  (lambda () '("@src/main.el" "@src/main.js"))))
+         
+         (let* ((result (ai-code--prompt-filepath-capf))
+                (start (nth 0 result))
+                (end (nth 1 result))
+                (candidates (nth 2 result)))
+           ;; Should return completion table
+           (should result)
+           (should (= start (1- at-position))) ; start at @ (one before 's')
+           (should (= end (point)))            ; end at current position
+           (should (equal candidates '("@src/main.el" "@src/main.js"))))))))))
 
 (ert-deftest ai-code-test-prompt-auto-trigger-filepath-completion ()
   "Test that ai-code--prompt-auto-trigger-filepath-completion triggers completion after '@'."
