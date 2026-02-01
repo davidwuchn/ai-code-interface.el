@@ -97,13 +97,14 @@
 
 (ert-deftest ai-code-test-any-ai-session-active-p-function-not-available ()
   "Test that ai-code--any-ai-session-active-p returns nil when function is not available."
-  ;; Temporarily unbind the function
-  (cl-letf (((symbol-function 'fboundp)
-             (lambda (sym)
-               (if (eq sym 'ai-code-backends-infra--session-buffer-p)
-                   nil
-                 (funcall (symbol-function 'fboundp) sym)))))
-    (should-not (ai-code--any-ai-session-active-p))))
+  ;; Save the original function and temporarily unbind it
+  (let ((original-fn (symbol-function 'ai-code-backends-infra--session-buffer-p)))
+    (unwind-protect
+        (progn
+          (fmakunbound 'ai-code-backends-infra--session-buffer-p)
+          (should-not (ai-code--any-ai-session-active-p)))
+      ;; Restore the function
+      (fset 'ai-code-backends-infra--session-buffer-p original-fn))))
 
 (ert-deftest ai-code-test-any-ai-session-active-p-multiple-buffers ()
   "Test AI session detection with multiple buffers, only one being a session."
@@ -571,5 +572,5 @@
         ;; Should NOT have called completion-at-point (in minibuffer)
         (should-not completion-called)))))
 
-(provide 'test-ai-code-input)
+(provide 'test_ai-code-input)
 ;;; test_ai-code-input.el ends here
