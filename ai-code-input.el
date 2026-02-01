@@ -227,21 +227,15 @@ The current buffer's file is always first."
             (ai-code-backends-infra--terminal-send-string choice)))))))
 
 (defun ai-code--session-handle-at-input ()
-  "Handle '@' input in AI session buffers with optional filepath completion."
+  "Handle '@' input in AI session buffers.
+
+This command simply inserts \"@\" so that `post-self-insert-hook'
+based mechanisms (such as
+`ai-code--session-auto-trigger-filepath-completion') can run.
+It intentionally does not perform completion itself to avoid
+duplicated logic."
   (interactive)
-  (let ((should-complete
-         (and ai-code-prompt-filepath-completion-enabled
-              (fboundp 'ai-code-backends-infra--session-buffer-p)
-              (ai-code-backends-infra--session-buffer-p (current-buffer))
-              (not (minibufferp))
-              (magit-toplevel))))
-    (when should-complete
-      (let ((candidates (ai-code--prompt-filepath-candidates)))
-        (when candidates
-          (let ((choice (completing-read "File: " candidates nil nil)))
-            (when (and choice (not (string-empty-p choice)))
-              (ai-code-backends-infra--terminal-send-backspace)
-              (ai-code-backends-infra--terminal-send-string choice))))))))
+  (insert "@"))
 
 (defun ai-code--comment-filepath-setup ()
   "Ensure comment @ completion is available in the current buffer."
