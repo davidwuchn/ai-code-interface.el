@@ -229,6 +229,9 @@ The current buffer's file is always first."
 (defun ai-code--session-handle-at-input ()
   "Handle '@' input in AI session buffers with optional filepath completion."
   (interactive)
+  ;; Always send "@" to terminal first
+  (ai-code-backends-infra--terminal-send-string "@")
+  ;; Then conditionally trigger completion
   (let ((should-complete
          (and ai-code-prompt-filepath-completion-enabled
               (fboundp 'ai-code-backends-infra--session-buffer-p)
