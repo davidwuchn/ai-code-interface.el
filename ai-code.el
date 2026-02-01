@@ -41,7 +41,7 @@
 ;; Key features:
 ;;   - Transient-driven Hub (C-c a) for all AI capabilities.
 ;;   - One key switching to different AI backend (C-c a s).
-;;   - Context-aware code actions (change code, implement TODOs, explain code).
+;;   - Context-aware code actions (change code, implement TODOs, explain code, @ completion).
 ;;   - Agile development workflows (TDD cycle, refactoring navigator, review helper).
 ;;   - Seamless prompt management using Org-mode.
 ;;   - AI-assisted bash commands and productivity utilities.
