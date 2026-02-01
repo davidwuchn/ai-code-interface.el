@@ -163,8 +163,8 @@ The current buffer's file is always first."
         (when (and selected (not (string-empty-p selected)))
           (insert selected)))))
 
-(defvar ai-code-prompt-comment-filepath-completion-enabled nil
-  "Non-nil enables @ file completion inside comments in file buffers.")
+(defvar ai-code-prompt-filepath-completion-enabled nil
+  "Non-nil enables @ file completion inside comments and AI sessions.")
 
 (defun ai-code--any-ai-session-active-p ()
   "Return non-nil when any AI session buffer is active."
@@ -182,7 +182,7 @@ The current buffer's file is always first."
 
 (defun ai-code--comment-filepath-capf ()
   "Provide completion candidates for @file paths inside comments."
-  (when (and ai-code-prompt-comment-filepath-completion-enabled
+  (when (and ai-code-prompt-filepath-completion-enabled
              (ai-code--any-ai-session-active-p)
              (ai-code--comment-context-p)
              (buffer-file-name)
@@ -200,7 +200,7 @@ The current buffer's file is always first."
 
 (defun ai-code--comment-auto-trigger-filepath-completion ()
   "Auto trigger file path completion in comments when '@' is inserted."
-  (when (and ai-code-prompt-comment-filepath-completion-enabled
+  (when (and ai-code-prompt-filepath-completion-enabled
              (ai-code--any-ai-session-active-p)
              (ai-code--comment-context-p)
              (buffer-file-name)
@@ -215,7 +215,7 @@ The current buffer's file is always first."
 
 (defun ai-code--session-auto-trigger-filepath-completion ()
   "Auto trigger file path completion in AI session buffers when '@' is inserted."
-  (when (and ai-code-prompt-comment-filepath-completion-enabled
+  (when (and ai-code-prompt-filepath-completion-enabled
              (fboundp 'ai-code-backends-infra--session-buffer-p)
              (ai-code-backends-infra--session-buffer-p (current-buffer))
              (not (minibufferp))
@@ -232,7 +232,7 @@ The current buffer's file is always first."
   "Handle '@' input in AI session buffers with optional filepath completion."
   (interactive)
   (let ((should-complete
-         (and ai-code-prompt-comment-filepath-completion-enabled
+         (and ai-code-prompt-filepath-completion-enabled
               (fboundp 'ai-code-backends-infra--session-buffer-p)
               (ai-code-backends-infra--session-buffer-p (current-buffer))
               (not (minibufferp))
@@ -250,12 +250,12 @@ The current buffer's file is always first."
   (add-hook 'completion-at-point-functions #'ai-code--comment-filepath-capf nil t))
 
 ;;;###autoload
-(define-minor-mode ai-code-prompt-comment-filepath-completion-mode
-  "Toggle @ file completion inside comments across all buffers."
+(define-minor-mode ai-code-prompt-filepath-completion-mode
+  "Toggle @ file completion in comments and AI sessions across all buffers."
   :global t
-  (setq ai-code-prompt-comment-filepath-completion-enabled
-        ai-code-prompt-comment-filepath-completion-mode)
-  (if ai-code-prompt-comment-filepath-completion-mode
+  (setq ai-code-prompt-filepath-completion-enabled
+        ai-code-prompt-filepath-completion-mode)
+  (if ai-code-prompt-filepath-completion-mode
       (progn
         (add-hook 'post-self-insert-hook
                   #'ai-code--comment-auto-trigger-filepath-completion)
@@ -276,14 +276,14 @@ The current buffer's file is always first."
                      #'ai-code--comment-filepath-capf t)))))
 
 ;;;###autoload
-(defun ai-code-toggle-comment-filepath-completion ()
-  "Toggle @ file completion inside comments across all buffers."
+(defun ai-code-toggle-filepath-completion ()
+  "Toggle @ file completion in comments and AI sessions across all buffers."
   (interactive)
-  (if ai-code-prompt-comment-filepath-completion-mode
-      (ai-code-prompt-comment-filepath-completion-mode -1)
-    (ai-code-prompt-comment-filepath-completion-mode 1))
-  (message "Comment @ completion is %s"
-           (if ai-code-prompt-comment-filepath-completion-mode "enabled" "disabled")))
+  (if ai-code-prompt-filepath-completion-mode
+      (ai-code-prompt-filepath-completion-mode -1)
+    (ai-code-prompt-filepath-completion-mode 1))
+  (message "Filepath @ completion is %s"
+           (if ai-code-prompt-filepath-completion-mode "enabled" "disabled")))
 
 (provide 'ai-code-input)
 ;;; ai-code-input.el ends here

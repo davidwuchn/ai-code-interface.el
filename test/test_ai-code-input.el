@@ -4,7 +4,7 @@
 ;; SPDX-License-Identifier: Apache-2.0
 
 ;;; Commentary:
-;; Tests for ai-code-input.el, focusing on comment filepath completion features.
+;; Tests for ai-code-input.el, focusing on filepath completion features.
 
 ;;; Code:
 
@@ -122,7 +122,7 @@
 
 (ert-deftest ai-code-test-comment-filepath-capf-returns-candidates ()
   "Test that ai-code--comment-filepath-capf returns candidates inside comment with @."
-  (let ((ai-code-prompt-comment-filepath-completion-enabled t))
+  (let ((ai-code-prompt-filepath-completion-enabled t))
     (with-temp-buffer
       (emacs-lisp-mode)
       ;; Set buffer file name
@@ -152,7 +152,7 @@
 
 (ert-deftest ai-code-test-comment-filepath-capf-outside-comment ()
   "Test that ai-code--comment-filepath-capf returns nil outside a comment."
-  (let ((ai-code-prompt-comment-filepath-completion-enabled t))
+  (let ((ai-code-prompt-filepath-completion-enabled t))
     (with-temp-buffer
       (emacs-lisp-mode)
       (setq buffer-file-name "/tmp/test.el")
@@ -170,7 +170,7 @@
 
 (ert-deftest ai-code-test-comment-filepath-capf-no-ai-session ()
   "Test that ai-code--comment-filepath-capf returns nil when no AI session is active."
-  (let ((ai-code-prompt-comment-filepath-completion-enabled t))
+  (let ((ai-code-prompt-filepath-completion-enabled t))
     (with-temp-buffer
       (emacs-lisp-mode)
       (setq buffer-file-name "/tmp/test.el")
@@ -188,7 +188,7 @@
 
 (ert-deftest ai-code-test-comment-filepath-capf-disabled ()
   "Test that ai-code--comment-filepath-capf returns nil when disabled."
-  (let ((ai-code-prompt-comment-filepath-completion-enabled nil))
+  (let ((ai-code-prompt-filepath-completion-enabled nil))
     (with-temp-buffer
       (emacs-lisp-mode)
       (setq buffer-file-name "/tmp/test.el")
@@ -206,7 +206,7 @@
 
 (ert-deftest ai-code-test-comment-filepath-capf-no-git-repo ()
   "Test that ai-code--comment-filepath-capf returns nil outside a git repository."
-  (let ((ai-code-prompt-comment-filepath-completion-enabled t))
+  (let ((ai-code-prompt-filepath-completion-enabled t))
     (with-temp-buffer
       (emacs-lisp-mode)
       (setq buffer-file-name "/tmp/test.el")
@@ -224,7 +224,7 @@
 
 (ert-deftest ai-code-test-comment-filepath-capf-in-minibuffer ()
   "Test that ai-code--comment-filepath-capf returns nil in minibuffer."
-  (let ((ai-code-prompt-comment-filepath-completion-enabled t))
+  (let ((ai-code-prompt-filepath-completion-enabled t))
     ;; Mock minibufferp to return true
     (cl-letf (((symbol-function 'minibufferp)
                (lambda (&optional buffer) t))
@@ -243,7 +243,7 @@
 
 (ert-deftest ai-code-test-comment-filepath-capf-no-buffer-file ()
   "Test that ai-code--comment-filepath-capf returns nil when buffer has no file."
-  (let ((ai-code-prompt-comment-filepath-completion-enabled t))
+  (let ((ai-code-prompt-filepath-completion-enabled t))
     (with-temp-buffer
       (emacs-lisp-mode)
       ;; Don't set buffer-file-name
@@ -261,7 +261,7 @@
 
 (ert-deftest ai-code-test-comment-filepath-capf-partial-path ()
   "Test ai-code--comment-filepath-capf with partial file path after @."
-  (let ((ai-code-prompt-comment-filepath-completion-enabled t))
+  (let ((ai-code-prompt-filepath-completion-enabled t))
     (with-temp-buffer
       (emacs-lisp-mode)
       (setq buffer-file-name "/tmp/test.el")
@@ -288,7 +288,7 @@
 
 (ert-deftest ai-code-test-comment-filepath-capf-no-at-symbol ()
   "Test that ai-code--comment-filepath-capf returns nil without @ symbol."
-  (let ((ai-code-prompt-comment-filepath-completion-enabled t))
+  (let ((ai-code-prompt-filepath-completion-enabled t))
     (with-temp-buffer
       (emacs-lisp-mode)
       (setq buffer-file-name "/tmp/test.el")
@@ -304,19 +304,19 @@
         ;; Should return nil because no @ symbol before point
         (should-not (ai-code--comment-filepath-capf))))))
 
-;;; Tests for ai-code-prompt-comment-filepath-completion-mode
+;;; Tests for ai-code-prompt-filepath-completion-mode
 
-(ert-deftest ai-code-test-comment-completion-mode-enable ()
+(ert-deftest ai-code-test-filepath-completion-mode-enable ()
   "Test that enabling the mode sets up hooks and variable correctly."
-  (let ((ai-code-prompt-comment-filepath-completion-mode nil))
+  (let ((ai-code-prompt-filepath-completion-mode nil))
     (unwind-protect
         (progn
           ;; Enable the mode
-          (ai-code-prompt-comment-filepath-completion-mode 1)
+          (ai-code-prompt-filepath-completion-mode 1)
           
           ;; Check that the variable is set
-          (should ai-code-prompt-comment-filepath-completion-enabled)
-          (should ai-code-prompt-comment-filepath-completion-mode)
+          (should ai-code-prompt-filepath-completion-enabled)
+          (should ai-code-prompt-filepath-completion-mode)
           
           ;; Check that hooks are added
           (should (memq 'ai-code--comment-auto-trigger-filepath-completion
@@ -325,20 +325,20 @@
                         after-change-major-mode-hook)))
       
       ;; Cleanup: disable the mode
-      (ai-code-prompt-comment-filepath-completion-mode -1))))
+      (ai-code-prompt-filepath-completion-mode -1))))
 
-(ert-deftest ai-code-test-comment-completion-mode-disable ()
+(ert-deftest ai-code-test-filepath-completion-mode-disable ()
   "Test that disabling the mode removes hooks and variable correctly."
-  (let ((ai-code-prompt-comment-filepath-completion-mode nil))
+  (let ((ai-code-prompt-filepath-completion-mode nil))
     (unwind-protect
         (progn
           ;; Enable then disable the mode
-          (ai-code-prompt-comment-filepath-completion-mode 1)
-          (ai-code-prompt-comment-filepath-completion-mode -1)
+          (ai-code-prompt-filepath-completion-mode 1)
+          (ai-code-prompt-filepath-completion-mode -1)
           
           ;; Check that the variable is unset
-          (should-not ai-code-prompt-comment-filepath-completion-enabled)
-          (should-not ai-code-prompt-comment-filepath-completion-mode)
+          (should-not ai-code-prompt-filepath-completion-enabled)
+          (should-not ai-code-prompt-filepath-completion-mode)
           
           ;; Check that hooks are removed
           (should-not (memq 'ai-code--comment-auto-trigger-filepath-completion
@@ -347,11 +347,11 @@
                             after-change-major-mode-hook)))
       
       ;; Cleanup
-      (ai-code-prompt-comment-filepath-completion-mode -1))))
+      (ai-code-prompt-filepath-completion-mode -1))))
 
-(ert-deftest ai-code-test-comment-completion-mode-setup-in-buffers ()
+(ert-deftest ai-code-test-filepath-completion-mode-setup-in-buffers ()
   "Test that enabling mode sets up completion in existing buffers."
-  (let ((ai-code-prompt-comment-filepath-completion-mode nil)
+  (let ((ai-code-prompt-filepath-completion-mode nil)
         (test-buf (get-buffer-create "*test-comment-completion*")))
     (unwind-protect
         (progn
@@ -361,7 +361,7 @@
             (setq-local completion-at-point-functions nil))
           
           ;; Enable the mode
-          (ai-code-prompt-comment-filepath-completion-mode 1)
+          (ai-code-prompt-filepath-completion-mode 1)
           
           ;; Check that completion function was added to the buffer
           (with-current-buffer test-buf
@@ -369,18 +369,18 @@
                           completion-at-point-functions))))
       
       ;; Cleanup
-      (ai-code-prompt-comment-filepath-completion-mode -1)
+      (ai-code-prompt-filepath-completion-mode -1)
       (when (buffer-live-p test-buf)
         (kill-buffer test-buf)))))
 
-(ert-deftest ai-code-test-comment-completion-mode-cleanup-in-buffers ()
+(ert-deftest ai-code-test-filepath-completion-mode-cleanup-in-buffers ()
   "Test that disabling mode cleans up completion in all buffers."
-  (let ((ai-code-prompt-comment-filepath-completion-mode nil)
+  (let ((ai-code-prompt-filepath-completion-mode nil)
         (test-buf (get-buffer-create "*test-comment-cleanup*")))
     (unwind-protect
         (progn
           ;; Enable the mode first
-          (ai-code-prompt-comment-filepath-completion-mode 1)
+          (ai-code-prompt-filepath-completion-mode 1)
           
           ;; Verify setup in buffer
           (with-current-buffer test-buf
@@ -388,7 +388,7 @@
                           completion-at-point-functions)))
           
           ;; Disable the mode
-          (ai-code-prompt-comment-filepath-completion-mode -1)
+          (ai-code-prompt-filepath-completion-mode -1)
           
           ;; Check that completion function was removed from the buffer
           (with-current-buffer test-buf
@@ -396,34 +396,34 @@
                               completion-at-point-functions))))
       
       ;; Cleanup
-      (ai-code-prompt-comment-filepath-completion-mode -1)
+      (ai-code-prompt-filepath-completion-mode -1)
       (when (buffer-live-p test-buf)
         (kill-buffer test-buf)))))
 
-(ert-deftest ai-code-test-comment-completion-mode-toggle ()
+(ert-deftest ai-code-test-filepath-completion-mode-toggle ()
   "Test that toggling mode works correctly."
-  (let ((ai-code-prompt-comment-filepath-completion-mode nil))
+  (let ((ai-code-prompt-filepath-completion-mode nil))
     (unwind-protect
         (progn
           ;; First toggle should enable
-          (ai-code-prompt-comment-filepath-completion-mode)
-          (should ai-code-prompt-comment-filepath-completion-mode)
+          (ai-code-prompt-filepath-completion-mode)
+          (should ai-code-prompt-filepath-completion-mode)
           
           ;; Second toggle should disable
-          (ai-code-prompt-comment-filepath-completion-mode)
-          (should-not ai-code-prompt-comment-filepath-completion-mode))
+          (ai-code-prompt-filepath-completion-mode)
+          (should-not ai-code-prompt-filepath-completion-mode))
       
       ;; Cleanup
-      (ai-code-prompt-comment-filepath-completion-mode -1))))
+      (ai-code-prompt-filepath-completion-mode -1))))
 
-(ert-deftest ai-code-test-comment-completion-mode-after-major-mode-change ()
+(ert-deftest ai-code-test-filepath-completion-mode-after-major-mode-change ()
   "Test that completion setup works after major mode change."
-  (let ((ai-code-prompt-comment-filepath-completion-mode nil)
+  (let ((ai-code-prompt-filepath-completion-mode nil)
         (test-buf (get-buffer-create "*test-major-mode-change*")))
     (unwind-protect
         (progn
           ;; Enable the mode
-          (ai-code-prompt-comment-filepath-completion-mode 1)
+          (ai-code-prompt-filepath-completion-mode 1)
           
           ;; Simulate major mode change in buffer
           (with-current-buffer test-buf
@@ -435,7 +435,7 @@
                           completion-at-point-functions))))
       
       ;; Cleanup
-      (ai-code-prompt-comment-filepath-completion-mode -1)
+      (ai-code-prompt-filepath-completion-mode -1)
       (when (buffer-live-p test-buf)
         (kill-buffer test-buf)))))
 
@@ -443,7 +443,7 @@
 
 (ert-deftest ai-code-test-comment-auto-trigger-with-at ()
   "Test that auto-trigger works when @ is inserted in a comment."
-  (let ((ai-code-prompt-comment-filepath-completion-enabled t)
+  (let ((ai-code-prompt-filepath-completion-enabled t)
         (completion-called nil))
     (with-temp-buffer
       (emacs-lisp-mode)
@@ -465,7 +465,7 @@
 
 (ert-deftest ai-code-test-comment-auto-trigger-outside-comment ()
   "Test that auto-trigger doesn't work outside a comment."
-  (let ((ai-code-prompt-comment-filepath-completion-enabled t)
+  (let ((ai-code-prompt-filepath-completion-enabled t)
         (completion-called nil))
     (with-temp-buffer
       (emacs-lisp-mode)
@@ -487,7 +487,7 @@
 
 (ert-deftest ai-code-test-comment-auto-trigger-no-ai-session ()
   "Test that auto-trigger doesn't work when no AI session is active."
-  (let ((ai-code-prompt-comment-filepath-completion-enabled t)
+  (let ((ai-code-prompt-filepath-completion-enabled t)
         (completion-called nil))
     (with-temp-buffer
       (emacs-lisp-mode)
@@ -509,7 +509,7 @@
 
 (ert-deftest ai-code-test-comment-auto-trigger-disabled ()
   "Test that auto-trigger doesn't work when feature is disabled."
-  (let ((ai-code-prompt-comment-filepath-completion-enabled nil)
+  (let ((ai-code-prompt-filepath-completion-enabled nil)
         (completion-called nil))
     (with-temp-buffer
       (emacs-lisp-mode)
@@ -531,7 +531,7 @@
 
 (ert-deftest ai-code-test-comment-auto-trigger-without-at ()
   "Test that auto-trigger doesn't work without @ symbol."
-  (let ((ai-code-prompt-comment-filepath-completion-enabled t)
+  (let ((ai-code-prompt-filepath-completion-enabled t)
         (completion-called nil))
     (with-temp-buffer
       (emacs-lisp-mode)
@@ -552,7 +552,7 @@
 
 (ert-deftest ai-code-test-comment-auto-trigger-in-minibuffer ()
   "Test that auto-trigger doesn't work in minibuffer."
-  (let ((ai-code-prompt-comment-filepath-completion-enabled t)
+  (let ((ai-code-prompt-filepath-completion-enabled t)
         (completion-called nil))
     ;; Mock minibufferp to return true
     (cl-letf (((symbol-function 'minibufferp)
