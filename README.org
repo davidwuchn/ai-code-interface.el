@@ -28,8 +28,6 @@ An Emacs interface for AI-assisted software development. *The purpose is to prov
 
 ** Installation
 
-*** Using MELPA
-
 Enable installation of packages from MELPA by adding an entry to package-archives after (require 'package) and before the call to package-initialize in your init.el or .emacs file:
 
 #+begin_src emacs-lisp
@@ -44,6 +42,7 @@ Enable installation of packages from MELPA by adding an entry to package-archive
 
 #+begin_src emacs-lisp
   (use-package ai-code
+    ;; :straight (:host github :repo "tninja/ai-code-interface.el") ;; if you want to use straight to install, no need to have MELPA setting above
     :config
     ;; use codex as backend, other options are 'claude-code, 'gemini, 'github-copilot-cli, 'opencode, 'grok, 'cursor, 'kiro, 'claude-code-ide, 'claude-code-el
     (ai-code-set-backend 'codex)
@@ -52,30 +51,7 @@ Enable installation of packages from MELPA by adding an entry to package-archive
     ;; Optional: Use eat if you prefer, by default it is vterm
     ;; (setq ai-code-backends-infra-terminal-backend 'eat) ;; for openai codex, github copilot cli, opencode, grok, cursor-cli; for claude-code-ide.el, you can check their config
     ;; Optional: Enable @ file completion in comments and AI sessions
-    ;; (ai-code-prompt-filepath-completion-mode 1)
-    ;; Optional: Turn on auto-revert buffer, so that the AI code change automatically appears in the buffer
-    (global-auto-revert-mode 1)
-    (setq auto-revert-interval 1) ;; set to 1 second for faster update
-    ;; (global-set-key (kbd "C-c a C") #'ai-code-toggle-filepath-completion)
-    ;; Optional: Set up Magit integration for AI commands in Magit popups
-    (with-eval-after-load 'magit
-      (ai-code-magit-setup-transients)))
-#+end_src
-
-*** Using straight.el
-
-#+begin_src emacs-lisp
-  (use-package ai-code
-    :straight (:host github :repo "tninja/ai-code-interface.el")
-    :config
-    ;; use codex as backend, other options are 'claude-code, 'gemini, 'github-copilot-cli, 'opencode, 'grok, 'cursor, 'kiro, 'claude-code-ide, 'claude-code-el
-    (ai-code-set-backend 'codex)
-    ;; Enable global keybinding for the main menu
-    (global-set-key (kbd "C-c a") #'ai-code-menu)
-    ;; Optional: Use eat if you prefer, by default it is vterm
-    ;; (setq ai-code-backends-infra-terminal-backend 'eat) ;; for openai codex, github copilot cli, opencode, grok, cursor-cli; for claude-code-ide.el, you can check their config
-    ;; Optional: Enable @ file completion in comments and AI sessions
-    ;; (ai-code-prompt-filepath-completion-mode 1)
+    (ai-code-prompt-filepath-completion-mode 1)
     ;; Optional: Turn on auto-revert buffer, so that the AI code change automatically appears in the buffer
     (global-auto-revert-mode 1)
     (setq auto-revert-interval 1) ;; set to 1 second for faster update
@@ -133,6 +109,7 @@ This package makes context engineering easy by automatically assembling precise 
 - Function or region scoping: most actions capture the current function or active region, keeping requests focused (e.g., `ai-code-code-change`, `ai-code-implement-todo`, `ai-code-ask-question`).
 - Manual context curation: `C-c a @` (`ai-code-context-action`) stores file paths, function anchors, or region ranges in a repo-scoped list, which is appended to prompts via `ai-code--format-repo-context-info`.
 - Optional clipboard context: prefix with `C-u` to append clipboard content to prompts for external snippets or logs.
+- @-triggered filepath completion in comments and AI sessions. Type `@` to open a completion list of recent and visible repo files, then select a path to insert.
 - Prompt suffix guardrails: set `ai-code-prompt-suffix` to append persistent constraints to every prompt (when `ai-code-use-prompt-suffix` is non-nil). Example: `(setq ai-code-prompt-suffix "Only use English in code file, but Reply in Simplified Chinese language")`.
 
 Example (focused refactor with curated context):

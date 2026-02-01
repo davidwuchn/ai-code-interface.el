@@ -183,7 +183,6 @@ The current buffer's file is always first."
 (defun ai-code--comment-filepath-capf ()
   "Provide completion candidates for @file paths inside comments."
   (when (and ai-code-prompt-filepath-completion-enabled
-             (ai-code--any-ai-session-active-p)
              (ai-code--comment-context-p)
              (buffer-file-name)
              (not (minibufferp))
@@ -201,7 +200,6 @@ The current buffer's file is always first."
 (defun ai-code--comment-auto-trigger-filepath-completion ()
   "Auto trigger file path completion in comments when '@' is inserted."
   (when (and ai-code-prompt-filepath-completion-enabled
-             (ai-code--any-ai-session-active-p)
              (ai-code--comment-context-p)
              (buffer-file-name)
              (not (minibufferp))

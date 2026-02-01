@@ -33,10 +33,10 @@
 ;;   (ai-code-set-backend 'codex) ;; set your preferred backend
 ;;   (global-set-key (kbd "C-c a") #'ai-code-menu)
 ;;   ;; Optional: Enable @ file completion in comments and AI sessions
-;;   ;; (ai-code-prompt-filepath-completion-mode 1)
+;;   (ai-code-prompt-filepath-completion-mode 1)
 ;;   (global-auto-revert-mode 1)
 ;;   (setq auto-revert-interval 1) ;; set to 1 second for faster update
-;;   ;; (global-set-key (kbd "C-c a C") #'ai-code-toggle-filepath-completion))
+;;   )
 ;;
 ;; Key features:
 ;;   - Transient-driven Hub (C-c a) for all AI capabilities.
