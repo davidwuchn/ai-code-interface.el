@@ -316,7 +316,8 @@ If PROMPT-TEXT is a command (starts with /), execute it directly instead."
 (defun ai-code--prompt-mode-cleanup ()
   "Clean up hooks when leaving ai-code-prompt-mode."
   (remove-hook 'completion-at-point-functions #'ai-code--prompt-filepath-capf t)
-  (remove-hook 'post-self-insert-hook #'ai-code--prompt-auto-trigger-filepath-completion t))
+  (remove-hook 'post-self-insert-hook #'ai-code--prompt-auto-trigger-filepath-completion t)
+  (remove-hook 'change-major-mode-hook #'ai-code--prompt-mode-cleanup t))
 
 ;; Define the AI Prompt Mode (derived from org-mode)
 ;;;###autoload

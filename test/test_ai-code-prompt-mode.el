@@ -636,9 +636,10 @@ and ensures everything is cleaned up afterward."
     ;; Switch to a different mode (fundamental-mode)
     (fundamental-mode)
     
-    ;; Verify hooks are removed
+    ;; Verify all hooks are removed, including the cleanup hook itself
     (should-not (memq #'ai-code--prompt-filepath-capf completion-at-point-functions))
-    (should-not (memq #'ai-code--prompt-auto-trigger-filepath-completion post-self-insert-hook))))
+    (should-not (memq #'ai-code--prompt-auto-trigger-filepath-completion post-self-insert-hook))
+    (should-not (memq #'ai-code--prompt-mode-cleanup change-major-mode-hook))))
 
 (provide 'test-ai-code-prompt-mode)
 ;;; test_ai-code-prompt-mode.el ends here
