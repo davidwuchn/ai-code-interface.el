@@ -622,5 +622,174 @@ and ensures everything is cleaned up afterward."
          ;; Should NOT have called completion-at-point
          (should-not completion-called))))))
 
+;;; Tests for # symbol completion in prompt mode
+
+(ert-deftest ai-code-test-prompt-auto-trigger-hash-with-file ()
+  "Test that # auto-trigger completes symbols from @file in prompt mode."
+  (let ((git-root (expand-file-name "test-repo/" temporary-file-directory))
+        (test-file (expand-file-name "src/test.el" (expand-file-name "test-repo/" temporary-file-directory))))
+    (unwind-protect
+        (progn
+          ;; Setup: Create test file with symbols
+          (make-directory (file-name-directory test-file) t)
+          (with-temp-file test-file
+            (insert "(defun prompt-test-symbol () nil)\n"))
+          
+          (require 'ai-code-input nil t)
+          (cl-letf (((symbol-function 'magit-toplevel) (lambda (&optional dir) git-root))
+                    ((symbol-function 'completing-read)
+                     (lambda (prompt candidates &rest args)
+                       "prompt-test-symbol")))
+            (with-temp-buffer
+              (insert "@src/test.el#")
+              
+              ;; Call auto-trigger
+              (ai-code--prompt-auto-trigger-filepath-completion)
+              
+              ;; Should have replaced # with #symbol
+              (should (string-match-p "#prompt-test-symbol" (buffer-string))))))
+      ;; Cleanup
+      (when (file-exists-p test-file) (delete-file test-file))
+      (when (file-directory-p (file-name-directory test-file))
+        (delete-directory (file-name-directory test-file)))
+      (when (file-directory-p git-root) (delete-directory git-root)))))
+
+(ert-deftest ai-code-test-prompt-auto-trigger-hash-without-file ()
+  "Test that # auto-trigger does nothing without valid @file in prompt mode."
+  (cl-letf (((symbol-function 'magit-toplevel) (lambda (&optional dir) "/tmp/repo/")))
+    (with-temp-buffer
+      (insert "#")
+      
+      (let ((original-content (buffer-string)))
+        (ai-code--prompt-auto-trigger-filepath-completion)
+        
+        ;; Content should be unchanged (no completion without @file)
+        (should (string= original-content (buffer-string)))))))
+
+(ert-deftest ai-code-test-prompt-auto-trigger-hash-nonexistent-file ()
+  "Test that # auto-trigger handles nonexistent files gracefully in prompt mode."
+  (cl-letf (((symbol-function 'magit-toplevel) (lambda (&optional dir) "/tmp/repo/")))
+    (with-temp-buffer
+      (insert "@nonexistent/file.el#")
+      
+      (let ((original-content (buffer-string)))
+        (ai-code--prompt-auto-trigger-filepath-completion)
+        
+        ;; Content should be unchanged (file doesn't exist)
+        (should (string= original-content (buffer-string)))))))
+
+(ert-deftest ai-code-test-prompt-auto-trigger-hash-no-symbols ()
+  "Test that # auto-trigger handles files with no symbols in prompt mode."
+  (let ((git-root (expand-file-name "test-repo/" temporary-file-directory))
+        (test-file (expand-file-name "src/empty.txt" (expand-file-name "test-repo/" temporary-file-directory))))
+    (unwind-protect
+        (progn
+          ;; Setup: Create empty test file
+          (make-directory (file-name-directory test-file) t)
+          (with-temp-file test-file
+            (insert "no symbols here"))
+          
+          (require 'ai-code-input nil t)
+          (cl-letf (((symbol-function 'magit-toplevel) (lambda (&optional dir) git-root)))
+            (with-temp-buffer
+              (insert "@src/empty.txt#")
+              
+              (let ((original-content (buffer-string)))
+                (ai-code--prompt-auto-trigger-filepath-completion)
+                
+                ;; Content should be unchanged (no symbols to complete)
+                (should (string= original-content (buffer-string)))))))
+      ;; Cleanup
+      (when (file-exists-p test-file) (delete-file test-file))
+      (when (file-directory-p (file-name-directory test-file))
+        (delete-directory (file-name-directory test-file)))
+      (when (file-directory-p git-root) (delete-directory git-root)))))
+
+(ert-deftest ai-code-test-prompt-auto-trigger-hash-user-quit ()
+  "Test that # auto-trigger handles user quit gracefully in prompt mode."
+  (let ((git-root (expand-file-name "test-repo/" temporary-file-directory))
+        (test-file (expand-file-name "src/test.el" (expand-file-name "test-repo/" temporary-file-directory))))
+    (unwind-protect
+        (progn
+          ;; Setup: Create test file
+          (make-directory (file-name-directory test-file) t)
+          (with-temp-file test-file
+            (insert "(defun some-func () nil)\n"))
+          
+          (require 'ai-code-input nil t)
+          (cl-letf (((symbol-function 'magit-toplevel) (lambda (&optional dir) git-root))
+                    ((symbol-function 'completing-read)
+                     (lambda (prompt candidates &rest args)
+                       (signal 'quit nil))))
+            (with-temp-buffer
+              (insert "@src/test.el#")
+              
+              (let ((original-content (buffer-string)))
+                (ai-code--prompt-auto-trigger-filepath-completion)
+                
+                ;; Content should be unchanged (user quit)
+                (should (string= original-content (buffer-string)))))))
+      ;; Cleanup
+      (when (file-exists-p test-file) (delete-file test-file))
+      (when (file-directory-p (file-name-directory test-file))
+        (delete-directory (file-name-directory test-file)))
+      (when (file-directory-p git-root) (delete-directory git-root)))))
+
+(ert-deftest ai-code-test-prompt-auto-trigger-hash-in-minibuffer ()
+  "Test that # auto-trigger doesn't work in minibuffer in prompt mode."
+  (cl-letf (((symbol-function 'minibufferp) (lambda (&optional buffer) t)))
+    (with-temp-buffer
+      (insert "@src/test.el#")
+      
+      (let ((original-content (buffer-string)))
+        (ai-code--prompt-auto-trigger-filepath-completion)
+        
+        ;; Should be unchanged in minibuffer
+        (should (string= original-content (buffer-string)))))))
+
+(ert-deftest ai-code-test-prompt-filepath-capf-at-completion ()
+  "Test that @ filepath completion works via capf in prompt mode."
+  (ai-code-with-test-repo
+   (with-temp-buffer
+     (insert "@src/")
+     (goto-char (point-max))
+     
+     ;; Get completion candidates
+     (let ((result (ai-code--prompt-filepath-capf)))
+       ;; Should return completion list
+       (should result)
+       (should (listp result))
+       ;; First element should be start position
+       (should (numberp (car result)))
+       ;; Second element should be end position
+       (should (numberp (cadr result)))
+       ;; Third element should be candidate list
+       (should (listp (caddr result)))))))
+
+(ert-deftest ai-code-test-prompt-filepath-capf-no-at ()
+  "Test that capf returns nil without @ prefix in prompt mode."
+  (ai-code-with-test-repo
+   (with-temp-buffer
+     (insert "src/")
+     (goto-char (point-max))
+     
+     ;; Get completion candidates
+     (let ((result (ai-code--prompt-filepath-capf)))
+       ;; Should return nil (no @ prefix)
+       (should-not result)))))
+
+(ert-deftest ai-code-test-prompt-filepath-capf-in-minibuffer ()
+  "Test that capf returns nil in minibuffer in prompt mode."
+  (ai-code-with-test-repo
+   (cl-letf (((symbol-function 'minibufferp) (lambda (&optional buffer) t)))
+     (with-temp-buffer
+       (insert "@src/")
+       (goto-char (point-max))
+       
+       ;; Get completion candidates
+       (let ((result (ai-code--prompt-filepath-capf)))
+         ;; Should return nil (in minibuffer)
+         (should-not result))))))
+
 (provide 'test-ai-code-prompt-mode)
 ;;; test_ai-code-prompt-mode.el ends here
