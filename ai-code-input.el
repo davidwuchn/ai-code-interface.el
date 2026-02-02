@@ -180,6 +180,47 @@ The current buffer's file is always first."
   "Return non-nil when point is inside a comment."
   (nth 4 (syntax-ppss)))
 
+(defun ai-code--hash-completion-target-file (&optional end-pos)
+  "Return an absolute file path for @relative path ending at END-POS.
+END-POS defaults to the current '#' position."
+  (when-let ((git-root (magit-toplevel)))
+    (let* ((end (or end-pos (1- (point))))
+           (start (save-excursion
+                    (goto-char end)
+                    (skip-chars-backward "A-Za-z0-9_./-")
+                    (point)))
+           (has-at (save-excursion
+                     (goto-char start)
+                     (eq (char-before) ?@)))
+           (relative-path (and has-at
+                               (< start end)
+                               (buffer-substring-no-properties start end))))
+      (when relative-path
+        (let ((file (expand-file-name relative-path git-root))
+              (git-root-truename (file-truename git-root)))
+          (when (and (file-regular-p file)
+                     (string-prefix-p git-root-truename (file-truename file)))
+            file))))))
+
+(defun ai-code--file-symbol-candidates (file)
+  "Return sorted function/class symbol candidates from FILE."
+  (let (symbols)
+    (with-current-buffer (find-file-noselect file t)
+      (condition-case nil
+          (let ((imenu-auto-rescan t)
+                (index (imenu--make-index-alist t)))
+            (setq symbols (ai-code--flatten-imenu-index index)))
+        (error nil)))
+    (sort (delete-dups (cl-remove-if-not #'stringp symbols)) #'string<)))
+
+(defun ai-code--choose-symbol-from-file (file)
+  "Prompt user to select a symbol from FILE and return it."
+  (let ((candidates (ai-code--file-symbol-candidates file)))
+    (when candidates
+      (condition-case nil
+          (completing-read "Symbol: " candidates nil nil)
+        (quit nil)))))
+
 (defun ai-code--comment-filepath-capf ()
   "Provide completion candidates for @file paths inside comments."
   (when (and ai-code-prompt-filepath-completion-enabled
@@ -198,33 +239,47 @@ The current buffer's file is always first."
             (list start end candidates :exclusive 'no)))))))
 
 (defun ai-code--comment-auto-trigger-filepath-completion ()
-  "Auto trigger file path completion in comments when '@' is inserted."
+  "Auto trigger file path/symbol completion in comments."
   (when (and ai-code-prompt-filepath-completion-enabled
              (ai-code--comment-context-p)
              (buffer-file-name)
-             (not (minibufferp))
-             (eq (char-before) ?@))
-    (let ((candidates (ai-code--prompt-filepath-candidates)))
-      (when candidates
-        (let ((choice (completing-read "File: " candidates nil nil)))
-          (when (and choice (not (string-empty-p choice)))
-            (delete-char -1)  ; Remove the '@' we just typed
-            (insert choice)))))))
+             (not (minibufferp)))
+    (pcase (char-before)
+      (?@
+       (let ((candidates (ai-code--prompt-filepath-candidates)))
+         (when candidates
+           (let ((choice (completing-read "File: " candidates nil nil)))
+             (when (and choice (not (string-empty-p choice)))
+               (delete-char -1)  ; Remove the '@' we just typed
+               (insert choice))))))
+      (?#
+       (when-let ((file (ai-code--hash-completion-target-file (1- (point))))
+                  (symbol (ai-code--choose-symbol-from-file file)))
+         (when (not (string-empty-p symbol))
+           (delete-char -1)  ; Remove the '#' we just typed
+           (insert (concat "#" symbol))))))))
 
 (defun ai-code--session-auto-trigger-filepath-completion ()
-  "Auto trigger file path completion in AI session buffers when '@' is inserted."
+  "Auto trigger file path/symbol completion in AI session buffers."
   (when (and ai-code-prompt-filepath-completion-enabled
              (fboundp 'ai-code-backends-infra--session-buffer-p)
              (ai-code-backends-infra--session-buffer-p (current-buffer))
              (not (minibufferp))
-             (eq (char-before) ?@)
              (magit-toplevel))
-    (let ((candidates (ai-code--prompt-filepath-candidates)))
-      (when candidates
-        (let ((choice (completing-read "File: " candidates nil nil)))
-          (when (and choice (not (string-empty-p choice)))
-            (ai-code-backends-infra--terminal-send-backspace)
-            (ai-code-backends-infra--terminal-send-string choice)))))))
+    (pcase (char-before)
+      (?@
+       (let ((candidates (ai-code--prompt-filepath-candidates)))
+         (when candidates
+           (let ((choice (completing-read "File: " candidates nil nil)))
+             (when (and choice (not (string-empty-p choice)))
+               (ai-code-backends-infra--terminal-send-backspace)
+               (ai-code-backends-infra--terminal-send-string choice))))))
+      (?#
+       (when-let ((file (ai-code--hash-completion-target-file (1- (point))))
+                  (symbol (ai-code--choose-symbol-from-file file)))
+         (when (not (string-empty-p symbol))
+           (ai-code-backends-infra--terminal-send-backspace)
+           (ai-code-backends-infra--terminal-send-string (concat "#" symbol))))))))
 
 (defun ai-code--session-handle-at-input ()
   "Handle '@' input in AI session buffers with optional filepath completion."
@@ -246,6 +301,23 @@ The current buffer's file is always first."
               (ai-code-backends-infra--terminal-send-backspace)
               (ai-code-backends-infra--terminal-send-string choice))))))))
 
+(defun ai-code--session-handle-hash-input ()
+  "Handle '#' input in AI session buffers with optional symbol completion."
+  (interactive)
+  (let* ((should-complete
+          (and ai-code-prompt-filepath-completion-enabled
+               (fboundp 'ai-code-backends-infra--session-buffer-p)
+               (ai-code-backends-infra--session-buffer-p (current-buffer))
+               (not (minibufferp))
+               (magit-toplevel)))
+         (file (and should-complete
+                    (ai-code--hash-completion-target-file (point)))))
+    (ai-code-backends-infra--terminal-send-string "#")
+    (when-let ((symbol (and file (ai-code--choose-symbol-from-file file))))
+      (when (not (string-empty-p symbol))
+        (ai-code-backends-infra--terminal-send-backspace)
+        (ai-code-backends-infra--terminal-send-string (concat "#" symbol))))))
+
 (defun ai-code--comment-filepath-setup ()
   "Ensure comment @ completion is available in the current buffer."
   (add-hook 'completion-at-point-functions #'ai-code--comment-filepath-capf nil t))
@@ -253,6 +325,7 @@ The current buffer's file is always first."
 ;;;###autoload
 (define-minor-mode ai-code-prompt-filepath-completion-mode
   "Toggle @ file completion in comments and AI sessions across all buffers."
+  ;; DONE: Add this feature: when user type # character, check if the continuous character block before is a exist git relative file path, lead with @ character. If it is, check class / function name inside that file, and let user to select from them. This feature should work just like @ character: 1. # typed inside comment, 2. # typed inside ai coding window, 3. # typed inside ai-code-prompt-mode org file. Related files: @ai-code-backends-infra.el, @ai-code-prompt-mode.el
   :global t
   (setq ai-code-prompt-filepath-completion-enabled
         ai-code-prompt-filepath-completion-mode)
@@ -287,4 +360,5 @@ The current buffer's file is always first."
            (if ai-code-prompt-filepath-completion-mode "enabled" "disabled")))
 
 (provide 'ai-code-input)
+
 ;;; ai-code-input.el ends here

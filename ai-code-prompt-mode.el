@@ -25,6 +25,8 @@
 (declare-function gptel-abort "gptel" (buffer))
 (declare-function ai-code--git-repo-recent-modified-files "ai-code-git" (base-dir limit))
 (declare-function ai-code--git-ignored-repo-file-p "ai-code-git" (file root))
+(declare-function ai-code--hash-completion-target-file "ai-code-input" (&optional end-pos))
+(declare-function ai-code--choose-symbol-from-file "ai-code-input" (file))
 
 (defcustom ai-code-prompt-preprocess-filepaths t
   "When non-nil, preprocess the prompt to replace file paths.
@@ -297,15 +299,25 @@ NOTE: This does not handle file paths containing spaces."
             (list start end candidates :exclusive 'no)))))))
 
 (defun ai-code--prompt-auto-trigger-filepath-completion ()
-  "Auto trigger file path completion when '@' is inserted."
-  (when (and (not (minibufferp))
-             (eq (char-before) ?@))
-    (let ((candidates (ai-code--prompt-filepath-candidates)))
-      (when candidates
-        (let ((choice (completing-read "File: " candidates nil nil)))
-          (when (and choice (not (string-empty-p choice)))
-            (delete-char -1)  ; Remove the '@' we just typed
-            (insert choice)))))))
+  "Auto trigger file path/symbol completion when '@' or '#' is inserted."
+  (when (not (minibufferp))
+    (pcase (char-before)
+      (?@
+       (let ((candidates (ai-code--prompt-filepath-candidates)))
+         (when candidates
+           (let ((choice (completing-read "File: " candidates nil nil)))
+             (when (and choice (not (string-empty-p choice)))
+               (delete-char -1)  ; Remove the '@' we just typed
+               (insert choice))))))
+      (?#
+       (require 'ai-code-input nil t)
+       (when (and (fboundp 'ai-code--hash-completion-target-file)
+                  (fboundp 'ai-code--choose-symbol-from-file))
+         (when-let ((file (ai-code--hash-completion-target-file (1- (point))))
+                    (symbol (ai-code--choose-symbol-from-file file)))
+           (when (not (string-empty-p symbol))
+             (delete-char -1)  ; Remove the '#' we just typed
+             (insert (concat "#" symbol)))))))))
 
 (defun ai-code--insert-prompt (prompt-text)
   "Preprocess and insert PROMPT-TEXT into the AI prompt file.
