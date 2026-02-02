@@ -313,8 +313,8 @@ NOTE: This does not handle file paths containing spaces."
        (require 'ai-code-input nil t)
        (when (and (fboundp 'ai-code--hash-completion-target-file)
                   (fboundp 'ai-code--choose-symbol-from-file))
-         (when-let ((file (ai-code--hash-completion-target-file (1- (point))))
-                    (symbol (ai-code--choose-symbol-from-file file)))
+         (when-let* ((file (ai-code--hash-completion-target-file (1- (point))))
+                     (symbol (ai-code--choose-symbol-from-file file)))
            (when (not (string-empty-p symbol))
              (delete-char -1)  ; Remove the '#' we just typed
              (insert (concat "#" symbol)))))))))
