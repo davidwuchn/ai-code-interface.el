@@ -147,9 +147,9 @@ The current buffer's file is always first."
 (defun ai-code--extract-symbol-from-line (line)
   "Extract a likely symbol identifier from LINE."
   (let ((patterns
-         '("^[ \t]*\\(?:async[ \t]+\\)?\\(?:def\\|class\\|function\\|func\\|fn\\|sub\\|proc\\|method\\|interface\\|struct\\|enum\\|type\\|trait\\|module\\|namespace\\)[ \t]+\\([[:word:]_.$:-]+\\)"
-           "^[ \t]*\\([[:word:]_.$:-]+\\)[ \t]*("
-           "^[ \t]*\\([[:word:]_.$:-]+\\)[ \t]*[{:]")))
+         '("^[ \t]*\\(?:async[ \t]+\\)?\\(?:def\\|class\\|function\\|func\\|fn\\|sub\\|proc\\|method\\|interface\\|struct\\|enum\\|type\\|trait\\|module\\|namespace\\)[ \t]+\\([[:word:]_.$:\\-]+\\)"
+           "^[ \t]*\\([[:word:]_.$:\\-]+\\)[ \t]*("
+           "^[ \t]*\\([[:word:]_.$:\\-]+\\)[ \t]*[{:]")))
     (catch 'found
       (dolist (pattern patterns)
         (when (string-match pattern line)
