@@ -378,7 +378,6 @@ END-POS defaults to the current '#' position."
 ;;;###autoload
 (define-minor-mode ai-code-prompt-filepath-completion-mode
   "Toggle @ file completion in comments and AI sessions across all buffers."
-  ;; DONE: Add this feature: when user type # character, check if the continuous character block before is a exist git relative file path, lead with @ character. If it is, check class / function name inside that file, and let user to select from them. This feature should work just like @ character: 1. # typed inside comment, 2. # typed inside ai coding window, 3. # typed inside ai-code-prompt-mode org file. Related files: @ai-code-backends-infra.el, @ai-code-prompt-mode.el
   :global t
   (setq ai-code-prompt-filepath-completion-enabled
         ai-code-prompt-filepath-completion-mode)
