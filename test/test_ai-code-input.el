@@ -572,5 +572,434 @@
         ;; Should NOT have called completion-at-point (in minibuffer)
         (should-not completion-called)))))
 
+;;; Tests for # symbol completion feature
+
+;; Tests for ai-code--imenu-subalist-p
+
+(ert-deftest ai-code-test-imenu-subalist-p-with-subalist ()
+  "Test that ai-code--imenu-subalist-p correctly identifies a sub-alist."
+  (let ((subalist '(("Function1" . 100) ("Function2" . 200))))
+    (should (ai-code--imenu-subalist-p subalist))))
+
+(ert-deftest ai-code-test-imenu-subalist-p-with-non-list ()
+  "Test that ai-code--imenu-subalist-p returns nil for non-list."
+  (should-not (ai-code--imenu-subalist-p 42))
+  (should-not (ai-code--imenu-subalist-p "string")))
+
+(ert-deftest ai-code-test-imenu-subalist-p-with-empty-list ()
+  "Test that ai-code--imenu-subalist-p returns nil for empty list."
+  (should-not (ai-code--imenu-subalist-p '())))
+
+(ert-deftest ai-code-test-imenu-subalist-p-with-invalid-entries ()
+  "Test that ai-code--imenu-subalist-p returns nil when entries lack string keys."
+  (should-not (ai-code--imenu-subalist-p '((1 . 100) (2 . 200)))))
+
+;; Tests for ai-code--imenu-item-position
+
+(ert-deftest ai-code-test-imenu-item-position-with-integer ()
+  "Test that ai-code--imenu-item-position extracts integer position."
+  (should (= 42 (ai-code--imenu-item-position 42))))
+
+(ert-deftest ai-code-test-imenu-item-position-with-marker ()
+  "Test that ai-code--imenu-item-position extracts marker position."
+  (with-temp-buffer
+    (insert "test content")
+    (let ((marker (point-marker)))
+      (should (markerp (ai-code--imenu-item-position marker))))))
+
+(ert-deftest ai-code-test-imenu-item-position-with-cons ()
+  "Test that ai-code--imenu-item-position extracts position from cons cell."
+  (should (= 100 (ai-code--imenu-item-position '(100 . 200)))))
+
+(ert-deftest ai-code-test-imenu-item-position-with-invalid ()
+  "Test that ai-code--imenu-item-position returns nil for invalid input."
+  (should-not (ai-code--imenu-item-position "invalid"))
+  (should-not (ai-code--imenu-item-position nil)))
+
+;; Tests for ai-code--extract-symbol-from-line
+
+(ert-deftest ai-code-test-extract-symbol-from-line-python-def ()
+  "Test extracting function name from Python def statement."
+  (should (string= "my_function"
+                   (ai-code--extract-symbol-from-line "def my_function():"))))
+
+(ert-deftest ai-code-test-extract-symbol-from-line-python-class ()
+  "Test extracting class name from Python class statement."
+  (should (string= "MyClass"
+                   (ai-code--extract-symbol-from-line "class MyClass:"))))
+
+(ert-deftest ai-code-test-extract-symbol-from-line-javascript-function ()
+  "Test extracting function name from JavaScript function."
+  (should (string= "myFunc"
+                   (ai-code--extract-symbol-from-line "function myFunc() {"))))
+
+(ert-deftest ai-code-test-extract-symbol-from-line-async-function ()
+  "Test extracting function name from async function."
+  (should (string= "asyncFunc"
+                   (ai-code--extract-symbol-from-line "async function asyncFunc() {"))))
+
+(ert-deftest ai-code-test-extract-symbol-from-line-with-whitespace ()
+  "Test extracting symbol with leading whitespace."
+  (should (string= "indent_func"
+                   (ai-code--extract-symbol-from-line "    def indent_func():"))))
+
+(ert-deftest ai-code-test-extract-symbol-from-line-no-match ()
+  "Test that extraction returns nil when no pattern matches."
+  (should-not (ai-code--extract-symbol-from-line "just some text")))
+
+;; Tests for ai-code--imenu-noise-name-p
+
+(ert-deftest ai-code-test-imenu-noise-name-p-with-asterisks ()
+  "Test that ai-code--imenu-noise-name-p detects names wrapped in asterisks."
+  (should (ai-code--imenu-noise-name-p "*Rescan*"))
+  (should (ai-code--imenu-noise-name-p "*Variables*")))
+
+(ert-deftest ai-code-test-imenu-noise-name-p-with-numbers ()
+  "Test that ai-code--imenu-noise-name-p detects pure numeric names."
+  (should (ai-code--imenu-noise-name-p "123"))
+  (should (ai-code--imenu-noise-name-p "42")))
+
+(ert-deftest ai-code-test-imenu-noise-name-p-with-empty ()
+  "Test that ai-code--imenu-noise-name-p detects empty or whitespace-only names."
+  (should (ai-code--imenu-noise-name-p ""))
+  (should (ai-code--imenu-noise-name-p "   ")))
+
+(ert-deftest ai-code-test-imenu-noise-name-p-with-valid-names ()
+  "Test that ai-code--imenu-noise-name-p returns nil for valid names."
+  (should-not (ai-code--imenu-noise-name-p "myFunction"))
+  (should-not (ai-code--imenu-noise-name-p "MyClass"))
+  (should-not (ai-code--imenu-noise-name-p "my_func_123")))
+
+(ert-deftest ai-code-test-imenu-noise-name-p-with-non-string ()
+  "Test that ai-code--imenu-noise-name-p handles non-string input."
+  (should (ai-code--imenu-noise-name-p nil))
+  (should (ai-code--imenu-noise-name-p 42)))
+
+;; Tests for ai-code--normalize-imenu-symbol-name
+
+(ert-deftest ai-code-test-normalize-imenu-symbol-name-valid ()
+  "Test that ai-code--normalize-imenu-symbol-name returns trimmed valid name."
+  (should (string= "myFunc"
+                   (ai-code--normalize-imenu-symbol-name "  myFunc  " nil))))
+
+(ert-deftest ai-code-test-normalize-imenu-symbol-name-noise ()
+  "Test that ai-code--normalize-imenu-symbol-name uses fallback for noise names."
+  (with-temp-buffer
+    (insert "def fallback_func():\n")
+    (should (string= "fallback_func"
+                     (ai-code--normalize-imenu-symbol-name "*Rescan*" (point-min))))))
+
+(ert-deftest ai-code-test-normalize-imenu-symbol-name-empty ()
+  "Test that ai-code--normalize-imenu-symbol-name handles empty names."
+  (with-temp-buffer
+    (insert "def empty_fallback():\n")
+    (should (string= "empty_fallback"
+                     (ai-code--normalize-imenu-symbol-name "" (point-min))))))
+
+;; Tests for ai-code--flatten-imenu-index
+
+(ert-deftest ai-code-test-flatten-imenu-index-simple ()
+  "Test that ai-code--flatten-imenu-index flattens a simple index."
+  (let ((index '(("func1" . 100) ("func2" . 200))))
+    (let ((result (ai-code--flatten-imenu-index index)))
+      (should (member "func1" result))
+      (should (member "func2" result)))))
+
+(ert-deftest ai-code-test-flatten-imenu-index-nested ()
+  "Test that ai-code--flatten-imenu-index flattens nested sub-alists."
+  (let ((index '(("Functions" ("func1" . 100) ("func2" . 200))
+                 ("Classes" ("Class1" . 300)))))
+    (let ((result (ai-code--flatten-imenu-index index)))
+      (should (member "func1" result))
+      (should (member "func2" result))
+      (should (member "Class1" result)))))
+
+(ert-deftest ai-code-test-flatten-imenu-index-filters-noise ()
+  "Test that ai-code--flatten-imenu-index filters out noise names."
+  (with-temp-buffer
+    (insert "def real_func():\n")
+    (let ((index `(("*Rescan*" . ,(point-min))
+                   ("real_func" . ,(point-min)))))
+      (let ((result (ai-code--flatten-imenu-index index)))
+        (should (member "real_func" result))
+        (should-not (member "*Rescan*" result))))))
+
+(ert-deftest ai-code-test-flatten-imenu-index-empty ()
+  "Test that ai-code--flatten-imenu-index handles empty index."
+  (should (null (ai-code--flatten-imenu-index '()))))
+
+;; Tests for ai-code--hash-completion-target-file
+
+(ert-deftest ai-code-test-hash-completion-target-file-valid ()
+  "Test that ai-code--hash-completion-target-file returns file path for valid @file#."
+  (let* ((git-root (expand-file-name "test-repo/" temporary-file-directory))
+         (test-file (expand-file-name "src/test.el" git-root)))
+    (unwind-protect
+        (progn
+          ;; Setup: Create test file
+          (make-directory (file-name-directory test-file) t)
+          (with-temp-file test-file (insert "content"))
+          
+          (cl-letf (((symbol-function 'magit-toplevel) (lambda (&optional dir) git-root)))
+            (with-temp-buffer
+              (insert "@src/test.el")
+              (should (string= test-file
+                               (ai-code--hash-completion-target-file (point)))))))
+      ;; Cleanup
+      (when (file-exists-p test-file) (delete-file test-file))
+      (when (file-directory-p (file-name-directory test-file))
+        (delete-directory (file-name-directory test-file)))
+      (when (file-directory-p git-root) (delete-directory git-root)))))
+
+(ert-deftest ai-code-test-hash-completion-target-file-no-at ()
+  "Test that ai-code--hash-completion-target-file returns nil without @ prefix."
+  (let ((git-root (expand-file-name "test-repo/" temporary-file-directory)))
+    (cl-letf (((symbol-function 'magit-toplevel) (lambda (&optional dir) git-root)))
+      (with-temp-buffer
+        (insert "src/test.el")
+        (should-not (ai-code--hash-completion-target-file (point)))))))
+
+(ert-deftest ai-code-test-hash-completion-target-file-nonexistent ()
+  "Test that ai-code--hash-completion-target-file returns nil for nonexistent file."
+  (let ((git-root (expand-file-name "test-repo/" temporary-file-directory)))
+    (cl-letf (((symbol-function 'magit-toplevel) (lambda (&optional dir) git-root)))
+      (with-temp-buffer
+        (insert "@nonexistent/file.el")
+        (should-not (ai-code--hash-completion-target-file (point)))))))
+
+(ert-deftest ai-code-test-hash-completion-target-file-outside-repo ()
+  "Test that ai-code--hash-completion-target-file returns nil for files outside repo."
+  (let* ((git-root (expand-file-name "test-repo/" temporary-file-directory))
+         (outside-file (expand-file-name "outside.el" temporary-file-directory)))
+    (unwind-protect
+        (progn
+          ;; Setup: Create files
+          (make-directory git-root t)
+          (with-temp-file outside-file (insert "content"))
+          
+          (cl-letf (((symbol-function 'magit-toplevel) (lambda (&optional dir) git-root)))
+            (with-temp-buffer
+              (insert (format "@%s" outside-file))
+              (should-not (ai-code--hash-completion-target-file (point))))))
+      ;; Cleanup
+      (when (file-exists-p outside-file) (delete-file outside-file))
+      (when (file-directory-p git-root) (delete-directory git-root)))))
+
+(ert-deftest ai-code-test-hash-completion-target-file-no-git-repo ()
+  "Test that ai-code--hash-completion-target-file returns nil outside git repo."
+  (cl-letf (((symbol-function 'magit-toplevel) (lambda (&optional dir) nil)))
+    (with-temp-buffer
+      (insert "@src/test.el")
+      (should-not (ai-code--hash-completion-target-file (point))))))
+
+;; Tests for ai-code--file-symbol-candidates
+
+(ert-deftest ai-code-test-file-symbol-candidates-elisp ()
+  "Test that ai-code--file-symbol-candidates extracts symbols from Elisp file."
+  (let ((test-file (expand-file-name "test-symbols.el" temporary-file-directory)))
+    (unwind-protect
+        (progn
+          ;; Create test file with functions
+          (with-temp-file test-file
+            (insert "(defun test-func-1 () \"doc\" nil)\n")
+            (insert "(defun test-func-2 () \"doc\" nil)\n")
+            (insert "(defvar test-var 42)\n"))
+          
+          (let ((symbols (ai-code--file-symbol-candidates test-file)))
+            (should (member "test-func-1" symbols))
+            (should (member "test-func-2" symbols))))
+      ;; Cleanup
+      (when (file-exists-p test-file) (delete-file test-file)))))
+
+(ert-deftest ai-code-test-file-symbol-candidates-sorted ()
+  "Test that ai-code--file-symbol-candidates returns sorted symbols."
+  (let ((test-file (expand-file-name "test-sorted.el" temporary-file-directory)))
+    (unwind-protect
+        (progn
+          (with-temp-file test-file
+            (insert "(defun zebra () nil)\n")
+            (insert "(defun alpha () nil)\n")
+            (insert "(defun beta () nil)\n"))
+          
+          (let ((symbols (ai-code--file-symbol-candidates test-file)))
+            (should (equal symbols (sort (copy-sequence symbols) #'string<)))))
+      ;; Cleanup
+      (when (file-exists-p test-file) (delete-file test-file)))))
+
+(ert-deftest ai-code-test-file-symbol-candidates-deduped ()
+  "Test that ai-code--file-symbol-candidates removes duplicates."
+  (let ((test-file (expand-file-name "test-dedup.el" temporary-file-directory)))
+    (unwind-protect
+        (progn
+          (with-temp-file test-file
+            (insert "(defun duplicate () nil)\n")
+            (insert "(defun duplicate () nil)\n"))
+          
+          (let ((symbols (ai-code--file-symbol-candidates test-file)))
+            (should (= 1 (cl-count "duplicate" symbols :test #'string=)))))
+      ;; Cleanup
+      (when (file-exists-p test-file) (delete-file test-file)))))
+
+;; Tests for ai-code--choose-symbol-from-file
+
+(ert-deftest ai-code-test-choose-symbol-from-file-returns-selection ()
+  "Test that ai-code--choose-symbol-from-file returns user selection."
+  (let ((test-file (expand-file-name "test-choose.el" temporary-file-directory)))
+    (unwind-protect
+        (progn
+          (with-temp-file test-file
+            (insert "(defun selected-func () nil)\n"))
+          
+          (cl-letf (((symbol-function 'completing-read)
+                     (lambda (prompt candidates &rest args)
+                       "selected-func")))
+            (should (string= "selected-func"
+                             (ai-code--choose-symbol-from-file test-file)))))
+      ;; Cleanup
+      (when (file-exists-p test-file) (delete-file test-file)))))
+
+(ert-deftest ai-code-test-choose-symbol-from-file-no-candidates ()
+  "Test that ai-code--choose-symbol-from-file returns nil with no candidates."
+  (let ((test-file (expand-file-name "test-empty.txt" temporary-file-directory)))
+    (unwind-protect
+        (progn
+          (with-temp-file test-file (insert "no symbols here"))
+          (should-not (ai-code--choose-symbol-from-file test-file)))
+      ;; Cleanup
+      (when (file-exists-p test-file) (delete-file test-file)))))
+
+(ert-deftest ai-code-test-choose-symbol-from-file-quit ()
+  "Test that ai-code--choose-symbol-from-file handles quit gracefully."
+  (let ((test-file (expand-file-name "test-quit.el" temporary-file-directory)))
+    (unwind-protect
+        (progn
+          (with-temp-file test-file
+            (insert "(defun some-func () nil)\n"))
+          
+          (cl-letf (((symbol-function 'completing-read)
+                     (lambda (prompt candidates &rest args)
+                       (signal 'quit nil))))
+            (should-not (ai-code--choose-symbol-from-file test-file))))
+      ;; Cleanup
+      (when (file-exists-p test-file) (delete-file test-file)))))
+
+;; Tests for # completion auto-trigger in comments
+
+(ert-deftest ai-code-test-comment-auto-trigger-with-hash ()
+  "Test that auto-trigger completes symbols when # is inserted after @file."
+  (let ((ai-code-prompt-filepath-completion-enabled t)
+        (git-root (expand-file-name "test-repo/" temporary-file-directory))
+        (test-file (expand-file-name "src/test.el" (expand-file-name "test-repo/" temporary-file-directory))))
+    (unwind-protect
+        (progn
+          ;; Setup: Create test file
+          (make-directory (file-name-directory test-file) t)
+          (with-temp-file test-file
+            (insert "(defun target-symbol () nil)\n"))
+          
+          (cl-letf (((symbol-function 'magit-toplevel) (lambda (&optional dir) git-root))
+                    ((symbol-function 'completing-read)
+                     (lambda (prompt candidates &rest args)
+                       "target-symbol")))
+            (with-temp-buffer
+              (emacs-lisp-mode)
+              (setq buffer-file-name "/tmp/test.el")
+              (insert ";; @src/test.el#")
+              
+              ;; Trigger auto-completion
+              (ai-code--comment-auto-trigger-filepath-completion)
+              
+              ;; Should have inserted the symbol
+              (should (string-match-p "target-symbol" (buffer-string))))))
+      ;; Cleanup
+      (when (file-exists-p test-file) (delete-file test-file))
+      (when (file-directory-p (file-name-directory test-file))
+        (delete-directory (file-name-directory test-file)))
+      (when (file-directory-p git-root) (delete-directory git-root)))))
+
+(ert-deftest ai-code-test-comment-auto-trigger-hash-no-file ()
+  "Test that # auto-trigger does nothing without valid @file prefix."
+  (let ((ai-code-prompt-filepath-completion-enabled t))
+    (with-temp-buffer
+      (emacs-lisp-mode)
+      (setq buffer-file-name "/tmp/test.el")
+      (insert ";; #")
+      
+      (let ((original-content (buffer-string)))
+        (ai-code--comment-auto-trigger-filepath-completion)
+        ;; Content should be unchanged (no completion without @file)
+        (should (string= original-content (buffer-string)))))))
+
+(ert-deftest ai-code-test-comment-auto-trigger-hash-disabled ()
+  "Test that # auto-trigger doesn't work when feature is disabled."
+  (let ((ai-code-prompt-filepath-completion-enabled nil))
+    (with-temp-buffer
+      (emacs-lisp-mode)
+      (setq buffer-file-name "/tmp/test.el")
+      (insert ";; @src/test.el#")
+      
+      (let ((original-content (buffer-string)))
+        (ai-code--comment-auto-trigger-filepath-completion)
+        ;; Should be unchanged when disabled
+        (should (string= original-content (buffer-string)))))))
+
+;; Tests for # completion in AI session buffers
+
+(ert-deftest ai-code-test-session-auto-trigger-hash ()
+  "Test that # auto-trigger works in AI session buffers."
+  (let ((ai-code-prompt-filepath-completion-enabled t)
+        (git-root (expand-file-name "test-repo/" temporary-file-directory))
+        (test-file (expand-file-name "src/test.el" (expand-file-name "test-repo/" temporary-file-directory)))
+        (terminal-sent nil))
+    (unwind-protect
+        (progn
+          ;; Setup: Create test file
+          (make-directory (file-name-directory test-file) t)
+          (with-temp-file test-file
+            (insert "(defun session-symbol () nil)\n"))
+          
+          (cl-letf (((symbol-function 'magit-toplevel) (lambda (&optional dir) git-root))
+                    ((symbol-function 'ai-code-backends-infra--session-buffer-p)
+                     (lambda (buf) t))
+                    ((symbol-function 'completing-read)
+                     (lambda (prompt candidates &rest args)
+                       "session-symbol"))
+                    ((symbol-function 'ai-code-backends-infra--terminal-send-backspace)
+                     (lambda () (setq terminal-sent 'backspace)))
+                    ((symbol-function 'ai-code-backends-infra--terminal-send-string)
+                     (lambda (str) (setq terminal-sent str))))
+            (with-temp-buffer
+              (insert "@src/test.el")
+              (goto-char (point-max))
+              (insert "#")
+              
+              ;; Trigger auto-completion
+              (ai-code--session-auto-trigger-filepath-completion)
+              
+              ;; Should have sent the symbol to terminal
+              (should (string= "#session-symbol" terminal-sent)))))
+      ;; Cleanup
+      (when (file-exists-p test-file) (delete-file test-file))
+      (when (file-directory-p (file-name-directory test-file))
+        (delete-directory (file-name-directory test-file)))
+      (when (file-directory-p git-root) (delete-directory git-root)))))
+
+(ert-deftest ai-code-test-session-auto-trigger-hash-not-session ()
+  "Test that # auto-trigger doesn't work in non-session buffers."
+  (let ((ai-code-prompt-filepath-completion-enabled t)
+        (terminal-sent nil))
+    (cl-letf (((symbol-function 'magit-toplevel) (lambda (&optional dir) "/tmp/repo/"))
+              ((symbol-function 'ai-code-backends-infra--session-buffer-p)
+               (lambda (buf) nil))
+              ((symbol-function 'ai-code-backends-infra--terminal-send-string)
+               (lambda (str) (setq terminal-sent str))))
+      (with-temp-buffer
+        (insert "@src/test.el#")
+        
+        (ai-code--session-auto-trigger-filepath-completion)
+        
+        ;; Should not have sent anything (not a session buffer)
+        (should-not terminal-sent)))))
+
 (provide 'test_ai-code-input)
 ;;; test_ai-code-input.el ends here
