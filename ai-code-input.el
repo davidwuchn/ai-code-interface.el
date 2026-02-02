@@ -14,6 +14,7 @@
 (require 'cl-lib)  ; For `cl-subseq`
 (require 'imenu)
 (require 'magit)
+(require 'subr-x)
 
 (declare-function helm-comp-read "helm-mode" (prompt collection &rest args))
 (declare-function ai-code-backends-infra--session-buffer-p "ai-code-backends-infra" (buffer))
@@ -125,19 +126,71 @@ The current buffer's file is always first."
           (concat "\nFiles:\n" (mapconcat #'identity sorted-files "\n"))
         ""))))
 
+(defun ai-code--imenu-subalist-p (payload)
+  "Return non-nil when PAYLOAD looks like an imenu sub-alist."
+  (and (listp payload)
+       (cl-some (lambda (entry)
+                  (and (consp entry) (stringp (car entry))))
+                payload)))
+
+(defun ai-code--imenu-item-position (payload)
+  "Extract buffer position from imenu PAYLOAD."
+  (cond
+   ((or (integerp payload) (markerp payload)) payload)
+   ((overlayp payload) (overlay-start payload))
+   ((and (consp payload)
+         (or (integerp (car payload))
+             (markerp (car payload))))
+    (car payload))
+   (t nil)))
+
+(defun ai-code--extract-symbol-from-line (line)
+  "Extract a likely symbol identifier from LINE."
+  (let ((patterns
+         '("^[ \t]*\\(?:async[ \t]+\\)?\\(?:def\\|class\\|function\\|func\\|fn\\|sub\\|proc\\|method\\|interface\\|struct\\|enum\\|type\\|trait\\|module\\|namespace\\)[ \t]+\\([[:word:]_.$:-]+\\)"
+           "^[ \t]*\\([[:word:]_.$:-]+\\)[ \t]*("
+           "^[ \t]*\\([[:word:]_.$:-]+\\)[ \t]*[{:]")))
+    (catch 'found
+      (dolist (pattern patterns)
+        (when (string-match pattern line)
+          (throw 'found (match-string 1 line))))
+      nil)))
+
+(defun ai-code--imenu-symbol-from-position (payload)
+  "Extract a symbol name from PAYLOAD position as fallback."
+  (when-let ((pos (ai-code--imenu-item-position payload)))
+    (save-excursion
+      (goto-char pos)
+      (ai-code--extract-symbol-from-line
+       (buffer-substring-no-properties
+        (line-beginning-position)
+        (line-end-position))))))
+
+(defun ai-code--imenu-noise-name-p (name)
+  "Return non-nil when NAME looks like an imenu group/template label."
+  (or (not (stringp name))
+      (string-empty-p (string-trim name))
+      (string-match-p "\\`\\*.*\\*\\'" name)
+      (string-match-p "\\`[0-9]+\\'" name)))
+
+(defun ai-code--normalize-imenu-symbol-name (name payload)
+  "Normalize imenu NAME using PAYLOAD as fallback source."
+  (let ((trimmed (and (stringp name) (string-trim name))))
+    (if (and trimmed (not (ai-code--imenu-noise-name-p trimmed)))
+        trimmed
+      (ai-code--imenu-symbol-from-position payload))))
+
 (defun ai-code--flatten-imenu-index (index)
-  "Flatten imenu INDEX alist into a list of strings."
+  "Flatten imenu INDEX into a list of useful symbol names."
   (let (result)
     (dolist (item index)
       (when (consp item)
         (let ((name (car item))
               (payload (cdr item)))
-          (cond
-           ((and (listp payload) (consp (car payload)))
-            ;; Nested list (category or sub-index)
-            (setq result (append result (ai-code--flatten-imenu-index payload))))
-           ((stringp name)
-            (push name result))))))
+          (if (ai-code--imenu-subalist-p payload)
+              (setq result (append result (ai-code--flatten-imenu-index payload)))
+            (when-let ((symbol (ai-code--normalize-imenu-symbol-name name payload)))
+              (push symbol result))))))
     result))
 
 (defun ai-code--get-functions-from-buffer (buffer)
