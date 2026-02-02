@@ -306,8 +306,8 @@ END-POS defaults to the current '#' position."
                (delete-char -1)  ; Remove the '@' we just typed
                (insert choice))))))
       (?#
-       (when-let ((file (ai-code--hash-completion-target-file (1- (point))))
-                  (symbol (ai-code--choose-symbol-from-file file)))
+       (when-let* ((file (ai-code--hash-completion-target-file (1- (point))))
+                   (symbol (ai-code--choose-symbol-from-file file)))
          (when (not (string-empty-p symbol))
            (delete-char -1)  ; Remove the '#' we just typed
            (insert (concat "#" symbol))))))))
@@ -328,8 +328,8 @@ END-POS defaults to the current '#' position."
                (ai-code-backends-infra--terminal-send-backspace)
                (ai-code-backends-infra--terminal-send-string choice))))))
       (?#
-       (when-let ((file (ai-code--hash-completion-target-file (1- (point))))
-                  (symbol (ai-code--choose-symbol-from-file file)))
+       (when-let* ((file (ai-code--hash-completion-target-file (1- (point))))
+                   (symbol (ai-code--choose-symbol-from-file file)))
          (when (not (string-empty-p symbol))
            (ai-code-backends-infra--terminal-send-backspace)
            (ai-code-backends-infra--terminal-send-string (concat "#" symbol))))))))
