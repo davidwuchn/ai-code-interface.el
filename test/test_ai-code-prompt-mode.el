@@ -818,13 +818,13 @@ and ensures everything is cleaned up afterward."
            
            ;; Mock dependencies
            (cl-letf (((symbol-function 'ai-code--git-ignored-repo-file-p)
-                      (lambda (file root) nil))
+                      (lambda (_file _root) nil))
                      ((symbol-function 'ai-code--visible-window-files)
-                      (lambda (root) '()))
+                      (lambda (_root) '()))
                      ((symbol-function 'ai-code--buffer-file-list)
-                      (lambda (root skip) (list test-file)))
+                      (lambda (_root _skip) (list test-file)))
                      ((symbol-function 'ai-code--repo-recent-files)
-                      (lambda (root) '())))
+                      (lambda (_root) '())))
              
              (let ((candidates (ai-code--prompt-filepath-candidates)))
                ;; Both dired directories should be included in candidates
