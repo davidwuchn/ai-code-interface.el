@@ -3,6 +3,9 @@
 
 ** Main branch change
 
+- Feat: Add # class / function name completion in AI prompts, comments and AI coding session
+- Chore: Include Dired directories in current frame for Git root paths list
+
 ** 1.30
 - Feat: Enable @ completion in ai coding session window
 - Feat: @ in ai-code-prompt-mode will trigger filename completion
