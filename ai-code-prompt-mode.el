@@ -233,6 +233,38 @@ If FILE exists, return its truename. Otherwise return expanded path."
         (ai-code--relative-filepath full-truename git-root-truename)
       full-truename)))
 
+(defun ai-code--current-frame-dired-paths (git-root-truename)
+  "Return dired directory candidates from current frame under GIT-ROOT-TRUENAME."
+  (let ((paths '()))
+    (dolist (win (window-list nil 'no-minibuffer))
+      (with-current-buffer (window-buffer win)
+        (when (derived-mode-p 'dired-mode)
+          (let ((dir (if (fboundp 'dired-current-directory)
+                         (dired-current-directory)
+                       default-directory)))
+            (when (and dir
+                       (file-directory-p dir)
+                       (string-prefix-p git-root-truename
+                                        (file-truename dir))
+                       (not (ai-code--git-ignored-repo-file-p
+                             dir
+                             git-root-truename)))
+              (push (ai-code--relative-filepath dir
+                                                git-root-truename)
+                    paths))))))
+    (nreverse (delete-dups paths))))
+
+(defun ai-code--visible-window-files ()
+  "Return files from visible windows in current frame."
+  (let ((files '())
+        (selected (selected-window)))
+    (dolist (win (cons selected
+                       (delq selected (window-list nil 'no-minibuffer))))
+      (let ((file (buffer-file-name (window-buffer win))))
+        (when file
+          (push file files))))
+    (nreverse (delete-dups files))))
+
 (defun ai-code--buffer-file-list (git-root-truename &optional skip-files)
   "Return buffer file list under GIT-ROOT-TRUENAME, skipping SKIP-FILES."
   (let ((files '()))
@@ -264,33 +296,8 @@ If FILE exists, return its truename. Otherwise return expanded path."
     (let* ((git-root-truename (file-truename git-root))
            (current-file (buffer-file-name (current-buffer)))
            (current-frame-dired-paths
-            (let ((paths '()))
-              (dolist (win (window-list nil 'no-minibuffer))
-                (with-current-buffer (window-buffer win)
-                  (when (derived-mode-p 'dired-mode)
-                    (let ((dir (if (fboundp 'dired-current-directory)
-                                   (dired-current-directory)
-                                 default-directory)))
-                      (when (and dir
-                                 (file-directory-p dir)
-                                 (string-prefix-p git-root-truename
-                                                  (file-truename dir))
-                                 (not (ai-code--git-ignored-repo-file-p
-                                       dir
-                                       git-root-truename)))
-                        (push (ai-code--relative-filepath dir
-                                                          git-root-truename)
-                              paths))))))
-              (nreverse (delete-dups paths))))
-           (visible-files
-            (let ((files '())
-                  (selected (selected-window)))
-              (dolist (win (cons selected
-                                 (delq selected (window-list nil 'no-minibuffer))))
-                (let ((file (buffer-file-name (window-buffer win))))
-                  (when file
-                    (push file files))))
-              (nreverse (delete-dups files))))
+            (ai-code--current-frame-dired-paths git-root-truename))
+           (visible-files (ai-code--visible-window-files))
            (skip-files (mapcar #'ai-code--normalize-path visible-files))
            (buffer-files (ai-code--buffer-file-list git-root-truename skip-files))
            (recent-files (ai-code--repo-recent-files git-root-truename))
