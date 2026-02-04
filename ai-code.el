@@ -228,7 +228,7 @@ Shows the current backend label to the right."
     ("x" "Explain code in scope" ai-code-explain)
     ("<SPC>" "Send command (C-u: context)" ai-code-send-command)
     ("@" "Add context (C-u: clear)" ai-code-context-action)
-    ("K" "Create or open task file" ai-code-create-or-open-task-file)]
+    ]
 
    ["AI Agile Development"
     ("r" "Refactor Code"               ai-code-refactor-book-method)
@@ -238,7 +238,10 @@ Shows the current backend label to the right."
     ("!" "Run Current File or Command" ai-code-run-current-file-or-shell-cmd)
     ("b" "Build project"               ai-code-build-project)
     ("p" "Open prompt history file" ai-code-open-prompt-file)
-    ("I" "Insert function name at point" ai-code-insert-function-at-point)]
+    ;; ("I" "Insert function name at point" ai-code-insert-function-at-point)
+    ("K" "Create or open task file" ai-code-create-or-open-task-file)
+    ("n" "Take notes from AI session region" ai-code-take-notes)
+    ]
 
    ["Other Tools"
     ("." "Init projectile and gtags" ai-code-init-project)
@@ -249,7 +252,6 @@ Shows the current backend label to the right."
     ("o" "Open recent file (C-u: insert)" ai-code-git-repo-recent-modified-files)
     ;; ("o" "Open Clipboard file dir" ai-code-open-clipboard-file-path-as-dired)
     ("m" "Debug python MCP server" ai-code-debug-mcp)
-    ("n" "Take notes from AI session region" ai-code-take-notes)
     ("N" "Toggle notifications" ai-code-notifications-toggle)]])
 
 
