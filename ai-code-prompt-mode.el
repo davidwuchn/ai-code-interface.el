@@ -218,19 +218,6 @@ NOTE: This does not handle file paths containing spaces."
   "Return FILE relative to GIT-ROOT-TRUENAME, prefixed with '@'."
   (concat "@" (file-relative-name (file-truename file) git-root-truename)))
 
-(defun ai-code--visible-window-files (git-root-truename)
-  "Return visible window file list under GIT-ROOT-TRUENAME."
-  (let ((files '())
-        (selected (selected-window)))
-    (dolist (win (cons selected
-                       (delq selected (window-list nil 'no-minibuffer))))
-      (let* ((buf (window-buffer win))
-             (file (buffer-file-name buf)))
-        (when (and (ai-code--file-in-git-repo-p file git-root-truename)
-                   (not (ai-code--git-ignored-repo-file-p file git-root-truename)))
-          (push file files))))
-    (nreverse (delete-dups files))))
-
 (defun ai-code--buffer-file-list (git-root-truename &optional skip-files)
   "Return buffer file list under GIT-ROOT-TRUENAME, skipping SKIP-FILES."
   (let ((files '()))
@@ -280,13 +267,33 @@ NOTE: This does not handle file paths containing spaces."
                                                           git-root-truename)
                               paths))))))
               (nreverse (delete-dups paths))))
-           (visible-files (ai-code--visible-window-files git-root-truename))
-           (skip-files (mapcar #'file-truename visible-files))
+           (visible-files
+            (let ((files '())
+                  (selected (selected-window)))
+              (dolist (win (cons selected
+                                 (delq selected (window-list nil 'no-minibuffer))))
+                (let ((file (buffer-file-name (window-buffer win))))
+                  (when file
+                    (push file files))))
+              (nreverse (delete-dups files))))
+           (skip-files (mapcar (lambda (file)
+                                 (let ((full (expand-file-name file)))
+                                   (if (file-exists-p full)
+                                       (file-truename full)
+                                     full)))
+                               visible-files))
            (buffer-files (ai-code--buffer-file-list git-root-truename skip-files))
            (recent-files (ai-code--repo-recent-files git-root-truename))
            (ignore-prefix (concat "@" ai-code-files-dir-name "/"))
            (visible-paths (mapcar (lambda (file)
-                                    (ai-code--relative-filepath file git-root-truename))
+                                    (let* ((full (expand-file-name file))
+                                           (full-truename (if (file-exists-p full)
+                                                              (file-truename full)
+                                                            full)))
+                                      (if (string-prefix-p git-root-truename full-truename)
+                                          (ai-code--relative-filepath full-truename
+                                                                      git-root-truename)
+                                        full-truename)))
                                   visible-files))
            (buffer-paths (mapcar (lambda (file)
                                    (ai-code--relative-filepath file git-root-truename))

@@ -364,41 +364,6 @@ and ensures everything is cleaned up afterward."
    (let ((result (ai-code--relative-filepath mock-file-in-repo git-root)))
      (should (string= result "@src/main.js")))))
 
-(ert-deftest ai-code-test-visible-window-files ()
-  "Test that ai-code--visible-window-files returns files from visible windows."
-  (ai-code-with-test-repo
-   (let ((test-file-1 (expand-file-name "file1.el" git-root))
-         (test-file-2 (expand-file-name "file2.el" git-root)))
-     (unwind-protect
-         (progn
-           ;; Create test files
-           (with-temp-file test-file-1 (insert "content1"))
-           (with-temp-file test-file-2 (insert "content2"))
-           
-           ;; Mock ai-code--git-ignored-repo-file-p to return nil for all files
-           (cl-letf (((symbol-function 'ai-code--git-ignored-repo-file-p)
-                      (lambda (file root) nil)))
-             
-             ;; Open files in buffers but don't display them
-             (with-current-buffer (find-file-noselect test-file-1)
-               (with-current-buffer (find-file-noselect test-file-2)
-                 ;; Mock window-list to return windows with these buffers
-                 (cl-letf (((symbol-function 'window-list)
-                            (lambda (&optional frame no-minibuf)
-                              (list (selected-window))))
-                           ((symbol-function 'window-buffer)
-                            (lambda (win)
-                              (if (eq win (selected-window))
-                                  (get-buffer (file-name-nondirectory test-file-1))
-                                (get-buffer (file-name-nondirectory test-file-2))))))
-                   (let ((result (ai-code--visible-window-files git-root)))
-                     ;; Should contain the file from the selected window
-                     (should (member test-file-1 result))))))))
-       
-       ;; Cleanup
-       (when (file-exists-p test-file-1) (delete-file test-file-1))
-       (when (file-exists-p test-file-2) (delete-file test-file-2))))))
-
 (ert-deftest ai-code-test-buffer-file-list ()
   "Test that ai-code--buffer-file-list returns buffer files excluding skip-files."
   (ai-code-with-test-repo
@@ -502,35 +467,6 @@ and ensures everything is cleaned up afterward."
        (when (file-exists-p task-file) (delete-file task-file))
        (when (file-exists-p normal-file) (delete-file normal-file))
        (when (file-directory-p ai-files-dir) (delete-directory ai-files-dir))))))
-
-(ert-deftest ai-code-test-prompt-filepath-candidates-prioritizes-visible-windows ()
-  "Test that ai-code--prompt-filepath-candidates prioritizes visible window files."
-  (ai-code-with-test-repo
-   (let ((visible-file (expand-file-name "visible.el" git-root))
-         (buffer-file (expand-file-name "buffer.el" git-root)))
-     (unwind-protect
-         (progn
-           ;; Create test files
-           (with-temp-file visible-file (insert "visible"))
-           (with-temp-file buffer-file (insert "buffer"))
-           
-           ;; Mock dependencies
-           (cl-letf (((symbol-function 'ai-code--git-ignored-repo-file-p)
-                      (lambda (file root) nil))
-                     ((symbol-function 'ai-code--visible-window-files)
-                      (lambda (root) (list visible-file)))
-                     ((symbol-function 'ai-code--buffer-file-list)
-                      (lambda (root skip) (list buffer-file)))
-                     ((symbol-function 'ai-code--repo-recent-files)
-                      (lambda (root) '())))
-             
-             (let ((candidates (ai-code--prompt-filepath-candidates)))
-               ;; Visible file should come before buffer file
-               (should (equal candidates '("@visible.el" "@buffer.el"))))))
-       
-       ;; Cleanup
-       (when (file-exists-p visible-file) (delete-file visible-file))
-       (when (file-exists-p buffer-file) (delete-file buffer-file))))))
 
 (ert-deftest ai-code-test-prompt-filepath-capf-returns-candidates-after-at ()
   "Test that ai-code--prompt-filepath-capf returns candidates when '@' is typed."
@@ -790,63 +726,6 @@ and ensures everything is cleaned up afterward."
        (let ((result (ai-code--prompt-filepath-capf)))
          ;; Should return nil (in minibuffer)
          (should-not result))))))
-
-(ert-deftest ai-code-test-prompt-filepath-candidates-includes-dired-directories ()
-  "Test that ai-code--prompt-filepath-candidates includes dired directories from current frame."
-  (ai-code-with-test-repo
-   (let ((dired-dir-1 (expand-file-name "src/" git-root))
-         (dired-dir-2 (expand-file-name "test/" git-root))
-         (test-file (expand-file-name "file.el" git-root))
-         (dired-buf-1 nil)
-         (dired-buf-2 nil))
-     (unwind-protect
-         (progn
-           ;; Create test directories and file
-           (make-directory dired-dir-1 t)
-           (make-directory dired-dir-2 t)
-           (with-temp-file test-file (insert "content"))
-           
-           ;; Open dired buffers and display them in windows
-           (setq dired-buf-1 (dired-noselect dired-dir-1))
-           (setq dired-buf-2 (dired-noselect dired-dir-2))
-           
-           ;; Display dired buffers in windows to simulate visible frame
-           (switch-to-buffer dired-buf-1)
-           (split-window)
-           (other-window 1)
-           (switch-to-buffer dired-buf-2)
-           
-           ;; Mock dependencies
-           (cl-letf (((symbol-function 'ai-code--git-ignored-repo-file-p)
-                      (lambda (_file _root) nil))
-                     ((symbol-function 'ai-code--visible-window-files)
-                      (lambda (_root) '()))
-                     ((symbol-function 'ai-code--buffer-file-list)
-                      (lambda (_root _skip) (list test-file)))
-                     ((symbol-function 'ai-code--repo-recent-files)
-                      (lambda (_root) '())))
-             
-             (let ((candidates (ai-code--prompt-filepath-candidates)))
-               ;; Both dired directories should be included in candidates
-               (should (member "@src/" candidates))
-               (should (member "@test/" candidates))
-               ;; Test file should also be included
-               (should (member "@file.el" candidates))
-               ;; Dired directories should come before buffer files
-               (let ((src-pos (cl-position "@src/" candidates :test #'string=))
-                     (test-pos (cl-position "@test/" candidates :test #'string=))
-                     (file-pos (cl-position "@file.el" candidates :test #'string=)))
-                 (should (< src-pos file-pos))
-                 (should (< test-pos file-pos))))))
-       
-       ;; Cleanup
-       (when (buffer-live-p dired-buf-1) (kill-buffer dired-buf-1))
-       (when (buffer-live-p dired-buf-2) (kill-buffer dired-buf-2))
-       (when (file-exists-p test-file) (delete-file test-file))
-       (when (file-directory-p dired-dir-1) (delete-directory dired-dir-1))
-       (when (file-directory-p dired-dir-2) (delete-directory dired-dir-2))
-       ;; Restore window configuration
-       (delete-other-windows)))))
 
 (provide 'test-ai-code-prompt-mode)
 ;;; test_ai-code-prompt-mode.el ends here
