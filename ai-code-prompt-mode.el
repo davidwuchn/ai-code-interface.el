@@ -271,10 +271,18 @@ If FILE exists, return its truename. Otherwise return expanded path."
         (count 0))
     (dolist (buf (buffer-list))
       (when (< count 5)
-        (let ((file (buffer-file-name buf)))
-          (when file
-            (push file files)
-            (setq count (1+ count))))))
+        (with-current-buffer buf
+          (if (derived-mode-p 'dired-mode)
+              (let ((dir (if (fboundp 'dired-current-directory)
+                             (dired-current-directory)
+                           default-directory)))
+                (when dir
+                  (push dir files)
+                  (setq count (1+ count))))
+            (let ((file (buffer-file-name buf)))
+              (when file
+                (push file files)
+                (setq count (1+ count))))))))
     (mapcar (lambda (file)
               (ai-code--candidate-path file git-root-truename))
             (nreverse files))))
