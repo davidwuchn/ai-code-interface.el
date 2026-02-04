@@ -265,6 +265,20 @@ If FILE exists, return its truename. Otherwise return expanded path."
           (push file files))))
     (nreverse (delete-dups files))))
 
+(defun ai-code--recent-buffer-paths (git-root-truename)
+  "Return candidate paths for most recent 5 visited buffer files."
+  (let ((files '())
+        (count 0))
+    (dolist (buf (buffer-list))
+      (when (< count 5)
+        (let ((file (buffer-file-name buf)))
+          (when file
+            (push file files)
+            (setq count (1+ count))))))
+    (mapcar (lambda (file)
+              (ai-code--candidate-path file git-root-truename))
+            (nreverse files))))
+
 (defun ai-code--buffer-file-list (git-root-truename &optional skip-files)
   "Return buffer file list under GIT-ROOT-TRUENAME, skipping SKIP-FILES."
   (let ((files '()))
@@ -305,13 +319,19 @@ If FILE exists, return its truename. Otherwise return expanded path."
            (visible-paths (mapcar (lambda (file)
                                     (ai-code--candidate-path file git-root-truename))
                                   visible-files))
+           (recent-buffer-paths
+            (ai-code--recent-buffer-paths git-root-truename))
            (buffer-paths (mapcar (lambda (file)
                                    (ai-code--candidate-path file git-root-truename))
                                  buffer-files))
            (recent-paths (mapcar (lambda (file)
                                    (ai-code--candidate-path file git-root-truename))
                                  recent-files))
-           (combined (append current-frame-dired-paths visible-paths buffer-paths recent-paths))
+           (combined (append current-frame-dired-paths
+                             visible-paths
+                             recent-buffer-paths
+                             buffer-paths
+                             recent-paths))
            (deduped (ai-code--dedupe-preserve-order combined))
            (filtered '()))
       (dolist (item deduped)
