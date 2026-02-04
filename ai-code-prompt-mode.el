@@ -218,6 +218,21 @@ NOTE: This does not handle file paths containing spaces."
   "Return FILE relative to GIT-ROOT-TRUENAME, prefixed with '@'."
   (concat "@" (file-relative-name (file-truename file) git-root-truename)))
 
+(defun ai-code--normalize-path (file)
+  "Return normalized absolute path for FILE.
+If FILE exists, return its truename. Otherwise return expanded path."
+  (let ((full (expand-file-name file)))
+    (if (file-exists-p full)
+        (file-truename full)
+      full)))
+
+(defun ai-code--candidate-path (file git-root-truename)
+  "Return completion candidate for FILE under GIT-ROOT-TRUENAME."
+  (let ((full-truename (ai-code--normalize-path file)))
+    (if (string-prefix-p git-root-truename full-truename)
+        (ai-code--relative-filepath full-truename git-root-truename)
+      full-truename)))
+
 (defun ai-code--buffer-file-list (git-root-truename &optional skip-files)
   "Return buffer file list under GIT-ROOT-TRUENAME, skipping SKIP-FILES."
   (let ((files '()))
@@ -276,30 +291,18 @@ NOTE: This does not handle file paths containing spaces."
                   (when file
                     (push file files))))
               (nreverse (delete-dups files))))
-           (skip-files (mapcar (lambda (file)
-                                 (let ((full (expand-file-name file)))
-                                   (if (file-exists-p full)
-                                       (file-truename full)
-                                     full)))
-                               visible-files))
+           (skip-files (mapcar #'ai-code--normalize-path visible-files))
            (buffer-files (ai-code--buffer-file-list git-root-truename skip-files))
            (recent-files (ai-code--repo-recent-files git-root-truename))
            (ignore-prefix (concat "@" ai-code-files-dir-name "/"))
            (visible-paths (mapcar (lambda (file)
-                                    (let* ((full (expand-file-name file))
-                                           (full-truename (if (file-exists-p full)
-                                                              (file-truename full)
-                                                            full)))
-                                      (if (string-prefix-p git-root-truename full-truename)
-                                          (ai-code--relative-filepath full-truename
-                                                                      git-root-truename)
-                                        full-truename)))
+                                    (ai-code--candidate-path file git-root-truename))
                                   visible-files))
            (buffer-paths (mapcar (lambda (file)
-                                   (ai-code--relative-filepath file git-root-truename))
+                                   (ai-code--candidate-path file git-root-truename))
                                  buffer-files))
            (recent-paths (mapcar (lambda (file)
-                                   (ai-code--relative-filepath file git-root-truename))
+                                   (ai-code--candidate-path file git-root-truename))
                                  recent-files))
            (combined (append current-frame-dired-paths visible-paths buffer-paths recent-paths))
            (deduped (ai-code--dedupe-preserve-order combined))
