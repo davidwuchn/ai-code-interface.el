@@ -419,7 +419,7 @@ and ensures everything is cleaned up afterward."
      ;; Test with existing file - should return truename
      (let ((result (ai-code--normalize-path existing-file)))
        (should (string= result (file-truename existing-file))))
-     
+
      ;; Test with non-existing file - should return expanded path
      (let ((result (ai-code--normalize-path non-existing-file)))
        (should (string= result (expand-file-name non-existing-file)))))))
