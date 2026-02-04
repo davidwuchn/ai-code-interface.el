@@ -227,7 +227,9 @@ If FILE exists, return its truename. Otherwise return expanded path."
       full)))
 
 (defun ai-code--candidate-path (file git-root-truename)
-  "Return completion candidate for FILE under GIT-ROOT-TRUENAME."
+  "Return completion candidate for FILE.
+Return '@'-prefixed path relative to GIT-ROOT-TRUENAME when FILE is under
+that root, otherwise return the absolute path."
   (let ((full-truename (ai-code--normalize-path file)))
     (if (string-prefix-p git-root-truename full-truename)
         (ai-code--relative-filepath full-truename git-root-truename)
