@@ -268,7 +268,7 @@ that root, otherwise return the absolute path."
     (nreverse (delete-dups files))))
 
 (defun ai-code--recent-buffer-paths (git-root-truename)
-  "Return candidate paths for most recent 5 visited buffer files."
+  "Return candidate paths for most recent 5 visited buffer files or directories."
   (let ((files '())
         (count 0))
     (dolist (buf (buffer-list))
