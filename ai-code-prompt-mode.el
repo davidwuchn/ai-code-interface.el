@@ -524,7 +524,12 @@ TASK-NAME and TASK-URL are used to initialize new files."
   (message "Opened task file: %s" task-file))
 
 (defun ai-code--select-task-target-directory (ai-code-files-dir current-dir)
-  "Prompt destination and return selected directory path."
+  "Prompt user to select target directory.
+
+AI-CODE-FILES-DIR is the path to the .ai.code.files directory.
+CURRENT-DIR is the current default directory.
+
+Returns the selected directory path."
   (let ((target-dir (completing-read
                      "Create task file in: "
                      (list (format "ai-code-files-dir: %s" ai-code-files-dir)
