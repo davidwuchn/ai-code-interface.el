@@ -496,6 +496,56 @@ Returns a filename with .org suffix."
       (setq generated-name (substring generated-name 0 60)))
     (concat prefix generated-name ".org")))
 
+(defun ai-code--initialize-task-file-content (task-name task-url)
+  "Insert initial task content using TASK-NAME and TASK-URL."
+  (insert (format "#+TITLE: %s\n" task-name))
+  (insert (format "#+DATE: %s\n" (format-time-string "%Y-%m-%d")))
+  (unless (string-empty-p task-url)
+    (insert (format "#+URL: %s\n" task-url)))
+  (let ((label (ai-code-current-backend-label)))
+    (insert (format "#+AGENT: %s\n" label))
+    (insert "#+SESSION_ID: <Usually you can get the session id with /status or /stat in AI coding window>\n"))
+  (insert "\n* Task Description\n\n")
+  (insert task-name)
+  (insert "\n\n* Investigation\n\n")
+  (insert "# Enter your prompts here. After that,\n# Select them and use C-c a SPC (ai-code-send-command) to send to AI\n\n")
+  (insert "# Use C-c a n (ai-code-take-notes) to copy notes back from AI session\n\n")
+  (insert "\n\n* Code Change\n\n"))
+
+(defun ai-code--open-or-create-task-file (task-file confirmed-filename task-name task-url)
+  "Open TASK-FILE and initialize it when needed.
+CONFIRMED-FILENAME determines if .org should be appended.
+TASK-NAME and TASK-URL are used to initialize new files."
+  (unless (string-suffix-p ".org" confirmed-filename)
+    (setq task-file (concat task-file ".org")))
+  (find-file-other-window task-file)
+  (unless (file-exists-p task-file)
+    (ai-code--initialize-task-file-content task-name task-url))
+  (message "Opened task file: %s" task-file))
+
+(defun ai-code--select-task-target-directory (ai-code-files-dir current-dir generated-basename)
+  "Prompt destination and return (CREATE-DIR-ONLY-P . SELECTED-DIR)."
+  (let* ((create-subdir-option (format "create subdirectory under current directory: %s/" generated-basename))
+         (target-dir (completing-read
+                      "Create task file in: "
+                      (list (format "ai-code-files-dir: %s" ai-code-files-dir)
+                            (format "current directory: %s" current-dir)
+                            create-subdir-option)
+                      nil t nil nil
+                      (format "ai-code-files-dir: %s" ai-code-files-dir)))
+         (create-dir-only-p (string= target-dir create-subdir-option))
+         (selected-dir
+          (cond
+           ((string-prefix-p "ai-code-files-dir:" target-dir) ai-code-files-dir)
+           (create-dir-only-p
+            (let ((subdir (expand-file-name generated-basename current-dir)))
+              (unless (file-directory-p subdir)
+                (make-directory subdir t))
+              (dired-other-window subdir)
+              subdir))
+           (t current-dir))))
+    (cons create-dir-only-p selected-dir)))
+
 ;;;###autoload
 (defun ai-code-create-or-open-task-file ()
   "Create or open an AI task file.
@@ -505,59 +555,22 @@ using GPTel, and creates the task file."
   (interactive)
   (let ((task-name (read-string "Task name (empty to open task directory): ")))
     (if (string-empty-p task-name)
-        ;; Open the task directory
         (let ((ai-code-files-dir (ai-code--ensure-files-directory)))
           (dired-other-window ai-code-files-dir)
           (message "Opened task directory: %s" ai-code-files-dir))
-      ;; Create a new task file
       (let* ((task-url (read-string "URL (optional, press Enter to skip): "))
              (ai-code-files-dir (ai-code--ensure-files-directory))
              (generated-filename (ai-code--generate-task-filename task-name))
              (generated-basename (file-name-sans-extension generated-filename))
              (confirmed-filename (read-string "Confirm task filename: " generated-filename))
              (current-dir (expand-file-name default-directory))
-             (create-subdir-option (format "create subdirectory under current directory: %s/" generated-basename))
-             (target-dir (completing-read
-                          "Create task file in: "
-                          (list (format "ai-code-files-dir: %s" ai-code-files-dir)
-                                (format "current directory: %s" current-dir)
-                                create-subdir-option)
-                          nil t nil nil
-                          (format "ai-code-files-dir: %s" ai-code-files-dir)))
-             (create-dir-only-p (string= target-dir create-subdir-option))
-             (selected-dir
-              (cond
-               ((string-prefix-p "ai-code-files-dir:" target-dir) ai-code-files-dir)
-               (create-dir-only-p
-                (let ((subdir (expand-file-name generated-basename current-dir)))
-                  (unless (file-directory-p subdir)
-                    (make-directory subdir t))
-                  (dired-other-window subdir)
-                  subdir))
-               (t current-dir)))
+             (target-selection (ai-code--select-task-target-directory ai-code-files-dir current-dir generated-basename))
+             (create-dir-only-p (car target-selection))
+             (selected-dir (cdr target-selection))
              (task-file (expand-file-name confirmed-filename selected-dir)))
         (if create-dir-only-p
             (message "Opened directory: %s" selected-dir)
-          ;; Ensure filename has .org extension
-          (unless (string-suffix-p ".org" confirmed-filename)
-            (setq task-file (concat task-file ".org")))
-          (find-file-other-window task-file)
-          (unless (file-exists-p task-file)
-            ;; Initialize new task file
-            (insert (format "#+TITLE: %s\n" task-name))
-            (insert (format "#+DATE: %s\n" (format-time-string "%Y-%m-%d")))
-            (unless (string-empty-p task-url)
-              (insert (format "#+URL: %s\n" task-url)))
-            (let ((label (ai-code-current-backend-label)))
-              (insert (format "#+AGENT: %s\n" label))
-              (insert "#+SESSION_ID: <Usually you can get the session id with /status or /stat in AI coding window>\n"))
-            (insert "\n* Task Description\n\n")
-            (insert task-name)
-            (insert "\n\n* Investigation\n\n")
-            (insert "# Enter your prompts here. After that,\n# Select them and use C-c a SPC (ai-code-send-command) to send to AI\n\n")
-            (insert "# Use C-c a n (ai-code-take-notes) to copy notes back from AI session\n\n")
-            (insert "\n\n* Code Change\n\n"))
-          (message "Opened task file: %s" task-file))))))
+          (ai-code--open-or-create-task-file task-file confirmed-filename task-name task-url))))))
 
 ;;;###autoload
 (add-to-list 'auto-mode-alist
