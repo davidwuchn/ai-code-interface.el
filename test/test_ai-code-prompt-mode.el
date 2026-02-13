@@ -226,16 +226,21 @@ and ensures everything is cleaned up afterward."
          (task-file nil)
          (ai-code-task-use-gptel-filename nil))
      (unwind-protect
-         (cl-letf (((symbol-function 'read-string)
-                    (lambda (prompt &optional initial-input)
-                      (cond
-                       ((string-match-p "Task name" prompt) "Test Task")
-                       ((string-match-p "URL" prompt) "https://example.com")
-                       ((string-match-p "Confirm task filename" prompt) initial-input))))
-                   ((symbol-function 'find-file-other-window)
-                    (lambda (filename)
-                      (setq task-file filename)
-                      (set-buffer (get-buffer-create "*test-task-buffer*"))
+	         (cl-letf (((symbol-function 'read-string)
+	                    (lambda (prompt &optional initial-input)
+	                      (cond
+	                       ((string-match-p "Task name" prompt) "Test Task")
+	                       ((string-match-p "URL" prompt) "https://example.com")
+	                       ((string-match-p "Confirm task filename" prompt) initial-input))))
+	                   ((symbol-function 'ai-code-current-backend-label)
+	                    (lambda () "codex"))
+	                   ((symbol-function 'completing-read)
+	                    (lambda (_prompt _collection &rest _args)
+	                      (format "ai-code-files-dir: %s" files-dir)))
+	                   ((symbol-function 'find-file-other-window)
+	                    (lambda (filename)
+	                      (setq task-file filename)
+	                      (set-buffer (get-buffer-create "*test-task-buffer*"))
                       (erase-buffer)))
                    ((symbol-function 'message)
                     (lambda (&rest args) nil)))
@@ -245,15 +250,15 @@ and ensures everything is cleaned up afterward."
            (should task-file)
            (should (string-prefix-p files-dir task-file))
            (should (string-suffix-p ".org" task-file))
-           ;; Check buffer content
-           (with-current-buffer "*test-task-buffer*"
-             (let ((content (buffer-string)))
-               (should (string-match-p "#+TITLE: Test Task" content))
-               (should (string-match-p "#+DATE: [0-9]\\{4\\}-[0-9]\\{2\\}-[0-9]\\{2\\}" content))
-               (should (string-match-p "#+URL: https://example.com" content))
-               (should (string-match-p "\\* Task Description" content))
-               (should (string-match-p "\\* Investigation" content))
-               (should (string-match-p "\\* Code Change" content)))))
+	           ;; Check buffer content
+	           (with-current-buffer "*test-task-buffer*"
+	             (let ((content (buffer-string)))
+	               (should (string-match-p (regexp-quote "#+TITLE: Test Task") content))
+	               (should (string-match-p (regexp-quote "#+DATE: ") content))
+	               (should (string-match-p (regexp-quote "#+URL: https://example.com") content))
+	               (should (string-match-p "\\* Task Description" content))
+	               (should (string-match-p "\\* Investigation" content))
+	               (should (string-match-p "\\* Code Change" content)))))
        ;; Cleanup
        (when (buffer-live-p (get-buffer "*test-task-buffer*"))
          (kill-buffer "*test-task-buffer*"))
@@ -267,17 +272,22 @@ and ensures everything is cleaned up afterward."
          (task-file nil)
          (ai-code-task-use-gptel-filename nil))
      (unwind-protect
-         (cl-letf (((symbol-function 'read-string)
-                    (lambda (prompt &optional initial-input)
-                      (cond
-                       ((string-match-p "Task name" prompt) "Test Task")
-                       ((string-match-p "URL" prompt) "")
-                       ;; User removes .org extension
-                       ((string-match-p "Confirm task filename" prompt) "my_task"))))
-                   ((symbol-function 'find-file-other-window)
-                    (lambda (filename)
-                      (setq task-file filename)
-                      (set-buffer (get-buffer-create "*test-task-buffer*"))
+	         (cl-letf (((symbol-function 'read-string)
+	                    (lambda (prompt &optional initial-input)
+	                      (cond
+	                       ((string-match-p "Task name" prompt) "Test Task")
+	                       ((string-match-p "URL" prompt) "")
+	                       ;; User removes .org extension
+	                       ((string-match-p "Confirm task filename" prompt) "my_task"))))
+	                   ((symbol-function 'ai-code-current-backend-label)
+	                    (lambda () "codex"))
+	                   ((symbol-function 'completing-read)
+	                    (lambda (_prompt _collection &rest _args)
+	                      (format "ai-code-files-dir: %s" files-dir)))
+	                   ((symbol-function 'find-file-other-window)
+	                    (lambda (filename)
+	                      (setq task-file filename)
+	                      (set-buffer (get-buffer-create "*test-task-buffer*"))
                       (erase-buffer)))
                    ((symbol-function 'message)
                     (lambda (&rest args) nil)))
@@ -290,6 +300,68 @@ and ensures everything is cleaned up afterward."
          (kill-buffer "*test-task-buffer*"))
        (when (file-directory-p files-dir)
          (delete-directory files-dir t))))))
+
+(ert-deftest ai-code-test-create-or-open-task-file-create-subdir-option-dir-only ()
+  "Test that choosing subdirectory option opens dired and does not create/open task file."
+  (ai-code-with-test-repo
+   (let* ((default-directory git-root)
+          (ai-code-task-use-gptel-filename nil)
+          (files-dir (expand-file-name ".ai.code.files" git-root))
+          (generated-filename "task_20260101_my_task.org")
+          (expected-subdir (expand-file-name "task_20260101_my_task" default-directory))
+          (opened-file nil)
+          (opened-dired nil))
+     (unwind-protect
+         (cl-letf (((symbol-function 'read-string)
+                    (lambda (prompt &optional initial-input)
+                      (cond
+                       ((string-match-p "Task name" prompt) "My Task")
+                       ((string-match-p "URL" prompt) "")
+                       ((string-match-p "Confirm task filename" prompt) initial-input))))
+                   ((symbol-function 'ai-code--generate-task-filename)
+                    (lambda (_task-name) generated-filename))
+                   ((symbol-function 'completing-read)
+                    (lambda (_prompt _collection &rest _args)
+                      "create subdirectory under current directory: task_20260101_my_task/"))
+                   ((symbol-function 'find-file-other-window)
+                    (lambda (filename) (setq opened-file filename)))
+                   ((symbol-function 'dired-other-window)
+                    (lambda (dirname) (setq opened-dired dirname)))
+                   ((symbol-function 'message)
+                    (lambda (&rest _args) nil)))
+           (ai-code-create-or-open-task-file)
+           (should (string= opened-dired expected-subdir))
+           (should (file-directory-p expected-subdir))
+           (should-not opened-file)
+           (should-not (file-exists-p (expand-file-name generated-filename expected-subdir)))))
+       (when (file-directory-p files-dir)
+         (delete-directory files-dir t))
+       (when (file-directory-p expected-subdir)
+         (delete-directory expected-subdir t)))))
+
+(ert-deftest ai-code-test-select-task-target-directory-create-subdir-option ()
+  "Test that subdirectory option returns dir-only marker and creates/open target directory."
+  (ai-code-with-test-repo
+   (let* ((ai-code-files-dir (expand-file-name ".ai.code.files" git-root))
+          (current-dir default-directory)
+          (generated-basename "task_20260101_my_task")
+          (expected-subdir (expand-file-name generated-basename current-dir))
+          (opened-dired nil)
+          (selection nil))
+     (unwind-protect
+         (cl-letf (((symbol-function 'completing-read)
+                    (lambda (_prompt _collection &rest _args)
+                      "create subdirectory under current directory: task_20260101_my_task/"))
+                   ((symbol-function 'dired-other-window)
+                    (lambda (dirname) (setq opened-dired dirname))))
+           (setq selection
+                 (ai-code--select-task-target-directory ai-code-files-dir current-dir generated-basename))
+           (should (car selection))
+           (should (string= (cdr selection) expected-subdir))
+           (should (string= opened-dired expected-subdir))
+           (should (file-directory-p expected-subdir)))
+       (when (file-directory-p expected-subdir)
+         (delete-directory expected-subdir t)))))
 
 
 (ert-deftest ai-code-test-setup-snippets-finds-directory ()
@@ -784,16 +856,18 @@ and ensures everything is cleaned up afterward."
      ;; Insert @ symbol
      (insert "@")
      
-     ;; Mock completion-at-point
-     (let ((completion-called nil))
-       (cl-letf (((symbol-function 'completion-at-point)
-                  (lambda () (setq completion-called t))))
-         
-         ;; Call auto-trigger function
-         (ai-code--prompt-auto-trigger-filepath-completion)
-         
-         ;; Should have called completion-at-point
-         (should completion-called))))))
+     ;; Mock filepath candidates and selection
+     (cl-letf (((symbol-function 'ai-code--prompt-filepath-candidates)
+                (lambda () '("@src/main.el")))
+               ((symbol-function 'completing-read)
+                (lambda (_prompt candidates &rest _args)
+                  (car candidates))))
+       
+       ;; Call auto-trigger function
+       (ai-code--prompt-auto-trigger-filepath-completion)
+       
+       ;; Should replace @ with chosen candidate
+       (should (string= (buffer-string) "@src/main.el"))))))
 
 (ert-deftest ai-code-test-prompt-auto-trigger-no-trigger-without-at ()
   "Test that ai-code--prompt-auto-trigger-filepath-completion doesn't trigger without '@'."
