@@ -523,28 +523,17 @@ TASK-NAME and TASK-URL are used to initialize new files."
     (ai-code--initialize-task-file-content task-name task-url))
   (message "Opened task file: %s" task-file))
 
-(defun ai-code--select-task-target-directory (ai-code-files-dir current-dir generated-basename)
-  "Prompt destination and return (CREATE-DIR-ONLY-P . SELECTED-DIR)."
-  (let* ((create-subdir-option (format "create subdirectory under current directory: %s/" generated-basename))
-         (target-dir (completing-read
-                      "Create task file in: "
-                      (list (format "ai-code-files-dir: %s" ai-code-files-dir)
-                            (format "current directory: %s" current-dir)
-                            create-subdir-option)
-                      nil t nil nil
-                      (format "ai-code-files-dir: %s" ai-code-files-dir)))
-         (create-dir-only-p (string= target-dir create-subdir-option))
-         (selected-dir
-          (cond
-           ((string-prefix-p "ai-code-files-dir:" target-dir) ai-code-files-dir)
-           (create-dir-only-p
-            (let ((subdir (expand-file-name generated-basename current-dir)))
-              (unless (file-directory-p subdir)
-                (make-directory subdir t))
-              (dired-other-window subdir)
-              subdir))
-           (t current-dir))))
-    (cons create-dir-only-p selected-dir)))
+(defun ai-code--select-task-target-directory (ai-code-files-dir current-dir)
+  "Prompt destination and return selected directory path."
+  (let ((target-dir (completing-read
+                     "Create task file in: "
+                     (list (format "ai-code-files-dir: %s" ai-code-files-dir)
+                           (format "current directory: %s" current-dir))
+                     nil t nil nil
+                     (format "ai-code-files-dir: %s" ai-code-files-dir))))
+    (if (string-prefix-p "ai-code-files-dir:" target-dir)
+        ai-code-files-dir
+      current-dir)))
 
 ;;;###autoload
 (defun ai-code-create-or-open-task-file ()
@@ -561,15 +550,17 @@ using GPTel, and creates the task file."
       (let* ((task-url (read-string "URL (optional, press Enter to skip): "))
              (ai-code-files-dir (ai-code--ensure-files-directory))
              (generated-filename (ai-code--generate-task-filename task-name))
-             (generated-basename (file-name-sans-extension generated-filename))
-             (confirmed-filename (read-string "Confirm task filename: " generated-filename))
+             (confirmed-filename (read-string "Confirm task filename (end with / to create subdirectory): " generated-filename))
              (current-dir (expand-file-name default-directory))
-             (target-selection (ai-code--select-task-target-directory ai-code-files-dir current-dir generated-basename))
-             (create-dir-only-p (car target-selection))
-             (selected-dir (cdr target-selection))
+             (selected-dir (ai-code--select-task-target-directory ai-code-files-dir current-dir))
+             (create-dir-only-p (string-suffix-p "/" confirmed-filename))
              (task-file (expand-file-name confirmed-filename selected-dir)))
         (if create-dir-only-p
-            (message "Opened directory: %s" selected-dir)
+            (let ((subdir (expand-file-name (directory-file-name confirmed-filename) selected-dir)))
+              (unless (file-directory-p subdir)
+                (make-directory subdir t))
+              (dired-other-window subdir)
+              (message "Opened directory: %s" subdir))
           (ai-code--open-or-create-task-file task-file confirmed-filename task-name task-url))))))
 
 ;;;###autoload

@@ -302,7 +302,7 @@ and ensures everything is cleaned up afterward."
          (delete-directory files-dir t))))))
 
 (ert-deftest ai-code-test-create-or-open-task-file-create-subdir-option-dir-only ()
-  "Test that choosing subdirectory option opens dired and does not create/open task file."
+  "Test that confirming filename ending with / opens subdirectory and does not create file."
   (ai-code-with-test-repo
    (let* ((default-directory git-root)
           (ai-code-task-use-gptel-filename nil)
@@ -313,16 +313,16 @@ and ensures everything is cleaned up afterward."
           (opened-dired nil))
      (unwind-protect
          (cl-letf (((symbol-function 'read-string)
-                    (lambda (prompt &optional initial-input)
+                   (lambda (prompt &optional initial-input)
                       (cond
                        ((string-match-p "Task name" prompt) "My Task")
                        ((string-match-p "URL" prompt) "")
-                       ((string-match-p "Confirm task filename" prompt) initial-input))))
+                       ((string-match-p "Confirm task filename" prompt) "task_20260101_my_task/"))))
                    ((symbol-function 'ai-code--generate-task-filename)
                     (lambda (_task-name) generated-filename))
                    ((symbol-function 'completing-read)
                     (lambda (_prompt _collection &rest _args)
-                      "create subdirectory under current directory: task_20260101_my_task/"))
+                      (format "current directory: %s" default-directory)))
                    ((symbol-function 'find-file-other-window)
                     (lambda (filename) (setq opened-file filename)))
                    ((symbol-function 'dired-other-window)
@@ -340,28 +340,23 @@ and ensures everything is cleaned up afterward."
          (delete-directory expected-subdir t)))))
 
 (ert-deftest ai-code-test-select-task-target-directory-create-subdir-option ()
-  "Test that subdirectory option returns dir-only marker and creates/open target directory."
+  "Test that directory selection returns one of the two target directories."
   (ai-code-with-test-repo
    (let* ((ai-code-files-dir (expand-file-name ".ai.code.files" git-root))
           (current-dir default-directory)
-          (generated-basename "task_20260101_my_task")
-          (expected-subdir (expand-file-name generated-basename current-dir))
-          (opened-dired nil)
           (selection nil))
-     (unwind-protect
-         (cl-letf (((symbol-function 'completing-read)
-                    (lambda (_prompt _collection &rest _args)
-                      "create subdirectory under current directory: task_20260101_my_task/"))
-                   ((symbol-function 'dired-other-window)
-                    (lambda (dirname) (setq opened-dired dirname))))
-           (setq selection
-                 (ai-code--select-task-target-directory ai-code-files-dir current-dir generated-basename))
-           (should (car selection))
-           (should (string= (cdr selection) expected-subdir))
-           (should (string= opened-dired expected-subdir))
-           (should (file-directory-p expected-subdir)))
-       (when (file-directory-p expected-subdir)
-         (delete-directory expected-subdir t)))))
+     (cl-letf (((symbol-function 'completing-read)
+                (lambda (_prompt _collection &rest _args)
+                  (format "current directory: %s" current-dir))))
+       (setq selection
+             (ai-code--select-task-target-directory ai-code-files-dir current-dir))
+       (should (string= selection current-dir)))
+     (cl-letf (((symbol-function 'completing-read)
+                (lambda (_prompt _collection &rest _args)
+                  (format "ai-code-files-dir: %s" ai-code-files-dir))))
+       (setq selection
+             (ai-code--select-task-target-directory ai-code-files-dir current-dir))
+       (should (string= selection ai-code-files-dir)))))
 
 
 (ert-deftest ai-code-test-setup-snippets-finds-directory ()
