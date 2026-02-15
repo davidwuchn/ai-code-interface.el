@@ -86,6 +86,7 @@
 (require 'ai-code-file)
 (require 'ai-code-ai)
 (require 'ai-code-notifications)
+(require 'ai-code-ralph)
 
 ;; Forward declarations for dynamically defined backend functions
 (declare-function ai-code-cli-start "ai-code-backends")
@@ -326,6 +327,9 @@ Shows the current backend label to the right."
     ;; ("b" "Send prompt block to AI" ai-code-prompt-send-block)
     ("!" "Run Current File or Command" ai-code-run-current-file-or-shell-cmd)
     ("b" "Build / Test (AI follow-up)"   ai-code-build-or-test-project)
+    ("l" "Ralph loop (run queue)" ai-code-ralph-start)
+    ("O" "Ralph loop (run once)" ai-code-ralph-run-once)
+    ("X" "Ralph loop (stop)" ai-code-ralph-stop)
     ;; ("I" "Insert function name at point" ai-code-insert-function-at-point)
     ("K" "Create or open task file" ai-code-create-or-open-task-file)
     ("n" "Take notes from AI session region" ai-code-take-notes)
