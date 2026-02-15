@@ -93,6 +93,7 @@
               (should (string-match-p (regexp-quote "#+RALPH_STATUS: done") content))
               (should (string-match-p "\\* Loop Log" content))
               (should (string-match-p "PROMPT sent to AI" content))
+              (should (string-match-p "VERIFY command:" content))
               (should (string-match-p "PASS" content)))))
       (delete-directory task-dir t))))
 
