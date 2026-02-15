@@ -315,7 +315,7 @@ Shows the current backend label to the right."
     ("x" "Explain code in scope" ai-code-explain)
     ("<SPC>" "Send command (C-u: context)" ai-code-send-command)
     ("@" "Add context (C-u: clear)" ai-code-context-action)
-    ("C" "Create file or dir" ai-code-create-file-or-dir)
+    ("C" "Create file or dir with AI" ai-code-create-file-or-dir)
     ]
 
    ["AI Agile Development"

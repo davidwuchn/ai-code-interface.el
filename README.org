@@ -77,9 +77,13 @@ Enable installation of packages from MELPA by adding an entry to package-archive
 
 *** Optional Dependencies
 - `helm`: For an enhanced auto-completion experience (`ai-code-input.el`).
-- `yasnippet`: For snippet support in the prompt file. A library of snippets is included.
-- `gptel`: For intelligent, AI-generated headlines in the prompt file.
+- `gptel`: For intelligent, AI-generated content headlines in the prompt file.
+  - ai-code-task-use-gptel-filename: When non-nil, file name created by `ai-code-create-task-file` or `ai-code-create-file-or-dir` will have auto-generated filenames created by GPTel
+  - ai-code-notes-use-gptel-headline: When non-nil, notes created by `ai-code-capture-session-note` will have auto-generated headlines created by GPTel
+  - ai-code-use-gptel-headline: When non-nil, prompts sent to the AI will have auto-generated headlines created by GPTel, providing better organization and readability in the prompt file
 - `flycheck`: To enable the `ai-code-flycheck-fix-errors-in-scope` command.
+- `yasnippet`: For snippet support in the prompt file. A library of snippets is included.
+  - (emacs built-in) abbrev + skeleton is also a good way to expand prompt. example code
 - `projectile`: For project root initialization.
 - `helm-gtags`: For tags creation.
 - `python-pytest`: For running python tests in the TDD workflow.
