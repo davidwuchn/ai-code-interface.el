@@ -23,14 +23,42 @@
   :type 'integer
   :group 'ai-code-ralph)
 
+(defcustom ai-code-ralph-queue-directory-name "ralph"
+  "Subdirectory under `.ai.code.files` used for queued Ralph tasks."
+  :type 'string
+  :group 'ai-code-ralph)
+
 (defvar ai-code-ralph--running nil
   "Non-nil when the Ralph loop is actively running.")
 
+(defconst ai-code-ralph--command-choices
+  '("Run queue" "Run once" "Stop")
+  "Selectable actions for `ai-code-ralph-command'.")
+
+(defun ai-code-ralph--queue-directory ()
+  "Return Ralph queue directory path."
+  (expand-file-name ai-code-ralph-queue-directory-name
+                    (ai-code--get-files-directory)))
+
 (defun ai-code-ralph--task-files ()
-  "Return all org task files under `ai-code--get-files-directory'."
-  (let ((dir (ai-code--get-files-directory)))
+  "Return all org task files under Ralph queue directory."
+  (let ((dir (ai-code-ralph--queue-directory)))
     (when (file-directory-p dir)
       (sort (directory-files dir t "\\.org\\'" t) #'string<))))
+
+(defun ai-code-ralph--buffer-has-ralph-keyword-p ()
+  "Return non-nil when current buffer includes any Ralph org keyword."
+  (save-excursion
+    (goto-char (point-min))
+    (re-search-forward "^#\\+RALPH_[A-Z0-9_]+:[ \t]*.*$" nil t)))
+
+(defun ai-code-ralph--current-buffer-task-file ()
+  "Return current buffer file when it is an org Ralph task candidate."
+  (let ((file (buffer-file-name)))
+    (when (and file
+               (string-suffix-p ".org" file)
+               (ai-code-ralph--buffer-has-ralph-keyword-p))
+      file)))
 
 (defun ai-code-ralph--read-file (file)
   "Return FILE content as a string."
@@ -88,13 +116,18 @@
 
 (defun ai-code-ralph--task-status (file)
   "Return normalized Ralph status for FILE."
-  (downcase (or (ai-code-ralph--read-keyword file "RALPH_STATUS") "queued")))
+  (when-let ((raw (ai-code-ralph--read-keyword file "RALPH_STATUS")))
+    (downcase raw)))
 
 (defun ai-code-ralph--next-queued-task ()
   "Return the first queued Ralph task file, or nil."
-  (cl-find-if (lambda (file)
-                (string= (ai-code-ralph--task-status file) "queued"))
-              (ai-code-ralph--task-files)))
+  (let ((current-file (ai-code-ralph--current-buffer-task-file)))
+    (if (and current-file
+             (string= (ai-code-ralph--task-status current-file) "queued"))
+        current-file
+      (cl-find-if (lambda (file)
+                    (string= (ai-code-ralph--task-status file) "queued"))
+                  (ai-code-ralph--task-files)))))
 
 (defun ai-code-ralph--task-title (file)
   "Return task title read from FILE."
@@ -123,8 +156,10 @@ Return one of: `no-task', `done', `queued', `blocked'."
   (let ((task (ai-code-ralph--next-queued-task)))
     (if (not task)
         (progn
-          (message "Ralph: no queued task")
+          (message "Ralph: no queued task. Add org task files under %s with '#+RALPH_STATUS: queued', or run from current org buffer with Ralph headers."
+                   (ai-code-ralph--queue-directory))
           'no-task)
+      (message "Ralph: processing task %s" (file-name-nondirectory task))
       (ai-code-ralph--set-keyword task "RALPH_STATUS" "running")
       (ai-code--insert-prompt (ai-code-ralph--build-prompt task))
       (if (ai-code-ralph--verify-task task)
@@ -160,7 +195,8 @@ Return one of: `no-task', `done', `queued', `blocked'."
       (setq iterations (1+ iterations))
       (when (eq result 'no-task)
         (setq ai-code-ralph--running nil)))
-    (message "Ralph stopped after %d iterations" iterations)
+    (unless (eq result 'no-task)
+      (message "Ralph stopped after %d iterations" iterations))
     result))
 
 ;;;###autoload
@@ -169,6 +205,19 @@ Return one of: `no-task', `done', `queued', `blocked'."
   (interactive)
   (setq ai-code-ralph--running nil)
   (message "Ralph stopped"))
+
+;;;###autoload
+(defun ai-code-ralph-command ()
+  "Run one Ralph action selected via `completing-read'."
+  (interactive)
+  (let ((choice (completing-read "Ralph action: "
+                                 ai-code-ralph--command-choices
+                                 nil t nil nil "Run queue")))
+    (message "Ralph: %s requested" choice)
+    (cond
+     ((string= choice "Run queue") (ai-code-ralph-start))
+     ((string= choice "Run once") (ai-code-ralph-run-once))
+     (t (ai-code-ralph-stop)))))
 
 (provide 'ai-code-ralph)
 
