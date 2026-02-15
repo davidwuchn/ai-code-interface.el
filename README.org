@@ -239,6 +239,13 @@ When working with multiple AI sessions, it can be useful to receive desktop noti
 
 - A: use `codex login` to login with your OpenAI account that has ChatGPT Plus subscription. After that, Codex CLI will use your ChatGPT Plus subscription automatically. To confirm, check with /status inside the codex CLI buffer.
 
+*** Q: When test-after-change / TDD mode is enabled, AI keeps asking for tool-use approval. How can I make this smoother?
+
+- A: Enable auto-approval for your active AI coding CLI. For example, in Codex CLI, you can enable the following flag.
+#+begin_src elisp
+  (setq ai-code-codex-cli-program-switches '("--full-auto"))
+#+end_src
+
 ** AI Assisted Programming related books
 
 The following books introduce how to use AI to assist programming and potentially be helpful to aider / aider.el users.
