@@ -28,6 +28,11 @@
   :type 'string
   :group 'ai-code-ralph)
 
+(defcustom ai-code-ralph-soft-isolation-enabled t
+  "When non-nil, prepend a context-boundary instruction per task."
+  :type 'boolean
+  :group 'ai-code-ralph)
+
 (defvar ai-code-ralph--running nil
   "Non-nil when the Ralph loop is actively running.")
 
@@ -136,9 +141,16 @@
 
 (defun ai-code-ralph--build-prompt (file)
   "Build minimal Ralph prompt for FILE."
-  (format "Execute task: %s\nTask file: %s\nApply minimal changes and keep tests green."
-          (ai-code-ralph--task-title file)
-          file))
+  (let* ((title (ai-code-ralph--task-title file))
+         (task-id (file-name-base file))
+         (boundary (when ai-code-ralph-soft-isolation-enabled
+                     (format "CONTEXT BOUNDARY\nIgnore prior task context. Use only this task file and repo state for decisions.\nTask ID: %s\nCurrent task file: %s\n\n"
+                             task-id
+                             file))))
+    (format "%sExecute task: %s\nTask file: %s\nApply minimal changes and keep tests green."
+            (or boundary "")
+            title
+            file)))
 
 (defun ai-code-ralph--verify-task (file)
   "Run verify command for FILE. Return non-nil when command succeeds."
@@ -162,6 +174,9 @@ Return one of: `no-task', `done', `queued', `blocked'."
       (message "Ralph: processing task %s" (file-name-nondirectory task))
       (ai-code-ralph--set-keyword task "RALPH_STATUS" "running")
       (ai-code--insert-prompt (ai-code-ralph--build-prompt task))
+      (ai-code-ralph--append-log
+       task
+       (format "TASK ID: %s" (file-name-base task)))
       (ai-code-ralph--append-log task "PROMPT sent to AI")
       (ai-code-ralph--append-log
        task
