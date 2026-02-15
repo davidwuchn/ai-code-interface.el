@@ -553,6 +553,77 @@ toggle dedication for every window in the current frame."
         (message "Window dedication updated: %s" (mapconcat #'identity (nreverse results) ", "))
       (message "No file buffers found in target windows"))))
 
+(defun ai-code--sanitize-generated-path-name (name)
+  "Sanitize generated NAME for file or directory creation."
+  (let ((clean-name (downcase (string-trim (or name "")))))
+    (setq clean-name (car (split-string clean-name "\n" t)))
+    (setq clean-name (replace-regexp-in-string "[^a-z0-9._/-]" "_" clean-name))
+    (setq clean-name (replace-regexp-in-string "_+" "_" clean-name))
+    (setq clean-name (replace-regexp-in-string "/+" "/" clean-name))
+    (setq clean-name (replace-regexp-in-string "^[_./]+\\|[_./]+$" "" clean-name))
+    clean-name))
+
+(defun ai-code--generate-file-or-dir-name-with-gptel (description target-type)
+  "Generate a file or directory name for DESCRIPTION and TARGET-TYPE.
+TARGET-TYPE should be either \"file\" or \"directory\"."
+  (let* ((prompt
+          (format
+           (concat "Generate one concise lowercase %s name for this request: %s\n"
+                   "Rules: return only the name, no explanation, no markdown, no quotes, max 60 chars.\n"
+                   "Use letters/numbers/_/./- and / for nested path if needed.")
+           target-type
+           description))
+         (generated-name (condition-case nil
+                             (ai-code-call-gptel-sync prompt)
+                           (error description))))
+    (ai-code--sanitize-generated-path-name generated-name)))
+
+;;;###autoload
+(defun ai-code-create-file-or-dir ()
+  "Generate and create a new file or directory under current directory.
+Use GPTel to generate the name, ask user to confirm, then create and open
+it in another window."
+  (interactive)
+  (let* ((current-dir (if (derived-mode-p 'dired-mode)
+                          (dired-current-directory)
+                        default-directory))
+         (target-type (completing-read "Create target type: "
+                                       '("file" "directory")
+                                       nil t nil nil "file"))
+         (description (read-string (format "Describe the %s to create: " target-type))))
+    (when (string-empty-p (string-trim description))
+      (user-error "Description cannot be empty"))
+    (let* ((generated-name (if (and (boundp 'ai-code-task-use-gptel-filename)
+                                    ai-code-task-use-gptel-filename)
+                               (ai-code--generate-file-or-dir-name-with-gptel description target-type)
+                             (ai-code--sanitize-generated-path-name description)))
+           (fallback-name (if (string-empty-p generated-name)
+                              (if (string= target-type "directory")
+                                  "new_dir"
+                                "new_file.txt")
+                            generated-name))
+           (confirmed-name
+            (read-string (format "Confirm %s name (will create under %s): "
+                                 target-type
+                                 (abbreviate-file-name current-dir))
+                         fallback-name))
+           (sanitized-name (ai-code--sanitize-generated-path-name confirmed-name)))
+      (when (string-empty-p sanitized-name)
+        (user-error "Confirmed name cannot be empty"))
+      (let ((target-path (expand-file-name sanitized-name current-dir)))
+        (if (string= target-type "directory")
+            (progn
+              (unless (file-directory-p target-path)
+                (make-directory target-path t))
+              (dired-other-window target-path)
+              (message "Opened directory: %s" target-path))
+          (progn
+            (unless (file-exists-p target-path)
+              (make-directory (file-name-directory target-path) t)
+              (write-region "" nil target-path nil 'silent))
+            (find-file-other-window target-path)
+            (message "Opened file: %s" target-path)))))))
+
 (provide 'ai-code-file)
 
 ;;; ai-code-file.el ends here
