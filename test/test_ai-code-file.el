@@ -96,6 +96,7 @@ everything is cleaned up afterward."
   (should (string= (ai-code--sanitize-generated-path-name "") ""))
   (should (string= (ai-code--sanitize-generated-path-name "   ") ""))
   (should (string= (ai-code--sanitize-generated-path-name "\n\t ") ""))
+  (should (string= (ai-code--sanitize-generated-path-name "\n\n\n") ""))
   (should (string= (ai-code--sanitize-generated-path-name nil) "")))
 
 (ert-deftest ai-code-test-sanitize-nested-paths ()
