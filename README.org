@@ -61,7 +61,6 @@ Enable installation of packages from MELPA by adding an entry to package-archive
     ;; Optional: Turn on auto-revert buffer, so that the AI code change automatically appears in the buffer
     (global-auto-revert-mode 1)
     (setq auto-revert-interval 1) ;; set to 1 second for faster update
-    ;; (global-set-key (kbd "C-c a C") #'ai-code-toggle-filepath-completion)
     ;; Optional: Set up Magit integration for AI commands in Magit popups
     (with-eval-after-load 'magit
       (ai-code-magit-setup-transients)))
