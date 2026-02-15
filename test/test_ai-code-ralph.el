@@ -92,6 +92,7 @@
             (let ((content (ai-code-ralph-test--read-file task-file)))
               (should (string-match-p (regexp-quote "#+RALPH_STATUS: done") content))
               (should (string-match-p "\\* Loop Log" content))
+              (should (string-match-p "PROMPT sent to AI" content))
               (should (string-match-p "PASS" content)))))
       (delete-directory task-dir t))))
 
@@ -112,6 +113,7 @@
             (let ((content (ai-code-ralph-test--read-file task-file)))
               (should (string-match-p (regexp-quote "#+RALPH_STATUS: queued") content))
               (should (string-match-p (regexp-quote "#+RALPH_ATTEMPTS: 1") content))
+              (should (string-match-p "PROMPT sent to AI" content))
               (should (string-match-p "FAIL" content)))))
       (delete-directory task-dir t))))
 

@@ -162,6 +162,7 @@ Return one of: `no-task', `done', `queued', `blocked'."
       (message "Ralph: processing task %s" (file-name-nondirectory task))
       (ai-code-ralph--set-keyword task "RALPH_STATUS" "running")
       (ai-code--insert-prompt (ai-code-ralph--build-prompt task))
+      (ai-code-ralph--append-log task "PROMPT sent to AI")
       (if (ai-code-ralph--verify-task task)
           (progn
             (ai-code-ralph--set-keyword task "RALPH_STATUS" "done")
