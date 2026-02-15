@@ -83,7 +83,7 @@ Enable installation of packages from MELPA by adding an entry to package-archive
   - ai-code-use-gptel-headline: When non-nil, prompts sent to the AI will have auto-generated headlines created by GPTel, providing better organization and readability in the prompt file
 - `flycheck`: To enable the `ai-code-flycheck-fix-errors-in-scope` command.
 - `yasnippet`: For snippet support in the prompt file. A library of snippets is included.
-  - (emacs built-in) abbrev + skeleton is also a good way to expand prompt. example code
+  - (emacs built-in) abbrev + skeleton is also a good way to expand prompt. [[./etc/prompt_expand_with_abbrev_skeleton.el][example code]]
 - `projectile`: For project root initialization.
 - `helm-gtags`: For tags creation.
 - `python-pytest`: For running python tests in the TDD workflow.
