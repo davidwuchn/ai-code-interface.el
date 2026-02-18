@@ -19,6 +19,10 @@ An Emacs interface for AI-assisted software development. *The purpose is to prov
   - [[https://kiro.dev/cli/][Kiro CLI]]
   - [[https://cnb.cool/codebuddy/codebuddy-code][CodeBuddy Code CLI]]
   - [[https://aider.chat/][Aider CLI]]
+- It also supports external backend packages:
+  - [[https://github.com/xenodium/agent-shell][agent-shell]] ([[https://github.com/xenodium/acp.el][acp.el]])
+  - [[https://github.com/manzaltu/claude-code-ide.el][claude-code-ide.el]]
+  - [[https://github.com/stevemolitor/claude-code.el][claude-code.el]]
 
 - I switch between different CLI-based AI tools in Emacs: Claude Code / OpenAI Codex / Gemini CLI / etc. If you also use different AI tools inside Emacs, but want to keep the same user interface and experience, this package is for you.
 
@@ -46,12 +50,12 @@ Enable installation of packages from MELPA by adding an entry to package-archive
   (use-package ai-code
     ;; :straight (:host github :repo "tninja/ai-code-interface.el") ;; if you want to use straight to install, no need to have MELPA setting above
     :config
-    ;; use codex as backend, other options are 'claude-code, 'gemini, 'github-copilot-cli, 'opencode, 'grok, 'cursor, 'kiro, 'codebuddy, 'aider, 'claude-code-ide, 'claude-code-el
+    ;; use codex as backend, other options are 'claude-code, 'gemini, 'github-copilot-cli, 'opencode, 'grok, 'cursor, 'kiro, 'codebuddy, 'aider, 'agent-shell, 'claude-code-ide, 'claude-code-el
     (ai-code-set-backend 'codex)
     ;; Enable global keybinding for the main menu
     (global-set-key (kbd "C-c a") #'ai-code-menu)
     ;; Optional: Use eat if you prefer, by default it is vterm
-    ;; (setq ai-code-backends-infra-terminal-backend 'eat) ;; the way to config all native supported CLI. for external backend such as claude-code-ide.el and claude-code.el, please check their config
+    ;; (setq ai-code-backends-infra-terminal-backend 'eat) ;; config for native CLI backends. for external backends such as agent-shell, claude-code-ide.el and claude-code.el, please check their own config
     ;; Optional: Enable @ file completion in comments and AI sessions
     (ai-code-prompt-filepath-completion-mode 1)
     ;; Optional: Ask AI to run test after code changes, for a tighter build-test loop
@@ -73,7 +77,7 @@ Enable installation of packages from MELPA by adding an entry to package-archive
 - `org`: Org-mode support
 - `magit`: Git integration
 - `transient`: For the menu system
-- vterm (default) or eat needs to be installed to support AI coding CLI backends.
+- vterm (default) or eat needs to be installed to support native AI coding CLI backends.
 
 *** Optional Dependencies
 - `helm`: For an enhanced auto-completion experience (`ai-code-input.el`).
@@ -176,7 +180,7 @@ When working with multiple AI sessions, it can be useful to receive desktop noti
 
    - Press `C-c a` to open the AI menu, then `s` to "Select Backend".
    - Pick one of the supported backends and the integration will switch immediately.
-   - The selection updates the start/switch/send commands and the CLI used by `ai-code-apply-prompt-on-current-file`.
+   - The selection updates the start/switch/send commands and, for CLI backends, the CLI used by `ai-code-apply-prompt-on-current-file`.
 
    Natively supported options:
    - [[https://github.com/anthropics/claude-code][Claude Code]] (`[[./ai-code-claude-code.el][ai-code-claude-code.el]]`)
@@ -191,8 +195,14 @@ When working with multiple AI sessions, it can be useful to receive desktop noti
    - [[https://aider.chat/][Aider CLI]] (`[[./ai-code-aider-cli.el][ai-code-aider-cli.el]]`)
    
    It also supports external backends through customization of the `ai-code-backends` variable; currently it includes:
+   - [[https://github.com/xenodium/agent-shell][agent-shell]] (`[[./ai-code-agent-shell.el][ai-code-agent-shell.el]]`)
    - Claude Code IDE (`[[https://github.com/manzaltu/claude-code-ide.el][claude-code-ide.el]]`)
    - Claude Code (`[[https://github.com/stevemolitor/claude-code.el][claude-code.el]]`)
+
+**** agent-shell backend setup
+     Install [[https://github.com/xenodium/agent-shell][agent-shell]] and its dependency [[https://github.com/xenodium/acp.el][acp.el]], then configure one of the ACP agent providers in agent-shell (for example Codex, Gemini, Opencode, etc.).
+     Select `agent-shell` via `ai-code-select-backend` (or `(ai-code-set-backend 'agent-shell)` in your config).
+     Note: `ai-code-apply-prompt-on-current-file` is CLI-pipe based and is not supported when `agent-shell` is the active backend.
 
 **** Grok CLI setup
      Install [[https://grokcli.io/][grok-cli]] and ensure the `grok` executable is on your PATH.
