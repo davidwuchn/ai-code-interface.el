@@ -217,6 +217,17 @@ When called from Lisp code, sends CMD directly without prompting."
      :config  "~/.aider.conf.yml"
      :upgrade nil
      :cli     "aider")
+    (agent-shell  ; external backend, requires agent-shell package
+     :label "agent-shell"
+     :require ai-code-agent-shell
+     :start   ai-code-agent-shell
+     :switch  ai-code-agent-shell-switch-to-buffer
+     :send    ai-code-agent-shell-send-command
+     :resume  ai-code-agent-shell-resume
+     :config  nil
+     :upgrade nil
+     :cli     "agent-shell"
+     :agent-file nil)
     (claude-code-ide  ; external backend, requires claude-code-ide.el package
      :label "claude-code-ide.el"
      :require claude-code-ide

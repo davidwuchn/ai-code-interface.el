@@ -10,6 +10,10 @@
 
 (require 'ert)
 (require 'cl-lib)
+
+(unless (featurep 'magit)
+  (provide 'magit))
+
 (require 'ai-code-backends)
 
 (ert-deftest ai-code-test-open-backend-agent-file-opens-path ()
@@ -30,7 +34,7 @@
           (should (string= opened-path
                            (expand-file-name "AGENTS.md" temp-dir))))
       (when (and temp-dir (file-directory-p temp-dir))
-        (delete-directory temp-dir t))))
+        (delete-directory temp-dir t)))))
 
 (ert-deftest ai-code-test-cli-send-command-nil-errors-noninteractive ()
   "Ensure nil COMMAND errors in noninteractive calls."
@@ -54,7 +58,7 @@
          (saved-send ai-code--cli-send-fn)
          (saved-resume ai-code--cli-resume-fn)
          (saved-backend ai-code-selected-backend)
-         (saved-cli ai-code-cli)
+         (saved-cli (and (boundp 'ai-code-cli) ai-code-cli))
          (resume-arg nil))
     (cl-letf (((symbol-function 'ai-code-test-start) (lambda (&optional _arg)))
               ((symbol-function 'ai-code-test-switch) (lambda (&optional _arg)))
@@ -75,6 +79,16 @@
               ai-code--cli-resume-fn saved-resume
               ai-code-selected-backend saved-backend
               ai-code-cli saved-cli)))))
+
+(ert-deftest ai-code-test-agent-shell-backend-spec-contract ()
+  "Ensure the agent-shell backend entry exposes required integration keys."
+  (let ((spec (ai-code--backend-spec 'agent-shell)))
+    (should spec)
+    (should (eq (plist-get (cdr spec) :require) 'ai-code-agent-shell))
+    (should (eq (plist-get (cdr spec) :start) 'ai-code-agent-shell))
+    (should (eq (plist-get (cdr spec) :switch) 'ai-code-agent-shell-switch-to-buffer))
+    (should (eq (plist-get (cdr spec) :send) 'ai-code-agent-shell-send-command))
+    (should (eq (plist-get (cdr spec) :resume) 'ai-code-agent-shell-resume))))
 
 (provide 'test_ai-code-backends)
 

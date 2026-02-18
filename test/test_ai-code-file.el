@@ -10,6 +10,8 @@
 ;;; Code:
 
 (require 'ert)
+(unless (featurep 'magit)
+  (provide 'magit))
 (require 'ai-code-file)
 (require 'cl-lib)
 
@@ -18,6 +20,7 @@
 (defvar ai-code-auto-test-type)
 (defvar ai-code-auto-test-suffix)
 (defvar ai-code-cli)
+(defvar ai-code-selected-backend)
 (defvar ai-code-sed-command)
 
 ;; Helper macro to set up and tear down the test environment
@@ -507,6 +510,24 @@ everything is cleaned up afterward."
         (ai-code-apply-prompt-on-current-file))
       (should resolved-called)
       (should (string-match-p "RUN\\\\ TESTS" captured-command)))))
+
+(ert-deftest ai-code-test-apply-prompt-on-current-file-errors-for-agent-shell-backend ()
+  "Ensure `ai-code-apply-prompt-on-current-file' rejects the agent-shell backend."
+  (let ((compilation-called nil)
+        (ai-code-selected-backend 'agent-shell)
+        (ai-code-cli "agent-shell")
+        (ai-code-sed-command "sed"))
+    (cl-letf (((symbol-function 'ai-code-read-string)
+               (lambda (&rest _args) "Refactor this"))
+              ((symbol-function 'compilation-start)
+               (lambda (&rest _args)
+                 (setq compilation-called t)
+                 nil)))
+      (with-temp-buffer
+        (setq buffer-file-name "/tmp/sample.py")
+        (should-error (ai-code-apply-prompt-on-current-file)
+                      :type 'user-error)))
+    (should (null compilation-called))))
 
 ;;; Tests for ai-code--git-root
 

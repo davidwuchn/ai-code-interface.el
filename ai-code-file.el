@@ -48,6 +48,7 @@ a Git repository or when `magit-toplevel' signals an error."
 (defvar ai-code-auto-test-type)
 (defvar ai-code-auto-test-suffix)
 (defvar ai-code-cli)
+(defvar ai-code-selected-backend)
 (defvar ai-code-task-use-gptel-filename)
 
 (defun ai-code--resolve-auto-test-suffix-for-current-send ()
@@ -215,6 +216,8 @@ buffer.  It constructs a shell command:
 sed \"1i <prompt>: \" <file> | <ai-code-cli>
 and runs it in a compilation buffer."
   (interactive)
+  (when (eq ai-code-selected-backend 'agent-shell)
+    (user-error "Backend 'agent-shell' does not support piping file content via ai-code-cli"))
   (let* ((prompt (ai-code-read-string "Prompt: "))
          (suffix-parts (delq nil (list ai-code-prompt-suffix
                                        (when ai-code-auto-test-type
