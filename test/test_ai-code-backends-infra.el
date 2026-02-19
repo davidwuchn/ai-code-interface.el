@@ -87,6 +87,41 @@
         (should-not ai-code-backends-infra--response-seen)
         (should scheduled)))))
 
+(ert-deftest test-ai-code-backends-infra-cleanup-session-kills-buffer-on-normal-exit ()
+  "Buffer is killed when the process exits normally (event starts with \"finished\")."
+  (let* ((table (make-hash-table :test 'equal))
+         (dir "/tmp/test-cleanup/")
+         (buf-name "*test-cleanup-normal*")
+         (buf (get-buffer-create buf-name)))
+    (puthash (cons dir "default") t table)
+    (ai-code-backends-infra--cleanup-session dir buf-name table nil nil "finished\n")
+    (should-not (get-buffer buf-name))
+    (ignore buf)))
+
+(ert-deftest test-ai-code-backends-infra-cleanup-session-preserves-buffer-on-abnormal-exit ()
+  "Buffer is preserved when the process exits abnormally."
+  (let* ((table (make-hash-table :test 'equal))
+         (dir "/tmp/test-cleanup/")
+         (buf-name "*test-cleanup-abnormal*")
+         (buf (get-buffer-create buf-name)))
+    (puthash (cons dir "default") t table)
+    (ai-code-backends-infra--cleanup-session dir buf-name table nil nil "exited abnormally with code 1\n")
+    (should (get-buffer buf-name))
+    ;; Clean up
+    (when (get-buffer buf-name) (kill-buffer buf-name))
+    (ignore buf)))
+
+(ert-deftest test-ai-code-backends-infra-cleanup-session-kills-buffer-on-nil-event ()
+  "Buffer is killed when event is nil (legacy / direct call behavior)."
+  (let* ((table (make-hash-table :test 'equal))
+         (dir "/tmp/test-cleanup/")
+         (buf-name "*test-cleanup-nil-event*")
+         (buf (get-buffer-create buf-name)))
+    (puthash (cons dir "default") t table)
+    (ai-code-backends-infra--cleanup-session dir buf-name table nil nil nil)
+    (should-not (get-buffer buf-name))
+    (ignore buf)))
+
 (provide 'test_ai-code-backends-infra)
 
 ;;; test_ai-code-backends-infra.el ends here

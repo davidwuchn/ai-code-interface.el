@@ -526,8 +526,11 @@ PROMPT-LABEL is used in the minibuffer prompt."
     (list :command command :args resolved-args)))
 
 (defun ai-code-backends-infra--cleanup-session (directory buffer-name process-table
-                                                          &optional instance-name prefix)
-  "Clean up a session for DIRECTORY using BUFFER-NAME and PROCESS-TABLE."
+                                                          &optional instance-name prefix event)
+  "Clean up a session for DIRECTORY using BUFFER-NAME and PROCESS-TABLE.
+EVENT is the process sentinel event string.  When EVENT is non-nil and does
+not start with \"finished\", the buffer is preserved so the user can inspect
+any error output left behind by the CLI."
   (let* ((resolved-instance (or instance-name
                                 (and prefix
                                      (ai-code-backends-infra--session-instance-name
@@ -539,7 +542,9 @@ PROMPT-LABEL is used in the minibuffer prompt."
   (when-let ((buffer (get-buffer buffer-name)))
     (ai-code-backends-infra--forget-session-buffer prefix directory buffer)
     (when (buffer-live-p buffer)
-      (kill-buffer buffer))))
+      (when (or (null event)
+                (string-prefix-p "finished" event))
+        (kill-buffer buffer)))))
 
 (defun ai-code-backends-infra--toggle-or-create-session (working-dir buffer-name process-table command
                                                                      &optional escape-fn cleanup-fn
@@ -600,13 +605,14 @@ When FORCE-PROMPT is non-nil, always prompt for a new instance name."
               ;; Process started successfully, set up sentinel for cleanup on exit
               (set-process-sentinel
                process
-               (lambda (_proc _event)
+               (lambda (_proc event)
                  (ai-code-backends-infra--cleanup-session
                   working-dir
                   resolved-buffer-name
                   process-table
                   resolved-instance
-                  prefix)
+                  prefix
+                  event)
                  (when cleanup-fn
                    (funcall cleanup-fn))))
               (when escape-fn
