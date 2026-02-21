@@ -36,6 +36,27 @@
                (lambda () 'tdd)))
       (should (eq 'tdd (ai-code--resolve-auto-test-type-for-send))))))
 
+(ert-deftest ai-code-test-resolve-auto-test-type-for-send-ask-me-gptel-non-code-change ()
+  "Test that ask-me mode skips selection when GPTel classifies non-code change."
+  (let ((ai-code-auto-test-type 'ask-me)
+        (ai-code-use-gptel-classify-prompt t))
+    (cl-letf (((symbol-function 'ai-code--gptel-classify-prompt-code-change)
+               (lambda (_prompt-text) 'non-code-change))
+              ((symbol-function 'ai-code--read-auto-test-type-choice)
+               (lambda () (ert-fail "Should not ask test type for non-code prompts."))))
+      (should (eq nil (ai-code--resolve-auto-test-type-for-send "Explain this function"))))))
+
+(ert-deftest ai-code-test-resolve-auto-test-type-for-send-ask-me-gptel-unknown-fallback ()
+  "Test that ask-me mode falls back to interactive selection when GPTel is unknown."
+  (let ((ai-code-auto-test-type 'ask-me)
+        (ai-code-use-gptel-classify-prompt t))
+    (cl-letf (((symbol-function 'ai-code--gptel-classify-prompt-code-change)
+               (lambda (_prompt-text) 'unknown))
+              ((symbol-function 'ai-code--read-auto-test-type-choice)
+               (lambda () 'test-after-change)))
+      (should (eq 'test-after-change
+                  (ai-code--resolve-auto-test-type-for-send "Please update code"))))))
+
 (ert-deftest ai-code-test-read-auto-test-type-choice-allow-no-test ()
   "Test that ask choices support selecting no test run."
   (let ((ai-code--auto-test-type-ask-choices
