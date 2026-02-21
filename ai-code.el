@@ -102,6 +102,7 @@
 (declare-function ai-code-backends-infra--session-buffer-p "ai-code-backends-infra" (buffer))
 
 (declare-function ai-code--process-word-for-filepath "ai-code-prompt-mode" (word git-root-truename))
+(declare-function ai-code-call-gptel-sync "ai-code-prompt-mode" (question))
 
 ;; Default aliases are set when a backend is applied via `ai-code-select-backend`.
 
@@ -163,10 +164,46 @@ with a newline separator."
         (cdr choice-cell)
       'test-after-change)))
 
-(defun ai-code--resolve-auto-test-type-for-send ()
-  "Resolve the concrete auto test type for the current send action."
+;; DONE: add a custom var: ai-code-use-gptel-classify-prompt, default is nil. When it is non-nil, and ai-code-auto-test-type == ask-me , use gptel to classify if the prompt is about code change. If it is not, no need to ask user to choose test prompt type and append corresponding suffix.
+
+;;;###autoload
+(defcustom ai-code-use-gptel-classify-prompt nil
+  "Whether to use GPTel to classify prompts in `ask-me` auto test mode.
+When non-nil and `ai-code-auto-test-type` is `ask-me`, classify whether
+the current prompt is about code changes. If not, skip test type selection
+and do not append auto test suffix."
+  :type 'boolean
+  :group 'ai-code)
+
+(defun ai-code--gptel-classify-prompt-code-change (prompt-text)
+  "Classify whether PROMPT-TEXT requests code changes using GPTel.
+Return one of: `code-change`, `non-code-change`, or `unknown`."
+  (condition-case err
+      (let* ((raw-answer (ai-code-call-gptel-sync
+                          (concat "Classify whether this user prompt requests code changes in a repository.\n"
+                                  "Reply with exactly one token: CODE_CHANGE or NOT_CODE_CHANGE.\n"
+                                  "Treat edit/refactor/implement/fix/add/remove/update/tests as CODE_CHANGE.\n"
+                                  "Treat explain/summarize/discuss/review without editing as NOT_CODE_CHANGE.\n\n"
+                                  "Prompt:\n" prompt-text)))
+             (answer (upcase (string-trim (or raw-answer "")))))
+        (cond
+         ((string-match-p "\\`CODE_CHANGE\\b" answer) 'code-change)
+         ((string-match-p "\\`NOT_CODE_CHANGE\\b" answer) 'non-code-change)
+         (t 'unknown)))
+    (error
+     (message "GPTel prompt classification failed: %s" (error-message-string err))
+     'unknown)))
+
+(defun ai-code--resolve-auto-test-type-for-send (prompt-text)
+  "Resolve the concrete auto test type for current send action for PROMPT-TEXT."
   (pcase ai-code-auto-test-type
-    ('ask-me (ai-code--read-auto-test-type-choice))
+    ('ask-me
+     (if ai-code-use-gptel-classify-prompt
+         (pcase (ai-code--gptel-classify-prompt-code-change prompt-text)
+           ('code-change (ai-code--read-auto-test-type-choice))
+           ('non-code-change nil)
+           (_ (ai-code--read-auto-test-type-choice)))
+       (ai-code--read-auto-test-type-choice)))
     ('test-after-change 'test-after-change)
     ('tdd 'tdd)
     (_ nil)))
@@ -178,14 +215,14 @@ with a newline separator."
     ('tdd (ai-code--test-after-code-change--resolve-tdd-suffix))
     (_ nil)))
 
-(defun ai-code--resolve-auto-test-suffix-for-send ()
-  "Resolve auto test suffix for the current send action."
+(defun ai-code--resolve-auto-test-suffix-for-send (prompt-text)
+  "Resolve auto test suffix for current send action for PROMPT-TEXT."
   (ai-code--auto-test-suffix-for-type
-   (ai-code--resolve-auto-test-type-for-send)))
+   (ai-code--resolve-auto-test-type-for-send prompt-text)))
 
 (defun ai-code--with-auto-test-suffix-for-send (orig-fun prompt-text)
   "Resolve and bind auto test suffix before sending PROMPT-TEXT."
-  (let ((ai-code-auto-test-suffix (ai-code--resolve-auto-test-suffix-for-send)))
+  (let ((ai-code-auto-test-suffix (ai-code--resolve-auto-test-suffix-for-send prompt-text)))
     (funcall orig-fun prompt-text)))
 
 (unless (advice-member-p #'ai-code--with-auto-test-suffix-for-send
