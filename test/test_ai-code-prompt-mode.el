@@ -72,6 +72,13 @@ and ensures everything is cleaned up afterward."
      (should (string= (ai-code--preprocess-prompt-text prompt)
                       (format "compare @src/main.js and %s" outside-file))))))
 
+(ert-deftest ai-code-test-preprocess-preserves-whitespace ()
+  "Test that original whitespace (including newlines) is preserved."
+  (ai-code-with-test-repo
+   (let ((prompt (format "check file %s\nand also\n  %s" mock-file-in-repo outside-file)))
+     (should (string= (ai-code--preprocess-prompt-text prompt)
+                      (format "check file @src/main.js\nand also\n  %s" outside-file))))))
+
 (ert-deftest ai-code-test-preprocess-not-in-git-repo ()
   "Test that paths are not modified when not in a git repository."
   (cl-letf (((symbol-function 'magit-toplevel) (lambda (&optional dir) nil)))

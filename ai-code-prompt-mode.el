@@ -212,15 +212,15 @@ If WORD is a file path, it's converted to a relative path."
 
 (defun ai-code--preprocess-prompt-text (prompt-text)
   "Preprocess PROMPT-TEXT to replace file paths with relative paths.
-The function splits the prompt by whitespace, checks if each part is a file
-path within the current git repository, and if so, replaces it with a
-relative path prefixed with @.
+The function checks each non-whitespace token in the prompt; if a token is a
+file path within the current git repository it is replaced with a relative
+path prefixed with @.  Original whitespace is preserved.
 NOTE: This does not handle file paths containing spaces."
   (if-let* ((git-root-truename (ai-code--git-root)))
-      (mapconcat
+      (replace-regexp-in-string
+       "[^ \t\n]+"
        (lambda (word) (ai-code--process-word-for-filepath word git-root-truename))
-       (split-string prompt-text "[ \t\n]+" t) ; split by whitespace and remove empty strings
-       " ")
+       prompt-text t t)
     ;; Not in a git repo, return original prompt
     prompt-text))
 
