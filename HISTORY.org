@@ -2,6 +2,9 @@
 * Release history
 
 ** Main branch change
+
+** 1.52
+- Fix: Fix session lookup collisions for same-named projects, by Silex
 - Fix: Preserve original whitespace in ai-code--preprocess-prompt-text, reported and fix suggested by lesteral
 - Chore: Add git branch name to task file template
 - Chore: Add AGENT as drawer to .ai.code.prompt.file.org
