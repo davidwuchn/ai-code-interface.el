@@ -1113,5 +1113,10 @@ and ensures everything is cleaned up afterward."
         (should (string-match-p (regexp-quote ":AGENT: gemini") content))
         (should (string-match-p (regexp-quote ":END:") content))))))
 
+(ert-deftest ai-code-test-prompt-mode-cc-cc-keybinding ()
+  "Test that C-c C-c is bound to ai-code-prompt-send-block in ai-code-prompt-mode-map."
+  (should (eq (lookup-key ai-code-prompt-mode-map (kbd "C-c C-c"))
+              #'ai-code-prompt-send-block)))
+
 (provide 'test-ai-code-prompt-mode)
 ;;; test_ai-code-prompt-mode.el ends here

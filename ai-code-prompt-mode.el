@@ -422,13 +422,14 @@ Special commands:
   (setq-local comment-start "# ")
   (setq-local comment-end "")
   (setq-local truncate-lines nil)  ; Disable line truncation, allowing lines to wrap
-  (define-key ai-code-prompt-mode-map (kbd "C-c C-c") #'ai-code-prompt-send-block)
   (add-hook 'completion-at-point-functions #'ai-code--prompt-filepath-capf nil t)
   (add-hook 'post-self-insert-hook #'ai-code--prompt-auto-trigger-filepath-completion nil t)
   ;; YASnippet support
   (when (require 'yasnippet nil t)
     (yas-minor-mode 1)
     (ai-code--setup-snippets)))
+
+(define-key ai-code-prompt-mode-map (kbd "C-c C-c") #'ai-code-prompt-send-block)
 
 ;;;###autoload
 (defun ai-code-prompt-send-block ()
