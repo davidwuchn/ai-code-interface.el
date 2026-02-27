@@ -86,6 +86,58 @@ and ensures everything is cleaned up afterward."
       (should (string= (ai-code--preprocess-prompt-text prompt)
                        prompt)))))
 
+(ert-deftest ai-code-test-prompt-send-block-in-prompt-file-sends-directly ()
+  "Send block directly when current buffer is the prompt file."
+  (let ((sent-prompt nil)
+        (read-called nil)
+        (insert-called nil))
+    (with-temp-buffer
+      (insert "line one\nline two\n\nline three")
+      (goto-char (point-min))
+      (setq-local buffer-file-name
+                  (expand-file-name ai-code-prompt-file-name temporary-file-directory))
+      (cl-letf (((symbol-function 'ai-code--send-prompt)
+                 (lambda (prompt)
+                   (setq sent-prompt prompt)))
+                ((symbol-function 'ai-code-read-string)
+                 (lambda (&rest _args)
+                   (setq read-called t)
+                   "edited prompt"))
+                ((symbol-function 'ai-code--insert-prompt)
+                 (lambda (&rest _args)
+                   (setq insert-called t))))
+        (ai-code-prompt-send-block)))
+    (should (string= sent-prompt "line one\nline two"))
+    (should-not read-called)
+    (should-not insert-called)))
+
+(ert-deftest ai-code-test-prompt-send-block-in-other-buffer-confirms-before-send ()
+  "Ask confirmation and edit prompt before sending when not in prompt file."
+  (let ((read-args nil)
+        (inserted-prompt nil)
+        (sent-directly nil))
+    (with-temp-buffer
+      (insert "line one\nline two\n\nline three")
+      (goto-char (point-min))
+      (setq-local buffer-file-name (expand-file-name "notes.org" temporary-file-directory))
+      (cl-letf (((symbol-function 'ai-code-read-string)
+                 (lambda (prompt &optional initial-input candidate-list)
+                   (setq read-args (list prompt initial-input candidate-list))
+                   "edited prompt"))
+                ((symbol-function 'ai-code--insert-prompt)
+                 (lambda (prompt)
+                   (setq inserted-prompt prompt)))
+                ((symbol-function 'ai-code--send-prompt)
+                 (lambda (&rest _args)
+                   (setq sent-directly t))))
+        (ai-code-prompt-send-block)))
+    (should (equal read-args
+                   '("Confirm and edit prompt before sending: "
+                     "line one\nline two"
+                     nil)))
+    (should (string= inserted-prompt "edited prompt"))
+    (should-not sent-directly)))
+
 ;;; Tests for task file functions
 
 (ert-deftest ai-code-test-get-files-directory-in-git-repo ()

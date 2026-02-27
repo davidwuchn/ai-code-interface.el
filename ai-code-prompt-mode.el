@@ -29,6 +29,7 @@
 (declare-function ai-code--git-ignored-repo-file-p "ai-code-git" (file root))
 (declare-function ai-code--hash-completion-target-file "ai-code-input" (&optional end-pos))
 (declare-function ai-code--choose-symbol-from-file "ai-code-input" (file))
+(declare-function ai-code-read-string "ai-code-input" (prompt &optional initial-input candidate-list))
 (declare-function ai-code-current-backend-label "ai-code-backends" ())
 
 (defcustom ai-code-prompt-preprocess-filepaths t
@@ -436,15 +437,46 @@ Special commands:
 The block is the text separated by blank lines.
 It trims leading/trailing whitespace."
   (interactive)
-  (let* ((block-text (thing-at-point 'paragraph))
+  ;; DONE: use save-excursion, mark-paragraph to get the block-text
+  (let* ((block-text (save-excursion
+                       (save-mark-and-excursion
+                         (ai-code--mark-prompt-block)
+                         (buffer-substring-no-properties (region-beginning)
+                                                         (region-end)))))
          (trimmed-text (when block-text (string-trim block-text))))
     (if (and trimmed-text (string-match-p "\\S-" trimmed-text))
-        (progn
-          (ai-code-cli-send-command trimmed-text)
-          (ai-code-cli-switch-to-buffer))
+        (if (and buffer-file-name
+                 (string= (file-name-nondirectory buffer-file-name)
+                          ai-code-prompt-file-name))
+            (ai-code--send-prompt trimmed-text)
+          (when-let ((edited-prompt
+                      (ai-code-read-string "Confirm and edit prompt before sending: "
+                                           trimmed-text)))
+            (ai-code--insert-prompt edited-prompt)))
       (message "No text in the current block to send."))))
 
-;; ai coding task feature
+(defun ai-code--mark-prompt-block ()
+  "Mark a code block. A code block is defined as multiple lines without empty lines inside,
+but with empty lines before and after the block."
+  (interactive)
+  (let ((start (point))
+        (end (point)))
+    (save-excursion
+      (while (and (not (bobp)) (not (looking-at-p "^$")))
+        (forward-line -1))
+      (unless (bobp)
+        (forward-line 1))
+      (setq start (point)))
+    (save-excursion
+      (while (and (not (eobp)) (not (looking-at-p "^$")))
+        (forward-line 1))
+      (setq end (point)))
+    (goto-char start)
+    (set-mark (point))
+    (goto-char end)
+    (message "Code block marked from line %d to line %d"
+             (line-number-at-pos start)
+             (line-number-at-pos end))))
 
 ;;;###autoload
 (defconst ai-code-files-dir-name ".ai.code.files"
