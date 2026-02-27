@@ -625,7 +625,7 @@ If no such buffer is found, report a user-error."
   "Write @test for FUNCTION-NAME in the corresponding test file."
   (let* ((source-file (and buffer-file-name (file-name-nondirectory buffer-file-name)))
          (test-file-hint (if source-file
-                             (format "a corresponding test file, following test pattern of this repo"
+                             (format "the corresponding test file for %s, following test pattern of this repo"
                                      source-file)
                            "the corresponding test file"))
          (write-test-desc (ai-code-read-string
