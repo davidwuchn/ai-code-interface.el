@@ -20,6 +20,7 @@
 (declare-function claude-code--term-send-string "claude-code" (backend string))
 (declare-function ai-code--validate-git-repository "ai-code-git" ())
 (declare-function ai-code--git-root "ai-code-file" (&optional dir))
+(declare-function ai-code--insert-prompt "ai-code-prompt-mode" (prompt-text))
 
 (defvar ai-code--cli-start-fn #'ai-code--unsupported-start)
 (defvar ai-code--cli-resume-fn #'ai-code--unsupported-resume)
@@ -187,6 +188,7 @@ When called from Lisp code, sends CMD directly without prompting."
      :config  "~/.claude.json"
      :agent-file "CLAUDE.md"
      :upgrade "npm install -g @anthropic-ai/claude-code@latest"
+     :skills-url "https://github.com/obra/superpowers"
      :cli     "claude")
     (gemini
      :label "Gemini CLI"
@@ -315,8 +317,10 @@ When called from Lisp code, sends CMD directly without prompting."
      :cli     "claude"))
   "Available AI backends and how to integrate with them.
 Each entry is (KEY :label STRING :require FEATURE :start FN :switch FN
-:send FN :resume FN-or-nil :upgrade STRING-or-nil :cli STRING :agent-file STRING-or-nil).
-The :upgrade property can be either a string shell command or nil."
+:send FN :resume FN-or-nil :upgrade STRING-or-nil :cli STRING :agent-file STRING-or-nil
+:skills-url STRING-or-nil).
+The :upgrade property can be either a string shell command or nil.
+The :skills-url property is the URL of the skills/hooks README for this backend."
   :type '(repeat (list (symbol :tag "Key")
                        (const :label) (string :tag "Label")
                        (const :require) (symbol :tag "Feature to require")
@@ -329,7 +333,9 @@ The :upgrade property can be either a string shell command or nil."
                                                 (const :tag "Not supported" nil))
                        (const :cli) (string :tag "CLI name")
                        (const :agent-file) (choice (string :tag "Agent file name")
-                                                   (const :tag "Not supported" nil))))
+                                                   (const :tag "Not supported" nil))
+                       (const :skills-url) (choice (string :tag "Skills README URL")
+                                                   (const :tag "Not configured" nil))))
   :group 'ai-code)
 
 (defvar ai-code-selected-backend 'claude-code
@@ -498,6 +504,30 @@ invoke `ai-code-cli-resume'; otherwise call `ai-code-cli-start'."
               (message "Running upgrade command for %s" label))
           (user-error "Upgrade command for backend '%s' is not defined"
                       label))))))
+
+;;;###autoload
+(defun ai-code-install-backend-skills ()
+  "Install skills for the currently selected AI coding CLI backend.
+Prompts for a skills README URL, defaulting to the backend's :skills-url.
+Sends the URL to the active AI session so it can read the README and
+install the appropriate skills."
+  (interactive)
+  (let* ((spec (ai-code--backend-spec ai-code-selected-backend)))
+    (if (not spec)
+        (user-error "No backend is currently selected")
+      (let* ((plist (cdr spec))
+             (label (ai-code-current-backend-label))
+             (default-url (plist-get plist :skills-url))
+             (url (read-string
+                   (format "Skills README URL for %s: " label)
+                   default-url)))
+        (if (string-empty-p url)
+            (user-error "No skills URL provided")
+          (unless (string-match-p "\\`https?://" url)
+            (user-error "Skills URL must start with http:// or https://"))
+          (ai-code--insert-prompt
+           (format "Please read the skills README at %s and install the appropriate skills for %s."
+                   url label)))))))
 
 (provide 'ai-code-backends)
 

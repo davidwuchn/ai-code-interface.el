@@ -156,6 +156,56 @@
       (should (equal (reverse start-calls)
                      '(backend-a backend-b backend-a))))))
 
+(ert-deftest ai-code-test-install-backend-skills-sends-prompt ()
+  "Test that install-backend-skills sends a prompt containing the URL."
+  (let* ((backend-key 'test-backend)
+         (ai-code-backends `((,backend-key
+                              :label "Test Backend"
+                              :skills-url "https://example.com/skills")))
+         (ai-code-selected-backend backend-key)
+         (sent-prompt nil))
+    (cl-letf (((symbol-function 'ai-code--insert-prompt)
+               (lambda (prompt) (setq sent-prompt prompt)))
+              ((symbol-function 'read-string)
+               (lambda (_prompt initial &rest _)
+                 (or initial ""))))
+      (ai-code-install-backend-skills)
+      (should (string-match-p "https://example.com/skills" sent-prompt))
+      (should (string-match-p "Test Backend" sent-prompt)))))
+
+(ert-deftest ai-code-test-install-backend-skills-errors-without-backend ()
+  "Test that install-backend-skills signals an error when no backend is selected."
+  (let* ((ai-code-backends '())
+         (ai-code-selected-backend 'nonexistent-backend))
+    (should-error (ai-code-install-backend-skills) :type 'user-error)))
+
+(ert-deftest ai-code-test-install-backend-skills-errors-on-empty-url ()
+  "Test that install-backend-skills signals an error when user provides no URL."
+  (let* ((backend-key 'test-backend)
+         (ai-code-backends `((,backend-key
+                              :label "Test Backend")))
+         (ai-code-selected-backend backend-key))
+    (cl-letf (((symbol-function 'read-string)
+               (lambda (&rest _) "")))
+      (should-error (ai-code-install-backend-skills) :type 'user-error))))
+
+(ert-deftest ai-code-test-install-backend-skills-errors-on-invalid-url ()
+  "Test that install-backend-skills signals an error for non-http URLs."
+  (let* ((backend-key 'test-backend)
+         (ai-code-backends `((,backend-key
+                              :label "Test Backend")))
+         (ai-code-selected-backend backend-key))
+    (cl-letf (((symbol-function 'read-string)
+               (lambda (&rest _) "file:///etc/skills")))
+      (should-error (ai-code-install-backend-skills) :type 'user-error))))
+
+(ert-deftest ai-code-test-claude-code-backend-has-skills-url ()
+  "Test that claude-code backend has a :skills-url configured."
+  (let ((spec (ai-code--backend-spec 'claude-code)))
+    (should spec)
+    (should (string= (plist-get (cdr spec) :skills-url)
+                     "https://github.com/obra/superpowers"))))
+
 (provide 'test_ai-code-backends)
 
 ;;; test_ai-code-backends.el ends here
