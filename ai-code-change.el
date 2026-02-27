@@ -151,6 +151,8 @@ REGION-ACTIVE indicates whether a region is selected."
          (function-name (which-function))
          (region-text (when region-active
                         (buffer-substring-no-properties (region-beginning) (region-end))))
+         (region-start-line (when region-active
+                     (line-number-at-pos (region-beginning))))
          (region-location-info (when region-active
                                  (ai-code--get-region-location-info (region-beginning) (region-end))))
          (prompt-label (ai-code--generate-prompt-label clipboard-context region-active function-name))
