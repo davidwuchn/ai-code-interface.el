@@ -613,6 +613,34 @@ If no such buffer is found, report a user-error."
                       test-pattern-instruction)))
         (ai-code--insert-prompt tdd-instructions)))))
 
+(defun ai-code--tdd-source-function-context-p (function-name)
+  "Return non-nil when FUNCTION-NAME is in a non-test source buffer."
+  (and function-name
+       buffer-file-name
+       (derived-mode-p 'prog-mode)
+       (let ((case-fold-search t))
+         (not (string-match-p "test" (file-name-nondirectory buffer-file-name))))))
+
+(defun ai-code--write-test (function-name)
+  "Write @test for FUNCTION-NAME in the corresponding test file."
+  (let* ((source-file (and buffer-file-name (file-name-nondirectory buffer-file-name)))
+         (test-file-hint (if source-file
+                             (format "a corresponding test file, following test pattern of this repo"
+                                     source-file)
+                           "the corresponding test file"))
+         (write-test-desc (ai-code-read-string
+                           "Write test instruction: "
+                           (format "Write test for '%s' in %s."
+                                   function-name
+                                   test-file-hint)))
+         (file-info (ai-code--get-context-files-string))
+         (tdd-instructions
+          (format "%s%s\nFollow TDD principles - write only the test now, not the implementation. Only update test file code.%s"
+                  write-test-desc
+                  file-info
+                  ai-code--tdd-test-pattern-instruction)))
+    (ai-code--insert-prompt tdd-instructions)))
+
 (defun ai-code--tdd-red-green-stage (function-name)
   "Handle the Red + Green stage for FUNCTION-NAME in one prompt."
   ;; (ai-code--ensure-test-buffer-visible)
@@ -623,7 +651,7 @@ If no such buffer is found, report a user-error."
                         "Implement test functions using test cases described in the comments."))
          (file-info (ai-code--get-context-files-string))
          (tdd-instructions
-          (format "%s%s\nFollow TDD principles - write the failing test first, then implement the minimal code to make it pass. Only update test and source code. Run the tests and follow up with the @test result (fix code if there is error).%s"
+          (format "%s%s\nFollow TDD principles - write the failing test first, then implement the minimal code to make it pass. Only update test and source code. Run the tests and follow up with the test result (fix code if there is error).%s"
                   feature-desc
                   file-info
                   ai-code--tdd-test-pattern-instruction)))
@@ -715,20 +743,27 @@ Helps users follow Kent Beck's TDD methodology with AI assistance.
 Works with both source code and test files that have been added to ai-code."
   (interactive)
   (let* ((function-name (which-function))
+         (use-write-test-stage (ai-code--tdd-source-function-context-p function-name))
+         (red-stage-label (if use-write-test-stage
+                              (format "1. Red (Write test for %s)" function-name)
+                            "1. Red (Write failing test)"))
          (cycle-stage (completing-read
                        "Select TDD stage: "
-                       '("0. Run unit-tests"
-                         "1. Red (Write failing test)"
-                         "2. Green (Make test pass)"
-                         "3. Refactor (Improve code quality)"
-                         "4. Red + Green (One prompt)")
+                       (list "0. Run unit-tests"
+                             red-stage-label
+                             "2. Green (Make test pass)"
+                             "3. Refactor (Improve code quality)"
+                             "4. Red + Green (One prompt)")
                        nil t))
          (stage-num (string-to-number (substring cycle-stage 0 1))))
     (cond
      ;; Run tests
      ((= stage-num 0) (ai-code-run-test))
      ;; Red stage - write failing test
-     ((= stage-num 1) (ai-code--tdd-red-stage function-name))
+     ((= stage-num 1)
+      (if use-write-test-stage
+          (ai-code--write-test function-name)
+        (ai-code--tdd-red-stage function-name)))
      ;; Green stage - make test pass
      ((= stage-num 2) (ai-code--tdd-green-stage function-name))
      ;; Refactor stage - call the main refactoring function in TDD mode
