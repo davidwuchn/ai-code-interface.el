@@ -413,6 +413,7 @@ Shows the current backend label to the right."
     ;; Use plist style to provide a dynamic description function.
     ("s" ai-code-select-backend :description ai-code--select-backend-description)
     ("u" "Install / Upgrade AI CLI" ai-code-upgrade-backend)
+    ("S" "Install skills for AI CLI" ai-code-install-skills)
     ("g" "Open backend config (eg. add mcp)" ai-code-open-backend-config)
     ("G" "Open backend repo agent file" ai-code-open-backend-agent-file)
     ("|" "Apply prompt on file" ai-code-apply-prompt-on-current-file)

@@ -156,6 +156,41 @@
       (should (equal (reverse start-calls)
                      '(backend-a backend-b backend-a))))))
 
+(ert-deftest ai-code-test-install-skills-uses-backend-skills-url ()
+  "Test that `ai-code-install-skills' uses the backend's :skills URL."
+  (let* ((backend-key 'test-skills-backend)
+         (ai-code-backends `((,backend-key
+                              :label "Test Skills Backend"
+                              :skills "https://example.com/skills")))
+         (ai-code-selected-backend backend-key)
+         (sent-command nil))
+    (cl-letf (((symbol-function 'ai-code-cli-send-command)
+               (lambda (cmd) (setq sent-command cmd))))
+      (ai-code-install-skills)
+      (should (string-match-p "https://example.com/skills" sent-command)))))
+
+(ert-deftest ai-code-test-install-skills-falls-back-to-default-url ()
+  "Test that `ai-code-install-skills' falls back to `ai-code-skills-url'."
+  (let* ((backend-key 'test-no-skills-backend)
+         (ai-code-backends `((,backend-key
+                              :label "Test No Skills Backend")))
+         (ai-code-selected-backend backend-key)
+         (ai-code-skills-url "https://fallback.example.com/skills")
+         (sent-command nil))
+    (cl-letf (((symbol-function 'ai-code-cli-send-command)
+               (lambda (cmd) (setq sent-command cmd))))
+      (ai-code-install-skills)
+      (should (string-match-p "https://fallback.example.com/skills" sent-command)))))
+
+(ert-deftest ai-code-test-install-skills-errors-without-url ()
+  "Test that `ai-code-install-skills' signals an error when no URL is set."
+  (let* ((backend-key 'test-no-url-backend)
+         (ai-code-backends `((,backend-key
+                              :label "Test No URL Backend")))
+         (ai-code-selected-backend backend-key)
+         (ai-code-skills-url nil))
+    (should-error (ai-code-install-skills) :type 'user-error)))
+
 (provide 'test_ai-code-backends)
 
 ;;; test_ai-code-backends.el ends here

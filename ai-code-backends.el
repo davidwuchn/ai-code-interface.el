@@ -176,6 +176,14 @@ When called from Lisp code, sends CMD directly without prompting."
   (claude-code--do-send-command cmd))
 
 ;;;###autoload
+(defcustom ai-code-skills-url "https://github.com/obra/superpowers"
+  "Default URL for AI coding skills/plugins README.
+Used by `ai-code-install-skills' when no backend-specific skills URL is set.
+Individual backends may override this via the :skills property."
+  :type 'string
+  :group 'ai-code)
+
+;;;###autoload
 (defcustom ai-code-backends
   '((claude-code
      :label "Claude Code"
@@ -187,6 +195,7 @@ When called from Lisp code, sends CMD directly without prompting."
      :config  "~/.claude.json"
      :agent-file "CLAUDE.md"
      :upgrade "npm install -g @anthropic-ai/claude-code@latest"
+     :skills  "https://github.com/obra/superpowers"
      :cli     "claude")
     (gemini
      :label "Gemini CLI"
@@ -301,6 +310,7 @@ When called from Lisp code, sends CMD directly without prompting."
      :config  "~/.claude.json"
      :agent-file "CLAUDE.md"
      :upgrade "npm install -g @anthropic-ai/claude-code@latest"
+     :skills  "https://github.com/obra/superpowers"
      :cli     "claude")
     (claude-code-el  ; external backend, requires claude-code.el package
      :label "claude-code.el"
@@ -312,11 +322,15 @@ When called from Lisp code, sends CMD directly without prompting."
      :config  "~/.claude.json"
      :agent-file "CLAUDE.md"
      :upgrade "npm install -g @anthropic-ai/claude-code@latest"
+     :skills  "https://github.com/obra/superpowers"
      :cli     "claude"))
   "Available AI backends and how to integrate with them.
 Each entry is (KEY :label STRING :require FEATURE :start FN :switch FN
-:send FN :resume FN-or-nil :upgrade STRING-or-nil :cli STRING :agent-file STRING-or-nil).
-The :upgrade property can be either a string shell command or nil."
+:send FN :resume FN-or-nil :upgrade STRING-or-nil :cli STRING
+:agent-file STRING-or-nil :skills STRING-or-nil).
+The :upgrade property can be either a string shell command or nil.
+The :skills property is an optional URL to a skills/plugins README used by
+`ai-code-install-skills'."
   :type '(repeat (list (symbol :tag "Key")
                        (const :label) (string :tag "Label")
                        (const :require) (symbol :tag "Feature to require")
@@ -498,6 +512,33 @@ invoke `ai-code-cli-resume'; otherwise call `ai-code-cli-start'."
               (message "Running upgrade command for %s" label))
           (user-error "Upgrade command for backend '%s' is not defined"
                       label))))))
+
+;;;###autoload
+(defcustom ai-code-skills-install-prompt
+  "Please read the skills/plugins README at %s and install the ones that are appropriate for our current project."
+  "Prompt template sent to the AI when installing skills.
+The string must contain a single `%s' placeholder which will be replaced
+with the skills URL."
+  :type 'string
+  :group 'ai-code)
+
+;;;###autoload
+(defun ai-code-install-skills ()
+  "Ask the current AI backend to install skills from a skills README.
+Uses the :skills URL from the backend spec, falling back to
+`ai-code-skills-url'.  Sends a prompt to the running AI CLI session
+asking it to read the README at that URL and install appropriate skills."
+  (interactive)
+  (let* ((spec (ai-code--backend-spec ai-code-selected-backend))
+         (plist (when spec (cdr spec)))
+         (skills-url (or (and plist (plist-get plist :skills))
+                         ai-code-skills-url))
+         (label (ai-code-current-backend-label)))
+    (if (not skills-url)
+        (user-error "No skills URL configured for backend '%s'" label)
+      (ai-code-cli-send-command
+       (format ai-code-skills-install-prompt skills-url))
+      (message "Asking %s to install skills from %s" label skills-url))))
 
 (provide 'ai-code-backends)
 
