@@ -175,9 +175,18 @@ When called from Lisp code, sends CMD directly without prompting."
   (interactive "sClaude command: ")
   (claude-code--do-send-command cmd))
 
-;; DONE: Feat: Add menu item to install skills for current selected AI coding CLI
-;; This functionality is about to install skills for current used AI backend. One example skills is https://github.com/obra/superpowers
-;; Different CLI might have different way to install skills, so it might need individual function for that. If a backend is lack of function to install skills, it can fallback to a global skills install function, and that one just let AI to read the menu of skills repo README and figure out how to install.
+(defun ai-code-claude-code-install-skills ()
+  "Install skills for Claude Code by prompting for a skills repo URL.
+Ask the Claude Code CLI to clone and set up the skills from the given
+repository.  Claude Code manages skills as files under ~/.claude/,
+so the CLI itself handles the installation details."
+  (let* ((url (read-string
+               "Skills repo URL for Claude Code: "
+               nil nil "https://github.com/obra/superpowers"))
+         (prompt (format
+                  "Install the skill from %s for this Claude Code CLI. Read the repository README to understand the installation instructions and follow them. Set up the skill files under the appropriate directory (e.g. ~/.claude/ or the project .claude/ directory) so they are available in future sessions."
+                  url)))
+    (ai-code-cli-send-command prompt)))
 
 ;;;###autoload
 (defcustom ai-code-backends
@@ -191,6 +200,7 @@ When called from Lisp code, sends CMD directly without prompting."
      :config  "~/.claude.json"
      :agent-file "CLAUDE.md"
      :upgrade "npm install -g @anthropic-ai/claude-code@latest"
+     :install-skills ai-code-claude-code-install-skills
      :cli     "claude")
     (gemini
      :label "Gemini CLI"
