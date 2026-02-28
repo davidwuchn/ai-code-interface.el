@@ -175,6 +175,10 @@ When called from Lisp code, sends CMD directly without prompting."
   (interactive "sClaude command: ")
   (claude-code--do-send-command cmd))
 
+;; DONE: Feat: Add menu item to install skills for current selected AI coding CLI
+;; This functionality is about to install skills for current used AI backend. One example skills is https://github.com/obra/superpowers
+;; Different CLI might have different way to install skills, so it might need individual function for that. If a backend is lack of function to install skills, it can fallback to a global skills install function, and that one just let AI to read the menu of skills repo README and figure out how to install.
+
 ;;;###autoload
 (defcustom ai-code-backends
   '((claude-code
@@ -280,7 +284,7 @@ When called from Lisp code, sends CMD directly without prompting."
      :config  "~/.aider.conf.yml"
      :upgrade nil
      :cli     "aider")
-    (agent-shell  ; external backend, requires agent-shell package
+    (agent-shell      ; external backend, requires agent-shell package
      :label "agent-shell"
      :require ai-code-agent-shell
      :start   ai-code-agent-shell
@@ -291,7 +295,7 @@ When called from Lisp code, sends CMD directly without prompting."
      :upgrade nil
      :cli     "agent-shell"
      :agent-file nil)
-    (claude-code-ide  ; external backend, requires claude-code-ide.el package
+    (claude-code-ide ; external backend, requires claude-code-ide.el package
      :label "claude-code-ide.el"
      :require claude-code-ide
      :start   claude-code-ide--start-if-no-session
@@ -302,7 +306,7 @@ When called from Lisp code, sends CMD directly without prompting."
      :agent-file "CLAUDE.md"
      :upgrade "npm install -g @anthropic-ai/claude-code@latest"
      :cli     "claude")
-    (claude-code-el  ; external backend, requires claude-code.el package
+    (claude-code-el ; external backend, requires claude-code.el package
      :label "claude-code.el"
      :require claude-code
      :start   claude-code
@@ -315,8 +319,10 @@ When called from Lisp code, sends CMD directly without prompting."
      :cli     "claude"))
   "Available AI backends and how to integrate with them.
 Each entry is (KEY :label STRING :require FEATURE :start FN :switch FN
-:send FN :resume FN-or-nil :upgrade STRING-or-nil :cli STRING :agent-file STRING-or-nil).
-The :upgrade property can be either a string shell command or nil."
+:send FN :resume FN-or-nil :upgrade STRING-or-nil :cli STRING
+:agent-file STRING-or-nil :install-skills STRING-or-SYMBOL-or-nil).
+The :upgrade property can be either a string shell command or nil.
+The :install-skills property can be a string shell command, a function symbol, or nil."
   :type '(repeat (list (symbol :tag "Key")
                        (const :label) (string :tag "Label")
                        (const :require) (symbol :tag "Feature to require")
@@ -329,7 +335,10 @@ The :upgrade property can be either a string shell command or nil."
                                                 (const :tag "Not supported" nil))
                        (const :cli) (string :tag "CLI name")
                        (const :agent-file) (choice (string :tag "Agent file name")
-                                                   (const :tag "Not supported" nil))))
+                                                   (const :tag "Not supported" nil))
+                       (const :install-skills) (choice (string :tag "Install skills command")
+                                                       (symbol :tag "Install skills function")
+                                                       (const :tag "Not supported" nil))))
   :group 'ai-code)
 
 (defvar ai-code-selected-backend 'claude-code
@@ -498,6 +507,41 @@ invoke `ai-code-cli-resume'; otherwise call `ai-code-cli-start'."
               (message "Running upgrade command for %s" label))
           (user-error "Upgrade command for backend '%s' is not defined"
                       label))))))
+
+(defun ai-code-install-backend-skills--fallback (label)
+  "Fallback skills installation for backend LABEL.
+Prompt user for a skills repository URL and ask the AI CLI session
+to read the repo README and install the skills."
+  (let* ((url (read-string
+               (format "Skills repo URL for %s: " label)
+               nil nil "https://github.com/obra/superpowers"))
+         (prompt (format "Please read the README of %s and install/setup the skills described there for this CLI. Follow the installation instructions in the README." url)))
+    (ai-code-cli-send-command prompt)))
+
+;;;###autoload
+(defun ai-code-install-backend-skills ()
+  "Install skills for the currently selected backend.
+If the backend defines an :install-skills property, use it:
+  - string: run as a shell command via `compile'.
+  - symbol: call the function.
+Otherwise fall back to prompting the AI session to install from a
+skills repository URL."
+  (interactive)
+  (let* ((spec (ai-code--backend-spec ai-code-selected-backend)))
+    (if (not spec)
+        (user-error "No backend is currently selected")
+      (let* ((plist (cdr spec))
+             (install-skills (plist-get plist :install-skills))
+             (label (ai-code-current-backend-label)))
+        (cond
+         ((stringp install-skills)
+          (compile install-skills)
+          (message "Running skills installation for %s" label))
+         ((and install-skills (symbolp install-skills) (fboundp install-skills))
+          (funcall install-skills)
+          (message "Running skills installation for %s" label))
+         (t
+          (ai-code-install-backend-skills--fallback label)))))))
 
 (provide 'ai-code-backends)
 

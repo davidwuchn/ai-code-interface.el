@@ -113,6 +113,7 @@
 (declare-function ai-code-open-backend-config "ai-code-backends")
 (declare-function ai-code-open-backend-agent-file "ai-code-backends")
 (declare-function ai-code-upgrade-backend "ai-code-backends")
+(declare-function ai-code-install-backend-skills "ai-code-backends")
 (declare-function ai-code-backends-infra--session-buffer-p "ai-code-backends-infra" (buffer))
 
 (declare-function ai-code--process-word-for-filepath "ai-code-prompt-mode" (word git-root-truename))
@@ -413,6 +414,7 @@ Shows the current backend label to the right."
     ;; Use plist style to provide a dynamic description function.
     ("s" ai-code-select-backend :description ai-code--select-backend-description)
     ("u" "Install / Upgrade AI CLI" ai-code-upgrade-backend)
+    ("S" "Install skills for backend" ai-code-install-backend-skills)
     ("g" "Open backend config (eg. add mcp)" ai-code-open-backend-config)
     ("G" "Open backend repo agent file" ai-code-open-backend-agent-file)
     ("|" "Apply prompt on file" ai-code-apply-prompt-on-current-file)

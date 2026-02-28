@@ -156,6 +156,62 @@
       (should (equal (reverse start-calls)
                      '(backend-a backend-b backend-a))))))
 
+(ert-deftest ai-code-test-install-skills-with-string-command ()
+  "Backend with :install-skills string runs it via compile."
+  (let* ((compiled-cmd nil)
+         (ai-code-backends '((test-backend
+                               :label "Test Backend"
+                               :install-skills "npm install skills"
+                               :cli "test")))
+         (ai-code-selected-backend 'test-backend))
+    (cl-letf (((symbol-function 'compile)
+               (lambda (cmd) (setq compiled-cmd cmd)))
+              ((symbol-function 'message)
+               (lambda (&rest _args) nil)))
+      (ai-code-install-backend-skills)
+      (should (string= compiled-cmd "npm install skills")))))
+
+(ert-deftest ai-code-test-install-skills-with-function-symbol ()
+  "Backend with :install-skills as function symbol calls that function."
+  (let* ((fn-called nil)
+         (ai-code-backends '((test-backend
+                               :label "Test Backend"
+                               :install-skills ai-code-test--install-skills-fn
+                               :cli "test")))
+         (ai-code-selected-backend 'test-backend))
+    (cl-letf (((symbol-function 'ai-code-test--install-skills-fn)
+               (lambda () (setq fn-called t)))
+              ((symbol-function 'message)
+               (lambda (&rest _args) nil)))
+      (ai-code-install-backend-skills)
+      (should fn-called))))
+
+(ert-deftest ai-code-test-install-skills-fallback-when-nil ()
+  "Backend without :install-skills falls back to prompting AI via send-command."
+  (let* ((sent-command nil)
+         (ai-code-backends '((test-backend
+                               :label "Test Backend"
+                               :cli "test")))
+         (ai-code-selected-backend 'test-backend))
+    (cl-letf (((symbol-function 'read-string)
+               (lambda (_prompt &optional _initial _history _default &rest _rest)
+                 "https://github.com/obra/superpowers"))
+              ((symbol-function 'ai-code-cli-send-command)
+               (lambda (cmd) (setq sent-command cmd)))
+              ((symbol-function 'message)
+               (lambda (&rest _args) nil)))
+      (ai-code-install-backend-skills)
+      (should (stringp sent-command))
+      (should (string-match-p "superpowers" sent-command))
+      (should (string-match-p "README" sent-command)))))
+
+(ert-deftest ai-code-test-install-skills-no-backend-errors ()
+  "Missing backend signals user-error."
+  (let ((ai-code-selected-backend 'nonexistent-backend)
+        (ai-code-backends nil))
+    (should-error (ai-code-install-backend-skills)
+                  :type 'user-error)))
+
 (provide 'test_ai-code-backends)
 
 ;;; test_ai-code-backends.el ends here
