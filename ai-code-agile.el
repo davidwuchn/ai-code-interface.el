@@ -622,7 +622,7 @@ If no such buffer is found, report a user-error."
          (not (string-match-p "test" (file-name-nondirectory buffer-file-name))))))
 
 (defun ai-code--write-test (function-name)
-  "Write @test for FUNCTION-NAME in the corresponding test file."
+  "Write a test for FUNCTION-NAME in the corresponding test file."
   (let* ((source-file (and buffer-file-name (file-name-nondirectory buffer-file-name)))
          (test-file-hint (if source-file
                              (format "the corresponding test file for %s, following test pattern of this repo"
