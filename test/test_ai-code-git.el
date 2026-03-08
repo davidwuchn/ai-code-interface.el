@@ -247,14 +247,16 @@ When .gitignore is missing some entries, they should be added."
          (start-point "main")
          (repo-dir (expand-file-name "sample-repo" temp-worktree-root))
          (worktree-path (expand-file-name branch repo-dir))
+         (worktree-parent-dir (file-name-directory worktree-path))
          captured-git-args
          captured-visited-path)
     (unwind-protect
         (cl-letf (((symbol-function 'ai-code--validate-git-repository)
                    (lambda () git-root))
-                  ((symbol-function 'magit--expand-worktree)
-                   (lambda (path) (concat "EXPANDED:" path)))
                   ((symbol-function 'magit-run-git)
+                   (lambda (&rest _args)
+                     (ert-fail "`magit-run-git' should not be used for worktree add status check")))
+                  ((symbol-function 'magit-call-git)
                    (lambda (&rest args)
                      (setq captured-git-args args)
                      0))
@@ -264,12 +266,13 @@ When .gitignore is missing some entries, they should be added."
           (should-not (file-directory-p repo-dir))
           (ai-code-git-worktree-branch branch start-point)
           (should (file-directory-p repo-dir))
+          (should (file-directory-p worktree-parent-dir))
           (should (equal captured-git-args
                          (list "worktree"
                                "add"
                                "-b"
                                branch
-                               (concat "EXPANDED:" worktree-path)
+                               (file-truename worktree-path)
                                start-point)))
           (should (equal captured-visited-path worktree-path)))
       (delete-directory temp-worktree-root t))))

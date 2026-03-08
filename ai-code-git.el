@@ -775,11 +775,15 @@ The worktree path is
    (magit-branch-read-args "Create and checkout branch"))
   (let* ((git-root (ai-code--validate-git-repository))
          (repo-worktree-dir (ai-code--git-worktree-repo-dir git-root))
-         (path (expand-file-name branch repo-worktree-dir)))
+         (path (expand-file-name branch repo-worktree-dir))
+         (parent-dir (file-name-directory path)))
     (unless (file-directory-p repo-worktree-dir)
       (make-directory repo-worktree-dir t))
-    (when (zerop (magit-run-git "worktree" "add" "-b" branch
-                                (magit--expand-worktree path) start-point))
+    (when (and parent-dir
+               (not (file-directory-p parent-dir)))
+      (make-directory parent-dir t))
+    (when (zerop (magit-call-git "worktree" "add" "-b" branch
+                                 (file-truename path) start-point))
       (magit-diff-visit-directory path))))
 
 ;;;###autoload
