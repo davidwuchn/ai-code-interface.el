@@ -27,6 +27,12 @@ Candidate values:
   :type 'string
   :group 'ai-code)
 
+(defcustom ai-code-git-worktree-root
+  (expand-file-name "ai-code-worktrees" user-emacs-directory)
+  "Directory used to host centralized Git worktrees for all repositories."
+  :type 'directory
+  :group 'ai-code)
+
 (declare-function ai-code--insert-prompt "ai-code-prompt-mode" (prompt-text))
 (declare-function ai-code--ensure-files-directory "ai-code-prompt-mode" ())
 (declare-function ai-code--git-root "ai-code-file" (&optional dir))
@@ -754,6 +760,27 @@ buffer from which this command was invoked, instead of visiting the file."
                 (with-current-buffer origin-buffer
                   (insert "@" choice)))
             (find-file (expand-file-name choice base-dir))))))))
+
+(defun ai-code--git-worktree-repo-dir (git-root)
+  "Return centralized worktree directory for repository at GIT-ROOT."
+  (let ((repo-name (file-name-nondirectory (directory-file-name git-root))))
+    (expand-file-name repo-name ai-code-git-worktree-root)))
+
+;;;###autoload
+(defun ai-code-git-worktree-branch (branch start-point)
+  "Create BRANCH and check it out in a new centralized worktree.
+The worktree path is
+`ai-code-git-worktree-root/REPO-NAME/BRANCH'."
+  (interactive
+   (magit-branch-read-args "Create and checkout branch"))
+  (let* ((git-root (ai-code--validate-git-repository))
+         (repo-worktree-dir (ai-code--git-worktree-repo-dir git-root))
+         (path (expand-file-name branch repo-worktree-dir)))
+    (unless (file-directory-p repo-worktree-dir)
+      (make-directory repo-worktree-dir t))
+    (when (zerop (magit-run-git "worktree" "add" "-b" branch
+                                (magit--expand-worktree path) start-point))
+      (magit-diff-visit-directory path))))
 
 (provide 'ai-code-git)
 

@@ -238,6 +238,42 @@ When .gitignore is missing some entries, they should be added."
                  "https://github.com/acme/demo/pull/999")))
     (should (string-match-p "Review this pull request\\." prompt))))
 
+(ert-deftest ai-code-test-git-worktree-branch-creates-repo-directory-and-adds-worktree ()
+  "Create repo worktree directory and invoke git worktree add with expected path."
+  (let* ((temp-worktree-root (make-temp-file "ai-code-worktree-root-" t))
+         (ai-code-git-worktree-root temp-worktree-root)
+         (git-root "/tmp/sample-repo/")
+         (branch "feature/new-branch")
+         (start-point "main")
+         (repo-dir (expand-file-name "sample-repo" temp-worktree-root))
+         (worktree-path (expand-file-name branch repo-dir))
+         captured-git-args
+         captured-visited-path)
+    (unwind-protect
+        (cl-letf (((symbol-function 'ai-code--validate-git-repository)
+                   (lambda () git-root))
+                  ((symbol-function 'magit--expand-worktree)
+                   (lambda (path) (concat "EXPANDED:" path)))
+                  ((symbol-function 'magit-run-git)
+                   (lambda (&rest args)
+                     (setq captured-git-args args)
+                     0))
+                  ((symbol-function 'magit-diff-visit-directory)
+                   (lambda (path)
+                     (setq captured-visited-path path))))
+          (should-not (file-directory-p repo-dir))
+          (ai-code-git-worktree-branch branch start-point)
+          (should (file-directory-p repo-dir))
+          (should (equal captured-git-args
+                         (list "worktree"
+                               "add"
+                               "-b"
+                               branch
+                               (concat "EXPANDED:" worktree-path)
+                               start-point)))
+          (should (equal captured-visited-path worktree-path)))
+      (delete-directory temp-worktree-root t))))
+
 (defun ai-code-test--run-pull-or-review-diff-file (choice pr-url &optional review-mode-choice)
   "Run `ai-code-pull-or-review-diff-file' with CHOICE and optional PR-URL.
 REVIEW-MODE-CHOICE is used for review mode selection when prompted.
