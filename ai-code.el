@@ -445,6 +445,7 @@ Shows the current backend label to the right."
     ("<SPC>" "Send command (C-u: context)" ai-code-send-command)
     ("@" "Context (add/show/clear)" ai-code-context-action)
     ("C" "Create file or dir with AI" ai-code-create-file-or-dir)
+    ("w" "New worktree branch (C-u: status)" ai-code-git-worktree-action)
     ]
 
    ["AI Agile Development"

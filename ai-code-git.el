@@ -782,6 +782,16 @@ The worktree path is
                                 (magit--expand-worktree path) start-point))
       (magit-diff-visit-directory path))))
 
+;;;###autoload
+(defun ai-code-git-worktree-action (&optional prefix)
+  "Dispatch worktree action by PREFIX.
+Without PREFIX, call `ai-code-git-worktree-branch'.
+With PREFIX (for example C-u), call `magit-worktree-status'."
+  (interactive "P")
+  (if prefix
+      (call-interactively #'magit-worktree-status)
+    (call-interactively #'ai-code-git-worktree-branch)))
+
 (provide 'ai-code-git)
 
 ;;; ai-code-git.el ends here

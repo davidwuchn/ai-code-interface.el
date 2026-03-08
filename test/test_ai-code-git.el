@@ -274,6 +274,24 @@ When .gitignore is missing some entries, they should be added."
           (should (equal captured-visited-path worktree-path)))
       (delete-directory temp-worktree-root t))))
 
+(ert-deftest ai-code-test-git-worktree-action-without-prefix-calls-worktree-branch ()
+  "Without prefix arg, dispatch to `ai-code-git-worktree-branch'."
+  (let (captured-fn)
+    (cl-letf (((symbol-function 'call-interactively)
+               (lambda (fn &optional _record-flag _keys)
+                 (setq captured-fn fn))))
+      (ai-code-git-worktree-action nil)
+      (should (eq captured-fn #'ai-code-git-worktree-branch)))))
+
+(ert-deftest ai-code-test-git-worktree-action-with-prefix-calls-magit-worktree-status ()
+  "With prefix arg, dispatch to `magit-worktree-status'."
+  (let (captured-fn)
+    (cl-letf (((symbol-function 'call-interactively)
+               (lambda (fn &optional _record-flag _keys)
+                 (setq captured-fn fn))))
+      (ai-code-git-worktree-action '(4))
+      (should (eq captured-fn #'magit-worktree-status)))))
+
 (defun ai-code-test--run-pull-or-review-diff-file (choice pr-url &optional review-mode-choice)
   "Run `ai-code-pull-or-review-diff-file' with CHOICE and optional PR-URL.
 REVIEW-MODE-CHOICE is used for review mode selection when prompted.
