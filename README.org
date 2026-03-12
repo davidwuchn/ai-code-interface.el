@@ -20,6 +20,7 @@ An Emacs interface for AI-assisted software development. *The purpose is to prov
   - [[https://cnb.cool/codebuddy/codebuddy-code][CodeBuddy Code CLI]]
   - [[https://aider.chat/][Aider CLI]]
 - It also supports external backend packages:
+  - [[https://eca.dev/][ECA (Editor Code Assistant)]] (`[[./ai-code-eca.el][ai-code-eca.el]]`)
   - [[https://github.com/xenodium/agent-shell][agent-shell]] ([[https://github.com/xenodium/acp.el][acp.el]])
   - [[https://github.com/manzaltu/claude-code-ide.el][claude-code-ide.el]]
   - [[https://github.com/stevemolitor/claude-code.el][claude-code.el]]
@@ -73,7 +74,7 @@ Enable installation of packages from MELPA by adding an entry to package-archive
   (use-package ai-code
     ;; :straight (:host github :repo "tninja/ai-code-interface.el") ;; if you want to use straight to install, no need to have MELPA setting above
     :config
-    ;; use codex as backend, other options are 'claude-code, 'gemini, 'github-copilot-cli, 'opencode, 'grok, 'cursor, 'kiro, 'codebuddy, 'aider, 'agent-shell, 'claude-code-ide, 'claude-code-el
+    ;; use codex as backend, other options are 'claude-code, 'gemini, 'github-copilot-cli, 'opencode, 'grok, 'cursor, 'kiro, 'codebuddy, 'aider, 'eca, 'agent-shell, 'claude-code-ide, 'claude-code-el
     (ai-code-set-backend 'codex)
     ;; Enable global keybinding for the main menu
     (global-set-key (kbd "C-c a") #'ai-code-menu)
@@ -228,9 +229,19 @@ When working with multiple AI sessions, it can be useful to receive desktop noti
    - [[https://aider.chat/][Aider CLI]] (`[[./ai-code-aider-cli.el][ai-code-aider-cli.el]]`)
    
    It also supports external backends through customization of the `ai-code-backends` variable; currently it includes:
+   - [[https://eca.dev/][ECA (Editor Code Assistant)]] (`[[./ai-code-eca.el][ai-code-eca.el]]`)
    - [[https://github.com/xenodium/agent-shell][agent-shell]] (`[[./ai-code-agent-shell.el][ai-code-agent-shell.el]]`)
    - Claude Code IDE (`[[https://github.com/manzaltu/claude-code-ide.el][claude-code-ide.el]]`)
    - Claude Code (`[[https://github.com/stevemolitor/claude-code.el][claude-code.el]]`)
+
+**** ECA (Editor Code Assistant) backend setup
+     Install the [[https://eca.dev/][eca]] Emacs package, which provides the =eca=, =eca-session=, =eca-chat-open=,
+     =eca-chat-send-prompt=, and =eca-chat--get-last-buffer= functions.
+     Then select the backend in your config:
+     #+begin_src emacs-lisp
+     (ai-code-set-backend 'eca)
+     #+end_src
+     Note: =ai-code-apply-prompt-on-current-file= is CLI-pipe based and is not supported when =eca= is the active backend.
 
 **** agent-shell backend setup
      Install [[https://github.com/xenodium/agent-shell][agent-shell]] and its dependency [[https://github.com/xenodium/acp.el][acp.el]], then configure one of the ACP agent providers in agent-shell (for example Codex, Gemini, Opencode, etc.).
@@ -308,6 +319,7 @@ The following books introduce how to use AI to assist programming and potentiall
 - Claude Code IDE (`[[https://github.com/manzaltu/claude-code-ide.el][claude-code-ide.el]]`)
 - Gemini CLI (`[[https://github.com/linchen2chris/gemini-cli.el][gemini-cli.el]]`)
 - [[https://github.com/xenodium/agent-shell][agent-shell]] ([[https://github.com/xenodium/acp.el][acp.el]])
+- [[https://eca.dev/][ECA (Editor Code Assistant)]]
 
 ** License
 

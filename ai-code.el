@@ -27,6 +27,7 @@
 ;;   - CodeBuddy Code CLI
 ;;   - Aider CLI
 ;;   - agent-shell
+;;   - ECA (Editor Code Assistant)
 ;;
 ;; New User Quick Start:
 ;;   1) Minimal setup:
@@ -46,7 +47,7 @@
 ;;
 ;; (use-package ai-code
 ;;   :config
-;;   ;; use codex as backend, other options are 'gemini, 'github-copilot-cli, 'opencode, 'grok, 'claude-code-ide, 'claude-code-el, 'claude-code, 'cursor, 'kiro, 'codebuddy, 'aider, 'agent-shell
+;;   ;; use codex as backend, other options are 'gemini, 'github-copilot-cli, 'opencode, 'grok, 'claude-code-ide, 'claude-code-el, 'claude-code, 'cursor, 'kiro, 'codebuddy, 'aider, 'agent-shell, 'eca
 ;;   (ai-code-set-backend 'codex) ;; set your preferred backend
 ;;   (global-set-key (kbd "C-c a") #'ai-code-menu)
 ;;   ;; Optional: Enable @ file completion in comments and AI sessions

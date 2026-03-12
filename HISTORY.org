@@ -2,6 +2,7 @@
 * Release history
 
 ** Main branch change
+- Feat: Add ECA (https://eca.dev/) as an external backend, contributed by davidwuchn
 - Feat: Integrate with magit worktree feature
 - Feat: Modernize PR review tool
 

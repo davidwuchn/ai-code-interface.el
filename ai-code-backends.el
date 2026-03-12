@@ -317,6 +317,18 @@ so the CLI itself handles the installation details."
      :upgrade nil
      :install-skills nil
      :cli     "aider")
+    (eca              ; external backend, requires eca package
+     :label "ECA (Editor Code Assistant)"
+     :require ai-code-eca
+     :start   ai-code-eca-start
+     :switch  ai-code-eca-switch
+     :send    ai-code-eca-send
+     :resume  ai-code-eca-resume
+     :config  "~/.config/eca/config.json"
+     :agent-file "AGENTS.md"
+     :upgrade nil
+     :install-skills nil
+     :cli     "eca")
     (agent-shell      ; external backend, requires agent-shell package
      :label "agent-shell"
      :require ai-code-agent-shell
