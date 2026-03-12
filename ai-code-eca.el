@@ -1,6 +1,6 @@
 ;;; ai-code-eca.el --- ECA backend bridge for ai-code -*- lexical-binding: t; -*-
 
-;; Author: Kang Tu <tninja@gmail.com>
+;; Author: davidwuchn
 ;; SPDX-License-Identifier: Apache-2.0
 
 ;;; Commentary:
