@@ -36,11 +36,40 @@ terminal as VS Code-compatible and enables multiline input support via
   :type '(repeat string)
   :group 'ai-code-github-copilot-cli)
 
+(defcustom ai-code-github-copilot-cli-multiline-input-sequence "\\\r\n"
+  "Terminal sequence used for multiline input in GitHub Copilot CLI sessions.
+This mirrors the VS Code `workbench.action.terminal.sendSequence' binding
+that `/terminal-setup' installs for Shift+Enter and Ctrl+Enter."
+  :type 'string
+  :group 'ai-code-github-copilot-cli)
+
 (defconst ai-code-github-copilot-cli--session-prefix "copilot"
   "Session prefix used in GitHub Copilot CLI buffer names.")
 
 (defvar ai-code-github-copilot-cli--processes (make-hash-table :test 'equal)
   "Hash table mapping Copilot session keys to processes.")
+
+(defun ai-code-github-copilot-cli--configure-buffer (buffer)
+  "Configure BUFFER with Copilot-specific terminal keybindings."
+  (when (buffer-live-p buffer)
+    (with-current-buffer buffer
+      (local-set-key (kbd "S-<return>")
+                     #'ai-code-github-copilot-cli-send-multiline-newline)
+      (local-set-key (kbd "C-<return>")
+                     #'ai-code-github-copilot-cli-send-multiline-newline))))
+
+(defun ai-code-github-copilot-cli--session-buffer (working-dir)
+  "Return the active Copilot session buffer for WORKING-DIR, if any."
+  (ai-code-backends-infra--select-session-buffer
+   ai-code-github-copilot-cli--session-prefix
+   working-dir))
+
+;;;###autoload
+(defun ai-code-github-copilot-cli-send-multiline-newline ()
+  "Send the Copilot multiline-input sequence to the terminal."
+  (interactive)
+  (ai-code-backends-infra--terminal-send-string
+   ai-code-github-copilot-cli-multiline-input-sequence))
 
 ;;;###autoload
 (defun ai-code-github-copilot-cli (&optional arg)
@@ -65,7 +94,9 @@ With prefix ARG, prompt for CLI args using
      nil
      ai-code-github-copilot-cli--session-prefix
      nil
-     ai-code-github-copilot-cli-extra-env-vars)))
+     ai-code-github-copilot-cli-extra-env-vars)
+    (when-let ((buffer (ai-code-github-copilot-cli--session-buffer working-dir)))
+      (ai-code-github-copilot-cli--configure-buffer buffer))))
 
 ;;;###autoload
 (defun ai-code-github-copilot-cli-switch-to-buffer (&optional force-prompt)
