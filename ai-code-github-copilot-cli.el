@@ -28,6 +28,14 @@
   :type '(repeat string)
   :group 'ai-code-github-copilot-cli)
 
+(defcustom ai-code-github-copilot-cli-extra-env-vars '("TERM_PROGRAM=vscode")
+  "Extra environment variables passed to the GitHub Copilot CLI terminal session.
+By default, `TERM_PROGRAM=vscode' is set so that Copilot CLI recognizes the
+terminal as VS Code-compatible and enables multiline input support via
+`/terminal-setup' (Shift+Enter and Ctrl+Enter)."
+  :type '(repeat string)
+  :group 'ai-code-github-copilot-cli)
+
 (defconst ai-code-github-copilot-cli--session-prefix "copilot"
   "Session prefix used in GitHub Copilot CLI buffer names.")
 
@@ -56,7 +64,8 @@ With prefix ARG, prompt for CLI args using
      nil
      nil
      ai-code-github-copilot-cli--session-prefix
-     nil)))
+     nil
+     ai-code-github-copilot-cli-extra-env-vars)))
 
 ;;;###autoload
 (defun ai-code-github-copilot-cli-switch-to-buffer (&optional force-prompt)

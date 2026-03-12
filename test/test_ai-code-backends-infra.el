@@ -645,6 +645,39 @@
         (when (buffer-live-p buf)
           (kill-buffer buf))))))
 
+(ert-deftest test-ai-code-backends-infra-toggle-or-create-session-passes-env-vars ()
+  "ENV-VARS are forwarded to `ai-code-backends-infra--create-terminal-session'."
+  (let* ((ai-code-backends-infra--processes (make-hash-table :test 'equal))
+         (working-dir "/tmp/ai-code-env-vars/")
+         (buffer-name "*ai-code-env-vars*")
+         (buffer (get-buffer-create buffer-name))
+         (captured-env-vars :not-set))
+    (unwind-protect
+        (cl-letf (((symbol-function 'ai-code-backends-infra--cleanup-dead-processes)
+                   (lambda (_table) nil))
+                  ((symbol-function 'ai-code-backends-infra--create-terminal-session)
+                   (lambda (_buf _dir _cmd env-vars)
+                     (setq captured-env-vars env-vars)
+                     (cons buffer 'mock-process)))
+                  ((symbol-function 'sleep-for)
+                   (lambda (&rest _args) nil))
+                  ((symbol-function 'process-live-p)
+                   (lambda (&rest _args) t))
+                  ((symbol-function 'set-process-sentinel)
+                   (lambda (&rest _args) nil))
+                  ((symbol-function 'ai-code-backends-infra--display-buffer-in-side-window)
+                   (lambda (&rest _args) nil)))
+          (ai-code-backends-infra--toggle-or-create-session
+           working-dir
+           buffer-name
+           nil
+           "echo hi"
+           nil nil nil nil nil
+           '("TERM_PROGRAM=vscode" "MY_VAR=1"))
+          (should (equal captured-env-vars '("TERM_PROGRAM=vscode" "MY_VAR=1"))))
+      (when (buffer-live-p buffer)
+        (kill-buffer buffer)))))
+
 (provide 'test_ai-code-backends-infra)
 
 ;;; test_ai-code-backends-infra.el ends here

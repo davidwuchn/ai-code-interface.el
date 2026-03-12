@@ -719,7 +719,8 @@ any error output left behind by the CLI."
 
 (defun ai-code-backends-infra--toggle-or-create-session (working-dir buffer-name process-table command
                                                                      &optional escape-fn cleanup-fn
-                                                                     instance-name prefix force-prompt)
+                                                                     instance-name prefix force-prompt
+                                                                     env-vars)
   "Toggle or create a terminal session.
 WORKING-DIR is the directory for the session.
 BUFFER-NAME is the terminal buffer name.
@@ -729,7 +730,9 @@ ESCAPE-FN is bound to `C-<escape>' inside the session buffer when non-nil.
 CLEANUP-FN is called with no arguments when the process exits.
 INSTANCE-NAME overrides instance selection when non-nil.
 PREFIX enables instance selection when BUFFER-NAME is nil.
-When FORCE-PROMPT is non-nil, always prompt for a new instance name."
+When FORCE-PROMPT is non-nil, always prompt for a new instance name.
+ENV-VARS is a list of additional environment variable strings (e.g., \"VAR=value\")
+passed to the terminal session on creation."
   (setq process-table (or process-table ai-code-backends-infra--processes))
   (ai-code-backends-infra--cleanup-dead-processes process-table)
   (let* ((existing-buffers (and prefix
@@ -766,7 +769,7 @@ When FORCE-PROMPT is non-nil, always prompt for a new instance name."
             (ai-code-backends-infra--display-buffer-in-side-window buffer)))
       (let* ((buffer-and-process
               (ai-code-backends-infra--create-terminal-session
-               resolved-buffer-name working-dir command nil))
+               resolved-buffer-name working-dir command env-vars))
              (new-buffer (car buffer-and-process))
              (process (cdr buffer-and-process)))
         (puthash session-key process process-table)
