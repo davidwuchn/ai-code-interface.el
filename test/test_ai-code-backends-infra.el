@@ -675,6 +675,45 @@
            nil nil nil nil nil
            '("TERM_PROGRAM=vscode" "MY_VAR=1"))
           (should (equal captured-env-vars '("TERM_PROGRAM=vscode" "MY_VAR=1"))))
+       (when (buffer-live-p buffer)
+         (kill-buffer buffer)))))
+
+(ert-deftest test-ai-code-backends-infra-toggle-or-create-session-binds-multiline-input ()
+  "MULTILINE-INPUT-SEQUENCE binds Shift+Enter and Ctrl+Enter in session buffers."
+  (let* ((ai-code-backends-infra--processes (make-hash-table :test 'equal))
+         (working-dir "/tmp/ai-code-multiline/")
+         (buffer-name "*ai-code-multiline*")
+         (buffer (get-buffer-create buffer-name))
+         (calls nil))
+    (unwind-protect
+        (cl-letf (((symbol-function 'ai-code-backends-infra--cleanup-dead-processes)
+                   (lambda (_table) nil))
+                  ((symbol-function 'ai-code-backends-infra--create-terminal-session)
+                   (lambda (_buf _dir _cmd _env-vars)
+                     (cons buffer 'mock-process)))
+                  ((symbol-function 'sleep-for)
+                   (lambda (&rest _args) nil))
+                  ((symbol-function 'process-live-p)
+                   (lambda (&rest _args) t))
+                  ((symbol-function 'set-process-sentinel)
+                   (lambda (&rest _args) nil))
+                  ((symbol-function 'ai-code-backends-infra--display-buffer-in-side-window)
+                   (lambda (&rest _args) nil))
+                  ((symbol-function 'ai-code-backends-infra--terminal-send-string)
+                   (lambda (string)
+                     (push string calls))))
+          (ai-code-backends-infra--toggle-or-create-session
+           working-dir
+           buffer-name
+           nil
+           "echo hi"
+           nil nil nil nil nil
+           nil
+           "\\\r\n")
+          (with-current-buffer buffer
+            (call-interactively (key-binding (kbd "S-<return>")))
+            (call-interactively (key-binding (kbd "C-<return>"))))
+          (should (equal (nreverse calls) '("\\\r\n" "\\\r\n"))))
       (when (buffer-live-p buffer)
         (kill-buffer buffer)))))
 

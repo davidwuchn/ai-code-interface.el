@@ -30,6 +30,12 @@
   :type '(repeat string)
   :group 'ai-code-claude-code)
 
+(defcustom ai-code-claude-code-multiline-input-sequence "\e\r"
+  "Terminal sequence used for multiline input in Claude Code sessions.
+This mirrors the newline sequence Claude Code expects from `/terminal-setup'."
+  :type 'string
+  :group 'ai-code-claude-code)
+
 (defconst ai-code-claude-code--session-prefix "claude"
   "Session prefix used in Claude Code CLI buffer names.")
 
@@ -58,7 +64,9 @@ With prefix ARG, prompt for CLI args using
      nil
      nil
      ai-code-claude-code--session-prefix
-     nil)))
+     nil
+     nil
+     ai-code-claude-code-multiline-input-sequence)))
 
 ;;;###autoload
 (defun ai-code-claude-code-switch-to-buffer (&optional force-prompt)
