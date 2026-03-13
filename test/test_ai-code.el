@@ -199,6 +199,34 @@
       (should (string-match-p "Do not write or run any test\\." sent-command))
       (should-not (string-match-p "SHOULD NOT APPEAR" sent-command)))))
 
+(ert-deftest ai-code-test-menu-prefix-command-default-layout ()
+  "Test that the default menu layout uses the original transient."
+  (let ((ai-code-menu-layout 'default))
+    (should (eq #'ai-code-menu-default
+                (ai-code--menu-prefix-command)))))
+
+(ert-deftest ai-code-test-menu-prefix-command-two-columns-layout ()
+  "Test that the two-column menu layout uses the narrower transient."
+  (let ((ai-code-menu-layout 'two-columns))
+    (should (eq #'ai-code-menu-2-columns
+                (ai-code--menu-prefix-command)))))
+
+(ert-deftest ai-code-test-menu-prefix-command-fallback-to-default-layout ()
+  "Test that unknown menu layout values still fall back to the default transient."
+  (let ((ai-code-menu-layout 'unexpected-layout))
+    (should (eq #'ai-code-menu-default
+                (ai-code--menu-prefix-command)))))
+
+(ert-deftest ai-code-test-menu-dispatches-to-selected-layout ()
+  "Test that `ai-code-menu` dispatches to the configured transient command."
+  (let ((ai-code-menu-layout 'two-columns)
+        called-fn)
+    (cl-letf (((symbol-function 'call-interactively)
+               (lambda (fn &optional _record-flag _keys)
+                 (setq called-fn fn))))
+      (ai-code-menu)
+      (should (eq called-fn #'ai-code-menu-2-columns)))))
+
 (provide 'test_ai-code)
 
 ;;; test_ai-code.el ends here

@@ -35,6 +35,8 @@
 ;;      (use-package ai-code
 ;;        :config
 ;;        (ai-code-set-backend 'codex)
+;;        ;; Optional: use a narrower transient menu on smaller frames.
+;;        ;; (setq ai-code-menu-layout 'two-columns)
 ;;        (global-set-key (kbd "C-c a") #'ai-code-menu))
 ;;
 ;;   2) First 60 seconds:
@@ -49,6 +51,8 @@
 ;;   :config
 ;;   ;; use codex as backend, other options are 'gemini, 'github-copilot-cli, 'opencode, 'grok, 'claude-code-ide, 'claude-code-el, 'claude-code, 'cursor, 'kiro, 'codebuddy, 'aider, 'agent-shell, 'eca
 ;;   (ai-code-set-backend 'codex) ;; set your preferred backend
+;;   ;; Optional: use a narrower transient menu on smaller frames
+;;   ;; (setq ai-code-menu-layout 'two-columns)
 ;;   (global-set-key (kbd "C-c a") #'ai-code-menu)
 ;;   ;; Optional: Enable @ file completion in comments and AI sessions
 ;;   (ai-code-prompt-filepath-completion-mode 1)
@@ -84,6 +88,15 @@
 (defgroup ai-code nil
   "Unified interface for multiple AI coding CLIs."
   :group 'tools)
+
+;;;###autoload
+(defcustom ai-code-menu-layout 'default
+  "Layout used by `ai-code-menu`.
+`default' keeps the original wide multi-column transient.
+`two-columns' uses a narrower two-column transient with the same commands."
+  :type '(choice (const :tag "Default multi-column menu" default)
+                 (const :tag "Narrower two-column menu" two-columns))
+  :group 'ai-code)
 
 (require 'ai-code-backends)
 (require 'ai-code-backends-infra)
@@ -420,9 +433,8 @@ Otherwise switch to AI CLI buffer."
 Shows the current backend label to the right."
   (format "Select Backend (%s)" (ai-code-current-backend-label)))
 
-;;;###autoload
-(transient-define-prefix ai-code-menu ()
-  "Transient menu for AI Code Interface interactive functions."
+(transient-define-prefix ai-code-menu-default ()
+  "Default transient menu for AI Code Interface interactive functions."
   ["AI Code Commands"
    ["AI CLI session"
     ("a" "Start AI CLI (C-u: args)" ai-code-cli-start)
@@ -434,8 +446,7 @@ Shows the current backend label to the right."
     ("S" "Install skills for backend" ai-code-install-backend-skills)
     ("g" "Open backend config (eg. add mcp)" ai-code-open-backend-config)
     ("G" "Open backend repo agent file" ai-code-open-backend-agent-file)
-    ("|" "Apply prompt on file" ai-code-apply-prompt-on-current-file)
-    ]
+    ("|" "Apply prompt on file" ai-code-apply-prompt-on-current-file)]
 
    ["AI Code Actions"
     (ai-code--infix-toggle-suffix)
@@ -446,8 +457,7 @@ Shows the current backend label to the right."
     ("<SPC>" "Send command (C-u: context)" ai-code-send-command)
     ("@" "Context (add/show/clear)" ai-code-context-action)
     ("C" "Create file or dir with AI" ai-code-create-file-or-dir)
-    ("w" "New worktree branch (C-u: status)" ai-code-git-worktree-action)
-    ]
+    ("w" "New worktree branch (C-u: status)" ai-code-git-worktree-action)]
 
    ["AI Agile Development"
     (ai-code--infix-select-code-change-auto-test)
@@ -456,11 +466,10 @@ Shows the current backend label to the right."
     ("v" "Pull or Review Code Change"  ai-code-pull-or-review-diff-file)
     ;; ("b" "Send prompt block to AI" ai-code-prompt-send-block)
     ("!" "Run Current File or Command" ai-code-run-current-file-or-shell-cmd)
-    ("b" "Build / Test (AI follow-up)"   ai-code-build-or-test-project)
+    ("b" "Build / Test (AI follow-up)" ai-code-build-or-test-project)
     ;; ("I" "Insert function name at point" ai-code-insert-function-at-point)
     ("K" "Create or open task file" ai-code-create-or-open-task-file)
-    ("n" "Take notes from AI session region" ai-code-take-notes)
-    ]
+    ("n" "Take notes from AI session region" ai-code-take-notes)]
 
    ["Other Tools"
     ("." "Init projectile and gtags" ai-code-init-project)
@@ -473,6 +482,66 @@ Shows the current backend label to the right."
     ("p" "Open prompt history file" ai-code-open-prompt-file)
     ("m" "Debug python MCP server" ai-code-debug-mcp)
     ("N" "Toggle notifications" ai-code-notifications-toggle)]])
+
+(transient-define-prefix ai-code-menu-2-columns ()
+  "Narrower two-column transient menu for AI Code Interface interactive functions."
+  ["AI Code Commands"
+   ["AI CLI session"
+    ("a" "Start AI CLI (C-u: args)" ai-code-cli-start)
+    ("R" "Resume AI CLI (C-u: args)" ai-code-cli-resume)
+    ("z" "Switch to AI CLI (C-u: hide)" ai-code-cli-switch-to-buffer-or-hide)
+    ;; Use plist style to provide a dynamic description function.
+    ("s" ai-code-select-backend :description ai-code--select-backend-description)
+    ("u" "Install / Upgrade AI CLI" ai-code-upgrade-backend)
+    ("S" "Install skills for backend" ai-code-install-backend-skills)
+    ("g" "Open backend config (eg. add mcp)" ai-code-open-backend-config)
+    ("G" "Open backend repo agent file" ai-code-open-backend-agent-file)
+    ("|" "Apply prompt on file" ai-code-apply-prompt-on-current-file)]
+   ["AI Code Actions"
+    (ai-code--infix-toggle-suffix)
+    ("c" "Code change (C-u: clipboard)" ai-code-code-change)
+    ("i" "Implement TODO (C-u: clipboard)" ai-code-implement-todo)
+    ("q" "Ask question (C-u: clipboard)" ai-code-ask-question)
+    ("x" "Explain code in scope" ai-code-explain)
+    ("<SPC>" "Send command (C-u: context)" ai-code-send-command)
+    ("@" "Context (add/show/clear)" ai-code-context-action)
+    ("C" "Create file or dir with AI" ai-code-create-file-or-dir)
+    ("w" "New worktree branch (C-u: status)" ai-code-git-worktree-action)]]
+  [["AI Agile Development"
+    (ai-code--infix-select-code-change-auto-test)
+    ("r" "Refactor Code"               ai-code-refactor-book-method)
+    ("t" "Test Driven Development"     ai-code-tdd-cycle)
+    ("v" "Pull or Review Code Change"  ai-code-pull-or-review-diff-file)
+    ;; ("b" "Send prompt block to AI" ai-code-prompt-send-block)
+    ("!" "Run Current File or Command" ai-code-run-current-file-or-shell-cmd)
+    ("b" "Build / Test (AI follow-up)" ai-code-build-or-test-project)
+    ;; ("I" "Insert function name at point" ai-code-insert-function-at-point)
+    ("K" "Create or open task file" ai-code-create-or-open-task-file)
+    ("n" "Take notes from AI session region" ai-code-take-notes)]
+   ["Other Tools"
+    ("." "Init projectile and gtags" ai-code-init-project)
+    ("e" "Debug exception (C-u: clipboard)" ai-code-investigate-exception)
+    ("f" "Fix Flycheck errors in scope" ai-code-flycheck-fix-errors-in-scope)
+    ("k" "Copy Cur File Name (C-u: full)" ai-code-copy-buffer-file-name-to-clipboard)
+    ;; ("d" "Toggle current buffer dedicated" ai-code-toggle-current-buffer-dedicated)
+    ("o" "Open recent file (C-u: insert)" ai-code-git-repo-recent-modified-files)
+    ;; ("o" "Open Clipboard file dir" ai-code-open-clipboard-file-path-as-dired)
+    ("p" "Open prompt history file" ai-code-open-prompt-file)
+    ("m" "Debug python MCP server" ai-code-debug-mcp)
+    ("N" "Toggle notifications" ai-code-notifications-toggle)]])
+
+(defun ai-code--menu-prefix-command ()
+  "Return the transient prefix command selected by `ai-code-menu-layout`."
+  (pcase ai-code-menu-layout
+    ('two-columns #'ai-code-menu-2-columns)
+    ('default #'ai-code-menu-default)
+    (_ #'ai-code-menu-default)))
+
+;;;###autoload
+(defun ai-code-menu ()
+  "Show the AI Code transient menu selected by `ai-code-menu-layout`."
+  (interactive)
+  (call-interactively (ai-code--menu-prefix-command)))
 
 
 (provide 'ai-code)
