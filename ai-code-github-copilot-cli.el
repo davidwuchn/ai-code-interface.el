@@ -36,7 +36,7 @@ terminal as VS Code-compatible and enables multiline input support via
   :type '(repeat string)
   :group 'ai-code-github-copilot-cli)
 
-(defcustom ai-code-github-copilot-cli-multiline-input-sequence "\\\r\n"
+(defcustom ai-code-github-copilot-cli-multiline-input-sequence "\r\n"
   "Terminal sequence used for multiline input in GitHub Copilot CLI sessions.
 This mirrors the VS Code `workbench.action.terminal.sendSequence' binding
 that `/terminal-setup' installs for Shift+Enter and Ctrl+Enter."
