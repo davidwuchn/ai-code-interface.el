@@ -2,6 +2,8 @@
 * Release history
 
 ** Main branch change
+- Feat: Improve ECA backend: smarter chat-buffer handling, graceful resume, context management (file/clipboard/cursor/repo-map), session multiplexing via eca-ext.el, upgrade and install-skills support, contributed by davidwuchn
+- Fix: Block ai-code-apply-prompt-on-current-file for eca backend (like agent-shell)
 - Feat: Add ECA (https://eca.dev/) as an external backend, contributed by davidwuchn
 - Feat: Integrate with magit worktree feature
 - Feat: Modernize PR review tool

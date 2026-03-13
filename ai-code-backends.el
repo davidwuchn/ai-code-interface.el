@@ -326,9 +326,9 @@ so the CLI itself handles the installation details."
      :resume  ai-code-eca-resume
      :config  "~/.config/eca/config.json"
      :agent-file "AGENTS.md"
-     :upgrade nil
-     :install-skills nil
-     :cli     "eca")
+     :upgrade ai-code-eca-upgrade
+     :install-skills ai-code-eca-install-skills
+     :cli     nil)
     (agent-shell      ; external backend, requires agent-shell package
      :label "agent-shell"
      :require ai-code-agent-shell
