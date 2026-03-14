@@ -101,6 +101,7 @@
 (require 'ai-code-codebuddy-cli)
 (require 'ai-code-file)
 (require 'ai-code-ai)
+(require 'ai-code-mcp-server)
 (require 'ai-code-notifications)
 
 ;; Forward declarations for dynamically defined backend functions
