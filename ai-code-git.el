@@ -134,12 +134,12 @@ Issue Investigation Steps:
     (ai-code--insert-prompt prompt)))
 
 (defun ai-code--pull-or-review-pr-mode-choice ()
-  "Prompt user to choose PR analysis mode."
+  "Prompt user to choose analysis mode for a pull request or issue."
   ;; DONE: add an option: Investigate issue. This allow AI to check a github issue page, analyze the issue given code inside repo as context, and provide insights on how to fix it, it won't make any real code change until user ask it to.
   (let* ((review-mode-alist '(("Review the PR" . review-pr)
                               ("Check unresolved feedback" . check-feedback)
                               ("Investigate issue" . investigate-issue)))
-         (review-mode (completing-read "Select PR analysis mode: "
+         (review-mode (completing-read "Select analysis mode (PR or issue): "
                                        review-mode-alist
                                        nil t nil nil "Review the PR")))
     (or (alist-get review-mode review-mode-alist nil nil #'string=)
