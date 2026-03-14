@@ -114,6 +114,10 @@ Currently informational only."
                (project-root project))))
       default-directory))
 
+(defun ai-code-eca--normalize-folder-path (path)
+  "Return PATH as an expanded directory path without a trailing slash."
+  (directory-file-name (expand-file-name path)))
+
 (defun ai-code-eca--save-session-affinity ()
   "Remember ECA as the preferred ai-code backend for the current project."
   (when-let* ((root (ai-code-eca--project-root))
@@ -439,11 +443,11 @@ With prefix ARG, force a new session."
            (project-roots
             (delete-dups
              (mapcar (lambda (root)
-                       (directory-file-name (expand-file-name root)))
+                       (ai-code-eca--normalize-folder-path root))
                      project-roots-raw)))
            (existing
             (mapcar (lambda (root)
-                      (directory-file-name (expand-file-name root)))
+                      (ai-code-eca--normalize-folder-path root))
                     (or (when (fboundp 'eca-list-workspace-folders)
                           (eca-list-workspace-folders session))
                         (when (fboundp 'eca--session-workspace-folders)

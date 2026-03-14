@@ -48,9 +48,12 @@
   "Ensure shared context application delegates to per-session helpers."
   (let ((eca--shared-context '(:files ("/tmp/a.txt")
                                 :repo-maps ("/tmp/project")))
-        file-calls repo-map-calls)
+        file-calls repo-map-calls workspace-adds)
     (cl-letf (((symbol-function 'file-exists-p) (lambda (path) (string= path "/tmp/a.txt")))
               ((symbol-function 'file-directory-p) (lambda (path) (string= path "/tmp/project")))
+              ((symbol-function 'eca-list-workspace-folders) (lambda (_session) nil))
+              ((symbol-function 'eca-add-workspace-folder)
+               (lambda (root _session) (push root workspace-adds)))
               ((symbol-function 'eca-chat-add-file-context)
                (lambda (_session file-path) (push file-path file-calls)))
               ((symbol-function 'eca-chat-add-repo-map-context)
@@ -59,7 +62,8 @@
               ((symbol-function 'message) (lambda (&rest _args) nil)))
       (eca-apply-shared-context 'mock-session)
       (should (equal file-calls '("/tmp/a.txt")))
-      (should (equal repo-map-calls '(t))))))
+      (should (equal repo-map-calls '(t)))
+      (should (equal workspace-adds '("/tmp/project"))))))
 
 (provide 'test_eca-ext)
 

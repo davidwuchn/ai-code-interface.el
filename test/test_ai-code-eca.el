@@ -23,6 +23,8 @@
     "mock-input")
   (provide 'ai-code-input))
 
+(defvar package-vc-selected-packages)
+
 (require 'ai-code-eca)
 
 (ert-deftest ai-code-test-eca-start-forwards-prefix-arg ()
@@ -233,6 +235,34 @@
                (lambda (file-path) (setq shared-file file-path))))
       (ai-code-eca-share-file "/tmp/example.txt")
       (should (equal shared-file "/tmp/example.txt")))))
+
+(ert-deftest ai-code-test-eca-upgrade-vc-uses-package-vc-when-selected ()
+  "Ensure VC-installed ECA upgrades through `package-vc-upgrade'."
+  (let ((package-vc-selected-packages '((eca . "https://example.test/eca.git")))
+        called)
+    (provide 'package-vc)
+    (cl-letf (((symbol-function 'package-vc-upgrade)
+               (lambda (pkg) (setq called pkg)))
+              ((symbol-function 'message) (lambda (&rest _args) nil)))
+      (ai-code-eca-upgrade-vc)
+      (should (eq called 'eca)))))
+
+(ert-deftest ai-code-test-eca-sync-context-delegates-to-context-helpers ()
+  "Ensure `ai-code-eca-sync-context' sends file and cursor context."
+  (let (file-calls cursor-calls)
+    (cl-letf (((symbol-function 'eca-session) (lambda () 'mock-session))
+              ((symbol-function 'eca-chat-add-file-context)
+               (lambda (_session file-path) (push file-path file-calls)))
+              ((symbol-function 'eca-chat-add-cursor-context)
+               (lambda (_session file-path pos)
+                 (push (list file-path pos) cursor-calls)))
+              ((symbol-function 'message) (lambda (&rest _args) nil)))
+      (with-temp-buffer
+        (setq buffer-file-name "/tmp/example.el")
+        (goto-char (point-min))
+        (ai-code-eca-sync-context))
+      (should (equal file-calls '("/tmp/example.el")))
+      (should (equal cursor-calls '(("/tmp/example.el" 1)))))))
 
 (provide 'test_ai-code-eca)
 

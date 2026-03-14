@@ -62,6 +62,10 @@
 (declare-function project-current "project" (&optional maybe-prompt dir))
 (declare-function project-root "project" (project))
 
+(defun eca-ext--normalize-folder-path (path)
+  "Return PATH as an expanded directory path without a trailing slash."
+  (directory-file-name (expand-file-name path)))
+
 ;;; Session Multiplexing
 
 (defun eca-list-sessions ()
@@ -448,9 +452,12 @@ If the value is `prompt', ask before creating."
 
 (defvar eca--shared-context nil
   "Plist of shared context items available to all sessions.
-Keys currently used are :files and :repo-maps.")
+Keys currently used are :files and :repo-maps.
 
-(defun eca--file-project-root (file-path)
+- :files contains a list of absolute file paths.
+- :repo-maps contains a list of absolute repository root directories.")
+
+(defun eca-ext--file-project-root (file-path)
   "Return a project root for FILE-PATH using projectile, project.el, or fallback."
   (when file-path
     (or (when (fboundp 'projectile-project-root)
@@ -463,38 +470,36 @@ Keys currently used are :files and :repo-maps.")
                 (project-root proj)))))
         (file-name-directory file-path))))
 
-(defun eca--session-for-project-root (project-root)
+(defun eca-ext--session-for-project-root (project-root)
   "Find the ECA session whose workspace contains PROJECT-ROOT."
-  (let* ((root (directory-file-name (expand-file-name project-root)))
+  (let* ((root (eca-ext--normalize-folder-path project-root))
          (sessions (eca-list-sessions)))
     (cl-dolist (info sessions)
       (let* ((session-id (plist-get info :id))
              (folders (plist-get info :workspace-folders))
              (match (cl-find root folders
                              :test (lambda (lhs rhs)
-                                     (string= lhs
-                                              (directory-file-name
-                                               (expand-file-name rhs)))))))
+                                     (string= lhs (eca-ext--normalize-folder-path rhs))))))
         (when match
           (cl-return session-id))))))
 
-(defun eca--auto-add-workspace-hook ()
-  "Auto-add the current file's project root to the current ECA workspace."
+(defun eca-ext--auto-add-workspace-hook ()
+  "Auto-add the current file's project root to the current ECA workspace.
+If the project is already present in the workspace, do nothing."
   (when (and eca-auto-add-workspace-folder
              buffer-file-name
              (featurep 'eca)
              (eca-session))
-    (let* ((project-root (eca--file-project-root buffer-file-name))
+    (let* ((project-root (eca-ext--file-project-root buffer-file-name))
            (session (eca-session))
            (workspace-folders (eca--session-workspace-folders session))
            (in-workspace (and project-root
-                              (member (directory-file-name (expand-file-name project-root))
+                              (member (eca-ext--normalize-folder-path project-root)
                                       (mapcar (lambda (folder)
-                                                (directory-file-name
-                                                 (expand-file-name folder)))
+                                                (eca-ext--normalize-folder-path folder))
                                               workspace-folders)))))
       (when (and project-root (not in-workspace))
-        (let ((root (directory-file-name (expand-file-name project-root))))
+        (let ((root (eca-ext--normalize-folder-path project-root)))
           (pcase eca-auto-add-workspace-folder
             ('t
              (eca--session-add-workspace-folder session root)
@@ -504,20 +509,20 @@ Keys currently used are :files and :repo-maps.")
              (when (y-or-n-p (format "Add project to ECA workspace? (%s) " root))
                (eca--session-add-workspace-folder session root)))))))))
 
-(defun eca--auto-switch-session-hook (&optional _frame)
+(defun eca-ext--auto-switch-session-hook (&optional _frame)
   "Auto-switch ECA sessions when the active project changes."
   (when (and eca-auto-switch-session
              buffer-file-name
              (featurep 'eca)
              (eca-list-sessions))
-    (let* ((project-root (eca--file-project-root buffer-file-name))
+    (let* ((project-root (eca-ext--file-project-root buffer-file-name))
            (current-session (ignore-errors (eca-session)))
            (current-session-id (when current-session
                                  (ignore-errors (eca--session-id current-session)))))
       (when (and project-root
                  (not (string= project-root eca--last-project-root)))
-        (let ((target-session (eca--session-for-project-root project-root))
-              (root (directory-file-name (expand-file-name project-root))))
+        (let ((target-session (eca-ext--session-for-project-root project-root))
+              (root (eca-ext--normalize-folder-path project-root)))
           (setq eca--last-project-root root)
           (when (and target-session
                      (not (eq target-session current-session-id)))
@@ -531,17 +536,17 @@ Keys currently used are :files and :repo-maps.")
                                        target-session root))
                  (eca-switch-to-session target-session))))))))))
 
-(defun eca--auto-create-session-hook ()
+(defun eca-ext--auto-create-session-hook ()
   "Auto-create or extend ECA sessions when visiting a project without one."
   (when (and eca-auto-create-session
              buffer-file-name
              (featurep 'eca))
-    (let* ((project-root (eca--file-project-root buffer-file-name))
+    (let* ((project-root (eca-ext--file-project-root buffer-file-name))
            (existing-session (when project-root
-                               (eca--session-for-project-root project-root)))
+                               (eca-ext--session-for-project-root project-root)))
            (any-sessions (eca-list-sessions)))
       (when (and project-root (not existing-session))
-        (let ((root (directory-file-name (expand-file-name project-root))))
+        (let ((root (eca-ext--normalize-folder-path project-root)))
           (pcase eca-auto-create-session
             ('t
              (if any-sessions
@@ -565,31 +570,29 @@ Keys currently used are :files and :repo-maps.")
                  (when session
                    (eca-chat-open session)))))))))))
 
-(defun eca--auto-sync-workspace-hook (&optional _frame)
+(defun eca-ext--auto-sync-workspace-hook (&optional _frame)
   "Auto-sync the current project's root into the current ECA workspace."
   (when (and eca-auto-sync-workspace
              buffer-file-name
              (featurep 'eca)
              (eca-session))
-    (let* ((project-root (eca--file-project-root buffer-file-name)))
+    (let* ((project-root (eca-ext--file-project-root buffer-file-name)))
       (when project-root
-        (let* ((root (directory-file-name (expand-file-name project-root)))
+        (let* ((root (eca-ext--normalize-folder-path project-root))
                (session (eca-session))
                (folders (eca--session-workspace-folders session))
                (in-workspace (member root
-                                     (mapcar (lambda (folder)
-                                               (directory-file-name
-                                                (expand-file-name folder)))
+                                     (mapcar #'eca-ext--normalize-folder-path
                                              folders))))
           (unless in-workspace
             (eca--session-add-workspace-folder session root)
             (message "Auto-synced workspace: added %s" root)))))))
 
 (with-eval-after-load 'eca
-  (add-hook 'find-file-hook #'eca--auto-add-workspace-hook)
-  (add-hook 'find-file-hook #'eca--auto-create-session-hook 90)
-  (add-hook 'window-buffer-change-functions #'eca--auto-switch-session-hook)
-  (add-hook 'window-buffer-change-functions #'eca--auto-sync-workspace-hook))
+  (add-hook 'find-file-hook #'eca-ext--auto-add-workspace-hook)
+  (add-hook 'find-file-hook #'eca-ext--auto-create-session-hook 90)
+  (add-hook 'window-buffer-change-functions #'eca-ext--auto-switch-session-hook)
+  (add-hook 'window-buffer-change-functions #'eca-ext--auto-sync-workspace-hook))
 
 ;;; Shared Context
 
@@ -597,18 +600,22 @@ Keys currently used are :files and :repo-maps.")
   "Add FILE-PATH to the shared context for all ECA sessions."
   (interactive "fShare file across sessions: ")
   (let ((file-path (expand-file-name file-path)))
-    (unless (plist-get eca--shared-context :files)
-      (setq eca--shared-context (plist-put eca--shared-context :files nil)))
-    (cl-pushnew file-path (plist-get eca--shared-context :files) :test #'string=)
+    (setq eca--shared-context
+          (plist-put
+           eca--shared-context
+           :files
+           (cl-adjoin file-path (plist-get eca--shared-context :files) :test #'string=)))
     (message "Shared file across all ECA sessions: %s" file-path)))
 
 (defun eca-share-repo-map-context (project-root)
   "Add PROJECT-ROOT repo map to the shared context for all ECA sessions."
   (interactive "DShare repo map across sessions: ")
   (let ((root (expand-file-name project-root)))
-    (unless (plist-get eca--shared-context :repo-maps)
-      (setq eca--shared-context (plist-put eca--shared-context :repo-maps nil)))
-    (cl-pushnew root (plist-get eca--shared-context :repo-maps) :test #'string=)
+    (setq eca--shared-context
+          (plist-put
+           eca--shared-context
+           :repo-maps
+           (cl-adjoin root (plist-get eca--shared-context :repo-maps) :test #'string=)))
     (message "Shared repo map across all ECA sessions: %s" root)))
 
 (defun eca-apply-shared-context (session)
@@ -623,6 +630,11 @@ Keys currently used are :files and :repo-maps.")
         (eca-chat-add-file-context session file)))
     (dolist (root repo-maps)
       (when (file-directory-p root)
+        (unless (member (eca-ext--normalize-folder-path root)
+                        (mapcar #'eca-ext--normalize-folder-path
+                                (or (eca-list-workspace-folders session) '())))
+          (when (fboundp 'eca-add-workspace-folder)
+            (eca-add-workspace-folder root session)))
         (eca-chat-add-repo-map-context session)))
     (message "Applied shared context to session %d: %d files, %d repo maps"
              (eca--session-id session)
