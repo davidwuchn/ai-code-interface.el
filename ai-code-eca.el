@@ -54,6 +54,8 @@
 (declare-function eca-apply-shared-context "eca-ext" (session))
 (declare-function eca-clear-shared-context "eca-ext" ())
 (declare-function eca-session-dashboard "eca-ext" ())
+(declare-function transient-append-suffix "transient" (prefix loc suffix &optional face))
+(declare-function transient-remove-suffix "transient" (prefix suffix))
 
 (defgroup ai-code-eca nil
   "ECA backend bridge for ai-code."
@@ -83,6 +85,22 @@ Currently informational only."
 
 (defvar ai-code-eca--config-warned nil
   "Track whether the optional ECA config path warning has been shown.")
+
+(defvar ai-code-eca--menu-suffixes-added nil
+  "Track whether ECA menu entries have been added to `ai-code-menu'.")
+
+(defconst ai-code-eca--menu-group-order
+  '("ECA Workspace" "ECA Context" "ECA Shared Context" "ECA Sessions")
+  "Ordered ECA transient group names added to `ai-code-menu'.")
+
+(defconst ai-code-eca--menu-workspace-group "ECA Workspace"
+  "Transient group name for ECA workspace commands.")
+
+(defconst ai-code-eca--menu-context-group "ECA Context"
+  "Transient group name for ECA context commands.")
+
+(defconst ai-code-eca--menu-shared-context-group "ECA Shared Context"
+  "Transient group name for ECA shared-context commands.")
 
 (defun ai-code-eca--ensure-available ()
   "Ensure `eca' package and required functions are available."
@@ -131,6 +149,97 @@ Currently informational only."
              (not (eq ai-code-selected-backend 'eca))
              (fboundp 'ai-code-set-backend))
     (ai-code-set-backend 'eca)))
+
+(defun ai-code-eca--workspace-status-description ()
+  "Return a short description of current ECA workspace state."
+  (let* ((session (when (fboundp 'eca-session) (eca-session)))
+         (folders (cond
+                   ((not session) nil)
+                   ((fboundp 'eca-list-workspace-folders)
+                    (eca-list-workspace-folders session))
+                   ((fboundp 'eca--session-workspace-folders)
+                    (eca--session-workspace-folders session)))))
+    (if folders
+        (format "Workspace (%d folders)" (length folders))
+      "Workspace (no session)")))
+
+(defun ai-code-eca--session-id-safe (session)
+  "Return SESSION id when available, otherwise nil."
+  (when (and session (fboundp 'eca--session-id))
+    (eca--session-id session)))
+
+(defun ai-code-eca--session-status-safe (session)
+  "Return SESSION status when available, otherwise nil."
+  (when (and session (fboundp 'eca--session-status))
+    (eca--session-status session)))
+
+(defun ai-code-eca--session-status-description ()
+  "Return a short description of current ECA session state."
+  (let* ((session (when (fboundp 'eca-session) (eca-session)))
+         (session-id (or (ai-code-eca--session-id-safe session) "?"))
+         (status (or (ai-code-eca--session-status-safe session) 'unknown)))
+    (if session
+        (format "Session %s (%s)" session-id status)
+      "No session")))
+
+(defun ai-code-eca--add-menu-suffixes ()
+  "Add ECA-specific sections to `ai-code-menu' when ECA is selected."
+  (when (and (boundp 'ai-code-selected-backend)
+             (eq ai-code-selected-backend 'eca)
+             (not ai-code-eca--menu-suffixes-added)
+             (featurep 'transient)
+             (fboundp 'ai-code-menu))
+    (condition-case err
+        (progn
+          (transient-append-suffix 'ai-code-menu "Other Tools"
+            ["ECA Workspace"
+             (:info #'ai-code-eca--session-status-description)
+             (:info #'ai-code-eca--workspace-status-description)
+             ("wm" "Multi-Project Mode" ai-code-eca-multi-project-mode)
+             ("wa" "Add workspace folder" ai-code-eca-add-workspace-folder)
+             ("wA" "Add to ALL sessions" ai-code-eca-add-workspace-folder-all-sessions)
+             ("wl" "List workspace folders" ai-code-eca-list-workspace-folders)
+             ("wr" "Remove workspace folder" ai-code-eca-remove-workspace-folder)
+             ("ws" "Sync project roots" ai-code-eca-sync-project-workspaces)
+             ("wd" "Session dashboard" ai-code-eca-dashboard)
+             ("wt" "Toggle auto-switch" ai-code-eca-toggle-auto-switch)])
+          (transient-append-suffix 'ai-code-menu ai-code-eca--menu-workspace-group
+            ["ECA Context"
+             ("cf" "Add file context" ai-code-eca-add-file-context)
+             ("cc" "Add cursor context" ai-code-eca-add-cursor-context)
+             ("cr" "Add repo map" ai-code-eca-add-repo-map-context)
+             ("cy" "Add clipboard" ai-code-eca-add-clipboard-context)
+             ("cs" "Start context sync" ai-code-eca-context-sync-start)
+             ("cS" "Stop context sync" ai-code-eca-context-sync-stop)])
+          (transient-append-suffix 'ai-code-menu ai-code-eca--menu-context-group
+            ["ECA Shared Context"
+             ("F" "Share file" ai-code-eca-share-file)
+             ("R" "Share repo map" ai-code-eca-share-repo-map)
+             ("p" "Apply shared context" ai-code-eca-apply-shared-context)
+             ("c" "Clear shared context" eca-clear-shared-context)])
+          (transient-append-suffix 'ai-code-menu ai-code-eca--menu-shared-context-group
+            ["ECA Sessions"
+             ("s?" "Which session?" ai-code-eca-which-session)
+             ("sl" "List sessions" ai-code-eca-list-sessions)
+             ("ss" "Switch session" ai-code-eca-switch-session)
+             ("sv" "Verify health" ai-code-eca-verify-health)
+             ("su" "Upgrade ECA" ai-code-eca-upgrade-vc)])
+          (setq ai-code-eca--menu-suffixes-added t))
+      (error
+       (message "Failed to add ECA menu items: %s" (error-message-string err))))))
+
+(defun ai-code-eca--remove-menu-suffixes ()
+  "Remove ECA-specific sections from `ai-code-menu'."
+  (when (and ai-code-eca--menu-suffixes-added
+             (featurep 'transient)
+             (fboundp 'ai-code-menu))
+    (condition-case err
+        (progn
+          (dolist (group ai-code-eca--menu-group-order)
+            (transient-remove-suffix 'ai-code-menu group))
+          (setq ai-code-eca--menu-suffixes-added nil))
+      (error
+       (message "Failed to remove ECA menu items: %s" (error-message-string err))))))
 
 ;;;###autoload
 (defun ai-code-eca-start (&optional arg)
@@ -617,6 +726,18 @@ With ARG, enable when positive and disable otherwise."
 
 (with-eval-after-load 'eca-ext
   (advice-add 'eca-switch-to-session :after #'ai-code-eca--ensure-backend-selected))
+
+(with-eval-after-load 'ai-code
+  (add-hook 'transient-setup-hook
+            (lambda ()
+              (when (and (boundp 'ai-code-selected-backend)
+                         (eq ai-code-selected-backend 'eca))
+                (ai-code-eca--add-menu-suffixes))))
+  (advice-add 'ai-code-set-backend :after
+              (lambda (backend)
+                (if (eq backend 'eca)
+                    (ai-code-eca--add-menu-suffixes)
+                  (ai-code-eca--remove-menu-suffixes)))))
 
 (provide 'ai-code-eca)
 

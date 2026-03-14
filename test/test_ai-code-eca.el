@@ -264,6 +264,39 @@
       (should (equal file-calls '("/tmp/example.el")))
       (should (equal cursor-calls '(("/tmp/example.el" 1)))))))
 
+(ert-deftest ai-code-test-eca-add-menu-suffixes-appends-all-groups ()
+  "Ensure ECA backend appends all ai-code-menu transient groups."
+  (let ((ai-code-selected-backend 'eca)
+        (ai-code-eca--menu-suffixes-added nil)
+        calls)
+    (provide 'transient)
+    (cl-letf (((symbol-function 'ai-code-menu) (lambda () nil))
+              ((symbol-function 'transient-append-suffix)
+               (lambda (prefix loc suffix &optional _face)
+                 (push (list prefix loc suffix) calls))))
+      (ai-code-eca--add-menu-suffixes)
+      (should ai-code-eca--menu-suffixes-added)
+      (should (= (length calls) 4))
+      (should (equal (mapcar #'cadr (nreverse calls))
+                     '("Other Tools"
+                       "ECA Workspace"
+                       "ECA Context"
+                       "ECA Shared Context"))))))
+
+(ert-deftest ai-code-test-eca-remove-menu-suffixes-removes-all-groups ()
+  "Ensure ECA transient groups are removed when switching away."
+  (let ((ai-code-eca--menu-suffixes-added t)
+        calls)
+    (provide 'transient)
+    (cl-letf (((symbol-function 'ai-code-menu) (lambda () nil))
+              ((symbol-function 'transient-remove-suffix)
+               (lambda (prefix suffix)
+                 (push (list prefix suffix) calls))))
+      (ai-code-eca--remove-menu-suffixes)
+      (should-not ai-code-eca--menu-suffixes-added)
+      (should (equal (mapcar #'cadr (nreverse calls))
+                     ai-code-eca--menu-group-order)))))
+
 (provide 'test_ai-code-eca)
 
 ;;; test_ai-code-eca.el ends here
