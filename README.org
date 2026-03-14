@@ -242,6 +242,7 @@ When working with multiple AI sessions, it can be useful to receive desktop noti
      (ai-code-set-backend 'eca)
      #+end_src
      Optionally, load =[[./eca-ext.el][eca-ext.el]]= (bundled with this package) for session multiplexing
+     plus workspace management, auto project/session syncing, shared context,
      and programmatic context management (file, clipboard, cursor, repo-map):
      #+begin_src emacs-lisp
      (require 'eca-ext)

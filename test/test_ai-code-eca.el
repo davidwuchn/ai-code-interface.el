@@ -183,6 +183,57 @@
       (when (buffer-live-p chat-buffer)
         (kill-buffer chat-buffer)))))
 
+(ert-deftest ai-code-test-eca-get-sessions-formats-session-info ()
+  "Ensure `ai-code-eca-get-sessions' formats session metadata."
+  (cl-letf (((symbol-function 'eca-list-sessions)
+             (lambda ()
+               '((:id 7 :workspace-folders ("/a" "/b") :chat-count 3)))))
+    (should (equal (ai-code-eca-get-sessions)
+                   '((7 . "Session 7: /a, /b (3 chats)"))))))
+
+(ert-deftest ai-code-test-eca-toggle-auto-switch-cycles-values ()
+  "Ensure auto-switch toggles nil -> prompt -> t -> nil."
+  (let ((eca-auto-switch-session nil))
+    (cl-letf (((symbol-function 'message) (lambda (&rest _args) nil)))
+      (ai-code-eca-toggle-auto-switch)
+      (should (eq eca-auto-switch-session 'prompt))
+      (ai-code-eca-toggle-auto-switch)
+      (should (eq eca-auto-switch-session t))
+      (ai-code-eca-toggle-auto-switch)
+      (should (null eca-auto-switch-session)))))
+
+(ert-deftest ai-code-test-eca-sync-project-workspaces-adds-missing-root ()
+  "Ensure project workspace sync adds missing roots only once."
+  (let (added)
+    (cl-letf (((symbol-function 'ai-code-eca--ensure-available) (lambda ()))
+              ((symbol-function 'eca-session) (lambda () 'mock-session))
+              ((symbol-function 'projectile-project-root) (lambda () "/repo"))
+              ((symbol-function 'eca-list-workspace-folders) (lambda (_session) nil))
+              ((symbol-function 'eca-add-workspace-folder)
+               (lambda (folder _session) (push folder added)))
+              ((symbol-function 'eca--session-id) (lambda (_session) 9)))
+      (with-temp-buffer
+        (setq buffer-file-name "/repo/file.el")
+        (ai-code-eca-sync-project-workspaces))
+      (should (equal added '("/repo"))))))
+
+(ert-deftest ai-code-test-eca-verify-health-noninteractive ()
+  "Ensure `ai-code-eca-verify-health' returns non-nil for ready sessions."
+  (cl-letf (((symbol-function 'ai-code-eca--ensure-available) (lambda ()))
+            ((symbol-function 'eca-session) (lambda () 'mock-session))
+            ((symbol-function 'eca--session-status) (lambda (_session) 'ready))
+            ((symbol-function 'eca--session-workspace-folders)
+             (lambda (_session) '("/repo"))))
+    (should (ai-code-eca-verify-health))))
+
+(ert-deftest ai-code-test-eca-share-file-delegates-to-eca-ext ()
+  "Ensure shared file wrapper delegates to eca-ext."
+  (let (shared-file)
+    (cl-letf (((symbol-function 'eca-share-file-context)
+               (lambda (file-path) (setq shared-file file-path))))
+      (ai-code-eca-share-file "/tmp/example.txt")
+      (should (equal shared-file "/tmp/example.txt")))))
+
 (provide 'test_ai-code-eca)
 
 ;;; test_ai-code-eca.el ends here
