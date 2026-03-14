@@ -2,6 +2,7 @@
 * Release history
 
 ** Main branch change
+- Chore: Add Investigate Issue Mode for Reviews
 - Fix: Avoid eat reflow suppression on session buffers, by Silex
 - Feat: Enable shared multiline terminal input in Emacs sessions and GitHub Copilot CLI compatibility, reported and verified by EricZJonsson
 - Feat: Add ECA (https://eca.dev/) as an external backend, contributed by davidwuchn
