@@ -1,4 +1,4 @@
-;;; ai-code-eca-bridge.el --- Extensions for ECA backend in ai-code -*- lexical-binding: t; -*-
+;;; ai-code-eca.el --- Extensions for ECA backend in ai-code -*- lexical-binding: t; -*-
 
 ;; Copyright (C) 2026
 ;; Author: minimal-emacs.d
@@ -7,7 +7,7 @@
 ;; Keywords: ai, code, assistant, eca
 
 ;;; Commentary:
-;; This file EXTENDS the upstream ai-code-eca.el with additional features:
+;; ECA backend bridge for ai-code with:
 ;;   - Session management (list, switch, create, dashboard)
 ;;   - Workspace management (list, add, remove, sync projects)
 ;;   - Context commands (file, cursor, repo-map, clipboard)
@@ -15,9 +15,6 @@
 ;;   - Multi-Project Mode (auto-switch, auto-sync, mode-line)
 ;;   - ai-code-menu integration (transient)
 ;;   - Health verification and context synchronization
-;;
-;; Upstream ai-code-eca.el provides:
-;;   - ai-code-eca-start, ai-code-eca-switch, ai-code-eca-send, ai-code-eca-resume
 ;;
 ;; Upstream ECA provides:
 ;;   - eca-chat-add-workspace-root (interactive workspace folder)
@@ -758,6 +755,5 @@ Displays session ID, status, and workspace folders."
                   (ai-code-eca--add-menu-suffixes)))))
 
 (provide 'ai-code-eca)
-(provide 'ai-code-eca-bridge)
 
-;;; ai-code-eca-bridge.el ends here
+;;; ai-code-eca.el ends here
