@@ -757,6 +757,7 @@ Displays session ID, status, and workspace folders."
                 (when (eq backend 'eca)
                   (ai-code-eca--add-menu-suffixes)))))
 
+(provide 'ai-code-eca)
 (provide 'ai-code-eca-bridge)
 
 ;;; ai-code-eca-bridge.el ends here
