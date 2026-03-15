@@ -2,6 +2,8 @@
 * Release history
 
 ** Main branch change
+
+** 1.60
 - Chore: Add Investigate Issue Mode for Reviews
 - Feat: Sync ECA integration with latest upstream bridge/ext changes: ai-code-menu integration, workspace management, auto project/session syncing, shared context helpers, and session health utilities
 - Feat: Improve ECA backend: smarter chat-buffer handling, graceful resume, context management (file/clipboard/cursor/repo-map), session multiplexing via eca-ext.el, upgrade and install-skills support, contributed by davidwuchn
