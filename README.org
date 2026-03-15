@@ -248,7 +248,14 @@ When working with multiple AI sessions, it can be useful to receive desktop noti
      #+begin_src emacs-lisp
      (ai-code-set-backend 'eca)
      #+end_src
-     Note: =ai-code-apply-prompt-on-current-file= is CLI-pipe based and does not have special integration with =eca=; its behavior depends on the configured AI coding CLI.
+     Optionally, load =[[./eca-ext.el][eca-ext.el]]= (bundled with this package) for session multiplexing,
+     ai-code-menu integration, workspace management, auto project/session syncing,
+     shared context, and programmatic context management (file, clipboard, cursor, repo-map):
+     #+begin_src emacs-lisp
+     (require 'eca-ext)
+     #+end_src
+     Note: =ai-code-apply-prompt-on-current-file= is CLI-pipe based and is not supported
+     when =eca= is the active backend.
 
 **** agent-shell backend setup
      Install [[https://github.com/xenodium/agent-shell][agent-shell]] and its dependency [[https://github.com/xenodium/acp.el][acp.el]], then configure one of the ACP agent providers in agent-shell (for example Codex, Gemini, Opencode, etc.).
