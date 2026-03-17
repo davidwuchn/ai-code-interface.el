@@ -758,7 +758,7 @@ ECA manages skills as files under ~/.eca/ or project .eca/ directory."
 ;;; Binary Upgrade System
 ;;; ==============================================================================
 
-(defvar ai-code-eca-upgrade--pinned-version "0.106.0"
+(defvar ai-code-eca-upgrade--pinned-version "0.115.0"
   "Pinned fallback version when binary and GitHub API are unavailable.")
 
 (defun ai-code-eca-upgrade--resolve-version ()
