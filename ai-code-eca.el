@@ -82,7 +82,7 @@ With FORCE-PROMPT (prefix arg), force new session."
     (unless (fboundp fn)
       (user-error "ECA missing function: %s. Reinstall eca package" fn))))
 
-;;; Menu Integration - Dynamic ECA group in ai-code-menu
+;;; Menu Integration - ECA group in ai-code-menu
 
 (defvar ai-code-eca--menu-group-added nil
   "Track whether ECA group has been added to ai-code-menu.")
@@ -96,36 +96,58 @@ With FORCE-PROMPT (prefix arg), force new session."
 (declare-function ai-code-eca-chat-add-clipboard-context-now "ai-code-eca" ())
 (declare-function eca-workspaces "eca" ())
 
+;;;###autoload
+(transient-define-prefix ai-code-eca-menu ()
+  "ECA session management menu."
+  ["ECA"
+   ("E" "Start ECA (C-u: pick project)" ai-code-eca-create-session-for-workspace)
+   ("W" "Switch session" ai-code-eca-switch-session)
+   ("D" "Dashboard" eca-workspaces)
+   ("A" "Add project" ai-code-eca-add-workspace-folder)
+   ("X" "Remove project" ai-code-eca-remove-workspace-folder)
+   ("F" "Share file" ai-code-eca-share-file-context)
+   ("M" "Share repo map" ai-code-eca-share-repo-map-context)
+   ("Y" "Clear shared" ai-code-eca-clear-shared-context)
+   ("B" "Add clipboard" ai-code-eca-chat-add-clipboard-context-now)])
+
 (defun ai-code-eca--add-menu-group ()
-  "Add ECA group to ai-code-menu."
+  "Add ECA commands directly to ai-code-menu layouts."
   (when (and (featurep 'transient)
              (not ai-code-eca--menu-group-added))
     (condition-case err
         (progn
-          ;; Use coordinate list: '(0 -1) = last item at top level
-          (transient-append-suffix 'ai-code-menu '(0 -1)
-            ["ECA"
-             ("E" "Start ECA (C-u: pick project)" ai-code-eca-create-session-for-workspace)
-             ("W" "Switch session" ai-code-eca-switch-session)
-             ("D" "Dashboard" eca-workspaces)
-             ("A" "Add project" ai-code-eca-add-workspace-folder)
-             ("X" "Remove project" ai-code-eca-remove-workspace-folder)
-             ("F" "Share file" ai-code-eca-share-file-context)
-             ("M" "Share repo map" ai-code-eca-share-repo-map-context)
-             ("Y" "Clear shared" ai-code-eca-clear-shared-context)
-             ("B" "Add clipboard" ai-code-eca-chat-add-clipboard-context-now)])
+          (dolist (prefix '(ai-code-menu-default ai-code-menu-2-columns))
+            (when (commandp prefix)
+              (transient-append-suffix prefix '(0 -1)
+                ["ECA"
+                 ("E" "Start ECA (C-u: pick project)" ai-code-eca-create-session-for-workspace)
+                 ("W" "Switch session" ai-code-eca-switch-session)
+                 ("D" "Dashboard" eca-workspaces)
+                 ("A" "Add project" ai-code-eca-add-workspace-folder)
+                 ("X" "Remove project" ai-code-eca-remove-workspace-folder)
+                 ("F" "Share file" ai-code-eca-share-file-context)
+                 ("M" "Share repo map" ai-code-eca-share-repo-map-context)
+                 ("Y" "Clear shared" ai-code-eca-clear-shared-context)
+                 ("B" "Add clipboard" ai-code-eca-chat-add-clipboard-context-now)])))
           (setq ai-code-eca--menu-group-added t))
       (error
-       (message "Failed to add ECA group: %s" (error-message-string err))))))
+       (message "Failed to add ECA menu: %s" (error-message-string err))))))
 
 (defun ai-code-eca--remove-menu-group ()
-  "Remove ECA group from ai-code-menu."
+  "Remove ECA commands from ai-code-menu layouts."
   (when ai-code-eca--menu-group-added
-    (condition-case nil
+    (condition-case err
         (progn
-          (transient-remove-suffix 'ai-code-menu "E")
+          (dolist (prefix '(ai-code-menu-default ai-code-menu-2-columns))
+            (when (commandp prefix)
+              ;; Remove each suffix by key (in reverse order to avoid position shift)
+              (dolist (key '("B" "Y" "M" "F" "X" "A" "D" "W" "E"))
+                (condition-case nil
+                    (transient-remove-suffix prefix key)
+                  (error nil)))))
           (setq ai-code-eca--menu-group-added nil))
-      (error nil))))
+      (error
+       (message "Failed to remove ECA menu: %s" (error-message-string err))))))
 
 (with-eval-after-load 'ai-code
   (advice-add 'ai-code-set-backend :after

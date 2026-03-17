@@ -2,6 +2,8 @@
 
 (require 'ert)
 (require 'cl-lib)
+(require 'ai-code-backends)
+(require 'ai-code-eca)
 
 (ert-deftest ai-code-test-eca-backend-registered ()
   "ECA should be registered in ai-code-backends."
@@ -24,23 +26,31 @@
   (let ((ai-code-selected-backend 'eca)
         (ai-code-eca--menu-group-added nil))
     (provide 'transient)
-    (cl-letf (((symbol-function 'transient-append-suffix)
+    (cl-letf (((symbol-function 'commandp) (lambda (_sym) t))
+              ((symbol-function 'transient-append-suffix)
                (lambda (prefix loc suffix &optional _face)
-                 (should (eq prefix 'ai-code-menu))
+                 (should (memq prefix '(ai-code-menu-default ai-code-menu-2-columns)))
                  (should (equal loc '(0 -1))))))
       (ai-code-eca--add-menu-group)
       (should ai-code-eca--menu-group-added))))
 
 (ert-deftest ai-code-test-eca-remove-menu-group ()
   "Ensure ECA menu is removed when switching away."
-  (let ((ai-code-eca--menu-group-added t))
+  (let ((ai-code-eca--menu-group-added t)
+        (removed-keys nil))
     (provide 'transient)
-    (cl-letf (((symbol-function 'transient-remove-suffix)
-               (lambda (prefix suffix)
-                 (should (eq prefix 'ai-code-menu))
-                 (should (equal suffix "?")))))
+    (cl-letf (((symbol-function 'commandp) (lambda (_sym) t))
+              ((symbol-function 'transient-remove-suffix)
+               (lambda (prefix key)
+                 (should (memq prefix '(ai-code-menu-default ai-code-menu-2-columns)))
+                 (push key removed-keys))))
       (ai-code-eca--remove-menu-group)
-      (should-not ai-code-eca--menu-group-added))))
+      (should-not ai-code-eca--menu-group-added)
+      ;; Each key is removed from both menu layouts (9 keys × 2 layouts = 18)
+      (should (equal (length removed-keys) 18))
+      ;; Verify each expected key appears exactly twice
+      (dolist (key '("A" "B" "D" "E" "F" "M" "W" "X" "Y"))
+        (should (= (cl-count key removed-keys :test #'string=) 2))))))
 
 (ert-deftest ai-code-test-eca-menu-group-not-added-when-other-backend ()
   "ECA menu should not be added when other backend is selected."
