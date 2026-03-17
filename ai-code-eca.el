@@ -452,7 +452,7 @@ Set to nil to disable stale-file cleanup.")
               (cl-incf count))
           (error nil))))
     (setq ai-code-eca--context-temp-files nil)
-    (when (and (fboundp 'ai-code-eca-info) (> count 0))
+    (when (and (fboundp 'eca-info) (> count 0))
       (eca-info "Cleaned up %d temporary context files" count))))
 
 (defun ai-code-eca--cleanup-stale-temp-files ()
@@ -473,7 +473,7 @@ Set to nil to disable stale-file cleanup.")
                          (cl-incf count)
                          t))))
                  (cdr entry))))
-      (when (and (fboundp 'ai-code-eca-info) (> count 0))
+      (when (and (fboundp 'eca-info) (> count 0))
         (eca-info "Cleaned up %d stale temp files (older than %d hours)"
                   count (/ ai-code-eca--temp-file-max-age 3600))))))
 
@@ -876,19 +876,19 @@ ECA manages skills as files under ~/.eca/ or project .eca/ directory."
   (advice-add 'eca--curl-download-file :override #'ai-code-eca-upgrade--curl-download-file)
 
   (defun ai-code-eca-upgrade--auto-maybe ()
-  "Run binary upgrade silently if a day has passed since last check."
-  (when (and ai-code-eca-upgrade-auto-enabled
-             (featurep 'eca-process)
-             (ai-code-eca-upgrade--check-due-p))
-    (condition-case err
-        (let ((display-buffer-alist
-               (cons '("\\*eca-update\\*" (display-buffer-no-window))
-                     display-buffer-alist)))
-          (ai-code-eca-upgrade-binary t))
-      (error (message "eca auto-update check failed: %s"
-                      (error-message-string err))))
-    (make-directory (file-name-directory ai-code-eca-upgrade--last-check-file) t)
-    (write-region "" nil ai-code-eca-upgrade--last-check-file nil 'silent)))
+    "Run binary upgrade silently if a day has passed since last check."
+    (when (and ai-code-eca-upgrade-auto-enabled
+               (featurep 'eca-process)
+               (ai-code-eca-upgrade--check-due-p))
+      (condition-case err
+          (let ((display-buffer-alist
+                 (cons '("\\*eca-update\\*" (display-buffer-no-window))
+                       display-buffer-alist)))
+            (ai-code-eca-upgrade-binary t))
+        (error (message "eca auto-update check failed: %s"
+                        (error-message-string err))))
+      (make-directory (file-name-directory ai-code-eca-upgrade--last-check-file) t)
+      (write-region "" nil ai-code-eca-upgrade--last-check-file nil 'silent)))
 
 (run-with-idle-timer ai-code-eca-upgrade-auto-idle-seconds t
                       #'ai-code-eca-upgrade--auto-maybe))
