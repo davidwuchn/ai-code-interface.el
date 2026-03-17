@@ -890,8 +890,8 @@ ECA manages skills as files under ~/.eca/ or project .eca/ directory."
       (make-directory (file-name-directory ai-code-eca-upgrade--last-check-file) t)
       (write-region "" nil ai-code-eca-upgrade--last-check-file nil 'silent)))
 
-(run-with-idle-timer ai-code-eca-upgrade-auto-idle-seconds t
-                      #'ai-code-eca-upgrade--auto-maybe))
+  (run-with-idle-timer ai-code-eca-upgrade-auto-idle-seconds t
+                        #'ai-code-eca-upgrade--auto-maybe))
 
 ;;;###autoload
 (defun ai-code-eca-upgrade-binary (&optional silent)
