@@ -83,6 +83,46 @@ layout contains an ECA group with the expected suffixes."
                                 expected-key prefix all-keys))))))
       (setq ai-code-eca--menu-group-added nil))))
 
+;;; ==============================================================================
+;;; Binary Upgrade Tests
+;;; ==============================================================================
+
+(ert-deftest ai-code-test-eca-upgrade/pinned-version-default ()
+  "Default pinned version is a valid semver."
+  (should (stringp ai-code-eca-upgrade--pinned-version))
+  (should (string-match-p "^[0-9]+\\.[0-9]+\\.[0-9]+$" ai-code-eca-upgrade--pinned-version)))
+
+(ert-deftest ai-code-test-eca-upgrade/parse-semver-extracts-version ()
+  "parse-semver extracts X.Y.Z from various version strings."
+  (cl-flet ((parse-semver (raw)
+              (and (stringp raw)
+                   (string-match "\\([0-9]+\\.[0-9]+\\.[0-9]+\\)" raw)
+                   (match-string 1 raw))))
+    (should (equal "0.106.0" (parse-semver "eca 0.106.0")))
+    (should (equal "1.2.3" (parse-semver "v1.2.3")))
+    (should (equal "10.20.30" (parse-semver "10.20.30-beta")))
+    (should (null (parse-semver nil)))
+    (should (null (parse-semver "no-version-here")))))
+
+(ert-deftest ai-code-test-eca-upgrade/unified-command-exists ()
+  "Unified ai-code-eca-upgrade command should exist."
+  (should (fboundp 'ai-code-eca-upgrade))
+  (should (commandp 'ai-code-eca-upgrade)))
+
+(ert-deftest ai-code-test-eca-upgrade/binary-command-exists ()
+  "Binary upgrade command should exist."
+  (should (fboundp 'ai-code-eca-upgrade-binary))
+  (should (commandp 'ai-code-eca-upgrade-binary)))
+
+(ert-deftest ai-code-test-eca-upgrade/package-command-exists ()
+  "Package upgrade command should exist."
+  (should (fboundp 'ai-code-eca-upgrade-package)))
+
+(ert-deftest ai-code-test-eca-upgrade/show-command-exists ()
+  "Show upgrade status command should exist."
+  (should (fboundp 'ai-code-eca-upgrade-show))
+  (should (commandp 'ai-code-eca-upgrade-show)))
+
 (provide 'test_ai-code-eca)
 
 ;;; test_ai-code-eca.el ends here
