@@ -23,8 +23,7 @@
 
 (ert-deftest ai-code-test-eca-add-menu-group-when-eca-selected ()
   "Ensure ECA menu is added when ECA backend is selected."
-  (let ((ai-code-selected-backend 'eca)
-        (ai-code-eca--menu-group-added nil))
+  (let ((ai-code-eca--menu-group-added nil))
     (provide 'transient)
     (cl-letf (((symbol-function 'commandp) (lambda (_sym) t))
               ((symbol-function 'transient-append-suffix)
@@ -46,9 +45,7 @@
                  (push key removed-keys))))
       (ai-code-eca--remove-menu-group)
       (should-not ai-code-eca--menu-group-added)
-      ;; Each key is removed from both menu layouts (9 keys × 2 layouts = 18)
       (should (equal (length removed-keys) 18))
-      ;; Verify each expected key appears exactly twice
       (dolist (key '("A" "B" "D" "E" "F" "M" "W" "X" "Y"))
         (should (= (cl-count key removed-keys :test #'string=) 2))))))
 
@@ -58,6 +55,33 @@
         (ai-code-eca--menu-group-added nil))
     (ai-code-eca--add-menu-group)
     (should-not ai-code-eca--menu-group-added)))
+
+(ert-deftest ai-code-test-eca-menu-group-appears-in-layout ()
+  "ECA group should appear in the transient layout after adding.
+This test does NOT mock transient-append-suffix; it verifies the actual
+layout contains an ECA group with the expected suffixes."
+  (skip-unless (featurep 'transient))
+  (require 'ai-code)
+  (let ((ai-code-eca--menu-group-added nil))
+    (ai-code-eca--add-menu-group)
+    (unwind-protect
+        (dolist (prefix '(ai-code-menu-default ai-code-menu-2-columns))
+          (let* ((layout (get prefix 'transient--layout))
+                 (all-keys nil))
+            (when (and layout (vectorp layout))
+              (let ((groups (aref layout 2)))
+                (dolist (group (append groups nil))
+                  (when (vectorp group)
+                    (dolist (item (aref group 3))
+                      (when (vectorp item)
+                        (let ((key (aref item 2)))
+                          (when (stringp key)
+                            (push key all-keys))))))))
+              (dolist (expected-key '("E" "W" "D" "A" "X" "F" "M" "Y" "B"))
+                (should (member expected-key all-keys)
+                        (format "ECA key %s not found in %s layout (keys: %s)"
+                                expected-key prefix all-keys))))))
+      (setq ai-code-eca--menu-group-added nil))))
 
 (provide 'test_ai-code-eca)
 

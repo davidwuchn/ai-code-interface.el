@@ -140,7 +140,6 @@ With FORCE-PROMPT (prefix arg), force new session."
         (progn
           (dolist (prefix '(ai-code-menu-default ai-code-menu-2-columns))
             (when (commandp prefix)
-              ;; Remove each suffix by key (in reverse order to avoid position shift)
               (dolist (key '("B" "Y" "M" "F" "X" "A" "D" "W" "E"))
                 (condition-case nil
                     (transient-remove-suffix prefix key)
