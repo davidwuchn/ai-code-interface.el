@@ -758,44 +758,56 @@ ECA manages skills as files under ~/.eca/ or project .eca/ directory."
 ;;; Binary Upgrade System
 ;;; ==============================================================================
 
+(defvar ai-code-eca-upgrade--pinned-version "0.106.0"
+  "Pinned fallback version when binary and GitHub API are unavailable.")
+
+(defun ai-code-eca-upgrade--resolve-version ()
+  "Return the current eca version string as \"X.Y.Z\"."
+  (cl-flet ((parse-semver (raw)
+              (and (stringp raw)
+                   (string-match "\\([0-9]+\\.[0-9]+\\.[0-9]+\\)" raw)
+                   (match-string 1 raw))))
+    (or
+     (when-let* ((bin (executable-find "eca"))
+                 (raw (string-trim
+                       (shell-command-to-string
+                        (concat (shell-quote-argument bin) " --version")))))
+       (parse-semver raw))
+     (when-let* ((curl (or (executable-find "curl") (executable-find "curl.exe")))
+                 (raw  (string-trim
+                        (shell-command-to-string
+                         (format "%s -s -f --max-time 5 %s"
+                                 (shell-quote-argument curl)
+                                 "https://api.github.com/repos/editor-code-assistant/eca/releases/latest"))))
+                 ((not (string-blank-p raw)))
+                 ((string-match "\"tag_name\"\\s-*:\\s-*\"\\([^\"]+\\)\"" raw)))
+       (parse-semver (match-string 1 raw)))
+     (when (featurep 'package)
+       (when-let* ((pkg-desc (assq 'eca package-alist))
+                   (ver-list (package-desc-version (cadr pkg-desc))))
+         (package-version-join ver-list)))
+     ai-code-eca-upgrade--pinned-version)))
+
+(defvar ai-code-eca-upgrade--last-check-file
+  (expand-file-name "eca/eca-update-check" user-emacs-directory)
+  "Timestamp file for last auto-update check.")
+
+(defun ai-code-eca-upgrade--check-due-p ()
+  "Return non-nil when more than 24 h have passed since last check."
+  (not (and (file-exists-p ai-code-eca-upgrade--last-check-file)
+            (let* ((attrs (file-attributes ai-code-eca-upgrade--last-check-file))
+                   (mtime (file-attribute-modification-time attrs))
+                   (age   (float-time (time-subtract (current-time) mtime))))
+              (< age 86400)))))
+
 (with-eval-after-load 'eca-process
 
   (setopt eca-server-install-path (expand-file-name (if (eq system-type 'windows-nt) "eca/eca.exe" "eca/eca")
-                                                    (if (boundp 'minimal-emacs-user-directory) minimal-emacs-user-directory user-emacs-directory))
-          eca-server-version-file-path (expand-file-name "eca/eca-version" (if (boundp 'minimal-emacs-user-directory) minimal-emacs-user-directory user-emacs-directory)))
-
-  (defvar ai-code-eca-upgrade--pinned-version "0.106.0"
-    "Pinned fallback version when binary and GitHub API are unavailable.")
-
-  (defun ai-code-eca-upgrade--resolve-version ()
-    "Return the current eca version string as \"X.Y.Z\"."
-    (cl-flet ((parse-semver (raw)
-                (and (stringp raw)
-                     (string-match "\\([0-9]+\\.[0-9]+\\.[0-9]+\\)" raw)
-                     (match-string 1 raw))))
-      (or
-       (when-let* ((bin (executable-find "eca"))
-                   (raw (string-trim
-                         (shell-command-to-string
-                          (concat (shell-quote-argument bin) " --version")))))
-         (parse-semver raw))
-       (when-let* ((curl (or (executable-find "curl") (executable-find "curl.exe")))
-                   (raw  (string-trim
-                          (shell-command-to-string
-                           (format "%s -s -f --max-time 5 %s"
-                                   (shell-quote-argument curl)
-                                   "https://api.github.com/repos/editor-code-assistant/eca/releases/latest"))))
-                   ((not (string-blank-p raw)))
-                   ((string-match "\"tag_name\"\\s-*:\\s-*\"\\([^\"]+\\)\"" raw)))
-         (parse-semver (match-string 1 raw)))
-       (when (featurep 'package)
-         (when-let* ((pkg-desc (assq 'eca package-alist))
-                     (ver-list (package-desc-version (cadr pkg-desc))))
-           (package-version-join ver-list)))
-       ai-code-eca-upgrade--pinned-version)))
+                                                    user-emacs-directory)
+          eca-server-version-file-path (expand-file-name "eca/eca-version" user-emacs-directory))
 
   (let* ((vfile (or (bound-and-true-p eca-server-version-file-path)
-                    (expand-file-name "eca/eca-version" (if (boundp 'minimal-emacs-user-directory) minimal-emacs-user-directory user-emacs-directory))))
+                    (expand-file-name "eca/eca-version" user-emacs-directory)))
          (version (ai-code-eca-upgrade--resolve-version)))
     (unless (file-exists-p vfile)
       (make-directory (file-name-directory vfile) t)
@@ -863,10 +875,6 @@ ECA manages skills as files under ~/.eca/ or project .eca/ directory."
 
   (advice-add 'eca--curl-download-file :override #'ai-code-eca-upgrade--curl-download-file)
 
-  (defvar ai-code-eca-upgrade--last-check-file
-    (expand-file-name "eca/eca-update-check" (if (boundp 'minimal-emacs-user-directory) minimal-emacs-user-directory user-emacs-directory))
-    "Timestamp file for last auto-update check.")
-
   (defun ai-code-eca-upgrade--check-due-p ()
     "Return non-nil when more than 24 h have passed since last check."
     (not (and (file-exists-p ai-code-eca-upgrade--last-check-file)
@@ -875,23 +883,23 @@ ECA manages skills as files under ~/.eca/ or project .eca/ directory."
                      (age   (float-time (time-subtract (current-time) mtime))))
                 (< age 86400)))))
 
-  (defun ai-code-eca-upgrade--auto-maybe ()
-    "Run binary upgrade silently if a day has passed since last check."
-    (when (and ai-code-eca-upgrade-auto-enabled
-               (featurep 'eca-process)
-               (ai-code-eca-upgrade--check-due-p))
-      (make-directory (file-name-directory ai-code-eca-upgrade--last-check-file) t)
-      (write-region "" nil ai-code-eca-upgrade--last-check-file nil 'silent)
-      (condition-case err
-          (let ((display-buffer-alist
-                 (cons '("\\*eca-update\\*" (display-buffer-no-window))
-                       display-buffer-alist)))
-            (ai-code-eca-upgrade-binary t))
-        (error (message "eca auto-update check failed: %s"
-                        (error-message-string err))))))
+(defun ai-code-eca-upgrade--auto-maybe ()
+  "Run binary upgrade silently if a day has passed since last check."
+  (when (and ai-code-eca-upgrade-auto-enabled
+             (featurep 'eca-process)
+             (ai-code-eca-upgrade--check-due-p))
+    (condition-case err
+        (let ((display-buffer-alist
+               (cons '("\\*eca-update\\*" (display-buffer-no-window))
+                     display-buffer-alist)))
+          (ai-code-eca-upgrade-binary t))
+      (error (message "eca auto-update check failed: %s"
+                      (error-message-string err))))
+    (make-directory (file-name-directory ai-code-eca-upgrade--last-check-file) t)
+    (write-region "" nil ai-code-eca-upgrade--last-check-file nil 'silent)))
 
-  (run-with-idle-timer ai-code-eca-upgrade-auto-idle-seconds nil
-                        #'ai-code-eca-upgrade--auto-maybe))
+(run-with-idle-timer ai-code-eca-upgrade-auto-idle-seconds t
+                      #'ai-code-eca-upgrade--auto-maybe))
 
 ;;;###autoload
 (defun ai-code-eca-upgrade-binary (&optional silent)
@@ -932,13 +940,16 @@ With prefix arg or SILent non-nil, suppress buffer."
              (_ (unless (string-match "\"tag_name\"\\s-*:\\s-*\"\\([^\"]+\\)\"" raw)
                   (user-error "ai-code-eca-upgrade-binary: could not parse tag_name")))
              (latest (match-string 1 raw))
+             (latest-bare (if (string-match "^v?\\(.*\\)" latest)
+                              (match-string 1 latest)
+                            latest))
              (installed (ai-code-eca-upgrade--resolve-version))
              (installed-bare (if (string-match "^v?\\(.*\\)" installed)
                                  (match-string 1 installed)
                                installed)))
-(funcall log "Latest:    %s" latest)
+        (funcall log "Latest:    %s" latest)
         (funcall log "Installed: %s" installed-bare)
-        (if (not (string-version-lessp installed-bare latest))
+        (if (not (string-version-lessp installed-bare latest-bare))
             (funcall log "\nAlready up to date.")
           (unless (fboundp 'eca-process--download-url)
             (user-error "ai-code-eca-upgrade-binary: eca-process not loaded"))
@@ -985,9 +996,11 @@ With prefix arg or SILent non-nil, suppress buffer."
                                               (shell-quote-argument zip-path)))))))
                   (if (string= expected actual)
                       (funcall log "SHA256 OK (%s)." actual)
-                    (funcall log "Warning: SHA256 mismatch — expected %s, got %s. Installing anyway."
-                             expected actual))))))
+                    (user-error "SHA256 mismatch — expected %s, got %s. Aborting."
+                                expected actual))))))
             (funcall log "\nExtracting...")
+            (unless (executable-find "unzip")
+              (user-error "unzip not found — please install unzip"))
             (when (file-exists-p temp-dir)
               (delete-directory temp-dir t))
             (make-directory temp-dir t)
