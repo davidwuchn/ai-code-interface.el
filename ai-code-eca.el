@@ -637,10 +637,10 @@ If the project is already present in the workspace, do nothing."
                             (eca--session-id session) root)
                    (eca-chat-open session)))))
             ('prompt
-(when (y-or-n-p (format "Create ECA session for %s? " root))
-                (let ((session (eca-create-session (list root))))
-                  (when session
-                    (eca-chat-open session)))))))))))
+             (when (y-or-n-p (format "Create ECA session for %s? " root))
+               (let ((session (eca-create-session (list root))))
+                 (when session
+                   (eca-chat-open session)))))))))))
 
 (with-eval-after-load 'eca
   (add-hook 'find-file-hook #'ai-code-eca--auto-add-workspace-hook)
@@ -875,15 +875,7 @@ ECA manages skills as files under ~/.eca/ or project .eca/ directory."
 
   (advice-add 'eca--curl-download-file :override #'ai-code-eca-upgrade--curl-download-file)
 
-  (defun ai-code-eca-upgrade--check-due-p ()
-    "Return non-nil when more than 24 h have passed since last check."
-    (not (and (file-exists-p ai-code-eca-upgrade--last-check-file)
-              (let* ((attrs (file-attributes ai-code-eca-upgrade--last-check-file))
-                     (mtime (file-attribute-modification-time attrs))
-                     (age   (float-time (time-subtract (current-time) mtime))))
-                (< age 86400)))))
-
-(defun ai-code-eca-upgrade--auto-maybe ()
+  (defun ai-code-eca-upgrade--auto-maybe ()
   "Run binary upgrade silently if a day has passed since last check."
   (when (and ai-code-eca-upgrade-auto-enabled
              (featurep 'eca-process)
