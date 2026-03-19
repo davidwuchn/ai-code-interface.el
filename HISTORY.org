@@ -2,6 +2,10 @@
 * Release history
 
 ** Main branch change
+- Feat: Add behavior injection system for AI prompts
+- Feat: Add ECA binary upgrade system with auto-update support
+- Feat: Add Prepare PR description tool
+- Fix: ECA menu integration: proper add/remove of ECA commands
 - Feat: Add configurable two-column ai-code transient menu
 - Chore: Add Claude Code support for Emacs MCP server 
 - Feat: Add an Emacs MCP server with built-in tools and agent integration for Codex CLI and GitHub Copilot CLI
