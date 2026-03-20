@@ -2,13 +2,17 @@
 * Release history
 
 ** Main branch change
-- Feat: Add configurable two-column ai-code transient menu
+- Feat: Add behavior injection system for AI prompts, by davidwuchn
+- Feat: Add ECA binary upgrade system with auto-update support, by davidwuchn
+- Feat: Add Prepare PR description tool
+- Fix: ECA menu integration: proper add/remove of ECA commands, by davidwuchn
+- Feat: Add configurable two-column ai-code transient menu, issue filed by berenddeboer
 - Chore: Add Claude Code support for Emacs MCP server 
 - Feat: Add an Emacs MCP server with built-in tools and agent integration for Codex CLI and GitHub Copilot CLI
 
 ** 1.60
 - Chore: Add Investigate Issue Mode for Reviews
-- Feat: Sync ECA integration with latest upstream bridge/ext changes: ai-code-menu integration, workspace management, auto project/session syncing, shared context helpers, and session health utilities
+- Feat: Sync ECA integration with latest upstream bridge/ext changes: ai-code-menu integration, workspace management, auto project/session syncing, shared context helpers, and session health utilities, by davidwuchn
 - Feat: Improve ECA backend: smarter chat-buffer handling, graceful resume, context management (file/clipboard/cursor/repo-map), session multiplexing via eca-ext.el, upgrade and install-skills support, contributed by davidwuchn
 - Fix: Block ai-code-apply-prompt-on-current-file for eca backend (like agent-shell)
 - Fix: Avoid eat reflow suppression on session buffers, by Silex
