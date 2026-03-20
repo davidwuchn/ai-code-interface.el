@@ -114,35 +114,37 @@ With FORCE-PROMPT (prefix arg), force new session."
 (transient-define-prefix ai-code-eca-menu ()
   "ECA session management menu."
   ["ECA"
-   ("E" "Start ECA (C-u: pick project)" ai-code-eca-create-session-for-workspace)
+   ("E" "Start ECA for project..." ai-code-eca-create-session-for-workspace)
    ("W" "Switch session" ai-code-eca-switch-session)
-   ("D" "Dashboard" eca-workspaces)
-   ("A" "Add project" ai-code-eca-add-workspace-folder)
-   ("X" "Remove project" ai-code-eca-remove-workspace-folder)
-   ("F" "Share file" ai-code-eca-share-file-context)
-   ("M" "Share repo map" ai-code-eca-share-repo-map-context)
-   ("Y" "Clear shared" ai-code-eca-clear-shared-context)
-   ("B" "Add clipboard" ai-code-eca-chat-add-clipboard-context-now)])
+   ("D" "ECA Workspace Dashboard" eca-workspaces)
+   ("A" "Add project to session" ai-code-eca-add-workspace-folder)
+   ("X" "Remove project from session" ai-code-eca-remove-workspace-folder)
+   ("F" "Add file to shared context" ai-code-eca-share-file-context)
+   ("M" "Add repo map to shared context" ai-code-eca-share-repo-map-context)
+   ("B" "Add clipboard as file context" ai-code-eca-chat-add-clipboard-context-now)
+   ("Y" "Clear shared" ai-code-eca-clear-shared-context)])
 
 (defun ai-code-eca--add-menu-group ()
-  "Add ECA commands directly to ai-code-menu layouts."
+  "Add ECA commands directly to ai-code-menu layouts.
+Only adds when ECA is the current backend."
   (when (and (featurep 'transient)
-             (not ai-code-eca--menu-group-added))
+             (not ai-code-eca--menu-group-added)
+             (eq (bound-and-true-p ai-code-selected-backend) 'eca))
     (condition-case err
         (progn
           (dolist (prefix '(ai-code-menu-default ai-code-menu-2-columns))
             (when (commandp prefix)
               (transient-append-suffix prefix '(0 -1)
                 ["ECA"
-                 ("E" "Start ECA (C-u: pick project)" ai-code-eca-create-session-for-workspace)
+                 ("E" "Start ECA for project..." ai-code-eca-create-session-for-workspace)
                  ("W" "Switch session" ai-code-eca-switch-session)
-                 ("D" "Dashboard" eca-workspaces)
-                 ("A" "Add project" ai-code-eca-add-workspace-folder)
-                 ("X" "Remove project" ai-code-eca-remove-workspace-folder)
-                 ("F" "Share file" ai-code-eca-share-file-context)
-                 ("M" "Share repo map" ai-code-eca-share-repo-map-context)
-                 ("Y" "Clear shared" ai-code-eca-clear-shared-context)
-                 ("B" "Add clipboard" ai-code-eca-chat-add-clipboard-context-now)])))
+                  ("D" "ECA Workspace Dashboard" eca-workspaces)
+                  ("A" "Add project to session" ai-code-eca-add-workspace-folder)
+                  ("X" "Remove project from session" ai-code-eca-remove-workspace-folder)
+                  ("F" "Add file to shared context" ai-code-eca-share-file-context)
+                  ("M" "Add repo map to shared context" ai-code-eca-share-repo-map-context)
+                  ("B" "Add clipboard as file context" ai-code-eca-chat-add-clipboard-context-now)
+                  ("Y" "Clear shared" ai-code-eca-clear-shared-context)])))
           (setq ai-code-eca--menu-group-added t))
       (error
        (message "Failed to add ECA menu: %s" (error-message-string err))))))
@@ -260,29 +262,26 @@ Auto-apply shared context if any."
       (pop-to-buffer (eca-chat--get-last-buffer session))
       session)))
 
-(defun ai-code-eca-create-session-for-workspace (&optional arg)
-  "Start ECA session.
-Without ARG, use current project root (reuse existing session if available).
-With ARG (C-u), prompt for workspace root and create NEW session."
+(defun ai-code-eca-create-session-for-workspace (&optional _arg)
+  "Start ECA session for a selected workspace.
+Prompt for workspace root, then create or reuse session for that workspace."
   (interactive "P")
-  (if (equal arg '(4))
-      ;; With C-u: create NEW session for specified workspace
-      (let* ((workspace-root (read-directory-name "Workspace root: "))
-             (session (eca-create-session (list workspace-root))))
-        (when session
-          (pcase (eca--session-status session)
-            ('stopped
-             (eca-process-start session
-                                (lambda ()
-                                  (eca--initialize session))
-                                (-partial #'eca--handle-message session)))
-            ('started
-             (eca-chat-open session))
-            ('starting
-             (eca-info "ECA server is already starting")))
-          session))
-    ;; Without C-u: use eca (reuses existing session if available)
-    (call-interactively #'eca)))
+  (let* ((proj (project-current nil default-directory))
+         (default-dir (if proj (project-root proj) default-directory))
+         (workspace-root (read-directory-name "Workspace root: " default-dir))
+         (session (eca-create-session (list workspace-root))))
+    (when session
+      (pcase (eca--session-status session)
+        ('stopped
+         (eca-process-start session
+                            (lambda ()
+                              (eca--initialize session))
+                            (-partial #'eca--handle-message session)))
+        ('started
+         (eca-chat-open session))
+        ('starting
+         (eca-info "ECA server is already starting")))
+      session)))
 
 ;;; Workspace Management
 
@@ -728,12 +727,9 @@ Otherwise uses package.el to refresh and reinstall."
     (package-vc-upgrade 'eca)
     (message "ECA upgraded. Restart Emacs or re-evaluate for changes."))
    ((package-installed-p 'eca)
-    (if (y-or-n-p "Refresh package archives and upgrade ECA? ")
-        (progn
-          (package-refresh-contents)
-          (package-install 'eca)
-          (message "ECA upgraded successfully"))
-      (message "Upgrade cancelled")))
+    (package-refresh-contents)
+    (package-install 'eca)
+    (message "ECA upgraded successfully"))
    (t
     (user-error "ECA is not installed as a package"))))
 
@@ -1064,14 +1060,14 @@ Pops up a buffer with version info and buttons to check/update."
 ;;;###autoload
 (defun ai-code-eca-upgrade (&optional arg)
   "Upgrade ECA.
-Without ARG, upgrade the ECA binary from GitHub releases.
-With \\[universal-argument] (C-u), upgrade the ECA Emacs package.
-With \\[universal-argument] \\[universal-argument] (C-u C-u), show upgrade status."
+Without ARG, show upgrade status buffer.
+With \\[universal-argument] (C-u), upgrade the ECA binary from GitHub releases.
+With \\[universal-argument] \\[universal-argument] (C-u C-u), upgrade the ECA Emacs package."
   (interactive "P")
   (cond
-   ((equal arg '(16)) (ai-code-eca-upgrade-show))
-   ((equal arg '(4))  (ai-code-eca-upgrade-package))
-   (t                 (ai-code-eca-upgrade-binary))))
+   ((equal arg '(16)) (ai-code-eca-upgrade-package))
+   ((equal arg '(4))  (ai-code-eca-upgrade-binary))
+   (t                 (ai-code-eca-upgrade-show))))
 
 (provide 'ai-code-eca)
 

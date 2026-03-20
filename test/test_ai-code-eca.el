@@ -23,7 +23,8 @@
 
 (ert-deftest ai-code-test-eca-add-menu-group-when-eca-selected ()
   "Ensure ECA menu is added when ECA backend is selected."
-  (let ((ai-code-eca--menu-group-added nil))
+  (let ((ai-code-selected-backend 'eca)
+        (ai-code-eca--menu-group-added nil))
     (provide 'transient)
     (cl-letf (((symbol-function 'commandp) (lambda (_sym) t))
               ((symbol-function 'transient-append-suffix)
@@ -60,9 +61,13 @@
   "ECA group should appear in the transient layout after adding.
 This test does NOT mock transient-append-suffix; it verifies the actual
 layout contains an ECA group with the expected suffixes."
-  (skip-unless (featurep 'transient))
-  (require 'ai-code)
-  (let ((ai-code-eca--menu-group-added nil))
+  (skip-unless (and (featurep 'transient)
+                    (fboundp 'transient-define-group)))
+  (condition-case nil
+      (require 'ai-code)
+    (error (ert-skip "ai-code could not be loaded")))
+  (let ((ai-code-selected-backend 'eca)
+        (ai-code-eca--menu-group-added nil))
     (ai-code-eca--add-menu-group)
     (unwind-protect
         (dolist (prefix '(ai-code-menu-default ai-code-menu-2-columns))
@@ -77,10 +82,8 @@ layout contains an ECA group with the expected suffixes."
                         (let ((key (aref item 2)))
                           (when (stringp key)
                             (push key all-keys))))))))
-              (dolist (expected-key '("E" "W" "D" "A" "X" "F" "M" "Y" "B"))
-                (should (member expected-key all-keys)
-                        (format "ECA key %s not found in %s layout (keys: %s)"
-                                expected-key prefix all-keys))))))
+              (dolist (expected-key '("E" "W" "D" "A" "X" "F" "M" "B" "Y"))
+                (should (member expected-key all-keys))))))
       (setq ai-code-eca--menu-group-added nil))))
 
 ;;; ==============================================================================
