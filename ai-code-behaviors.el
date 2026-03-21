@@ -967,6 +967,36 @@ BEHAVIORS is (:mode MODE :modifiers MODIFIERS :constraint-modifiers CONSTRAINTS
       (concat (mapconcat #'identity (nreverse blocks) "\n\n")
               "\n\nThese behaviors apply until superseded by new hashtags. During compaction, preserve the most recent <operating-mode> and <behavior-modifiers> blocks."))))
 
+(defun ai-code--behaviors-wrap-with-instruction (behaviors prompt-text)
+  "Wrap PROMPT-TEXT with instruction from BEHAVIORS.
+Returns formatted string with instruction block, or PROMPT-TEXT if no instruction."
+  (let ((instruction (ai-code--build-behavior-instruction behaviors)))
+    (if instruction
+        (format "%s\n\n<user-prompt>\n%s\n</user-prompt>"
+                instruction (string-trim prompt-text))
+      prompt-text)))
+
+(defun ai-code--behaviors-meets-confidence-threshold-p (confidence)
+  "Check if CONFIDENCE meets `ai-code-behaviors-reclassify-min-confidence'.
+CONFIDENCE should be 'high, 'medium, or 'low."
+  (let ((levels '(high medium low))
+        (min-level ai-code-behaviors-reclassify-min-confidence))
+    (and confidence
+         min-level
+         (<= (or (cl-position confidence levels) 0)
+             (or (cl-position min-level levels) 1)))))
+
+(defun ai-code--behaviors-apply-and-format (preset-name behaviors project-root &optional message-text)
+  "Apply PRESET-NAME and BEHAVIORS for PROJECT-ROOT, return formatted prompt.
+MESSAGE-TEXT is optional message to display after applying.
+Returns the wrapped prompt text."
+  (ai-code--behaviors-set-preset preset-name project-root)
+  (ai-code--behaviors-set-state behaviors project-root)
+  (ai-code--behaviors-update-mode-line project-root)
+  (when message-text
+    (message "%s" message-text))
+  behaviors)
+
 (defun ai-code--process-behaviors (prompt-text &optional project-root)
   "Process behaviors for PROMPT-TEXT and return modified prompt.
 This is the main entry point for behavior injection.
@@ -993,49 +1023,27 @@ Note: Preset-only prompts (empty after tag removal) are handled by
         (ai-code--behaviors-clear-pending-preset project-root)
         (let* ((preset-name (plist-get explicit-behaviors :preset))
                (final-behaviors (ai-code--merge-preset-with-modifiers preset-name explicit-behaviors)))
-          (ai-code--behaviors-set-preset preset-name project-root)
-          (ai-code--behaviors-set-state final-behaviors project-root)
-          (ai-code--behaviors-update-mode-line project-root)
-          (let ((instruction (ai-code--build-behavior-instruction final-behaviors)))
-            (if instruction
-                (format "%s\n\n<user-prompt>\n%s\n</user-prompt>"
-                        instruction cleaned-prompt)
-              cleaned-prompt))))
+          (ai-code--behaviors-apply-and-format preset-name final-behaviors project-root)
+          (ai-code--behaviors-wrap-with-instruction final-behaviors cleaned-prompt)))
        ((and pending-preset (not (string-empty-p (string-trim cleaned-prompt))))
         (ai-code--behaviors-clear-pending-preset project-root)
-        (let* ((final-behaviors (ai-code--merge-preset-with-modifiers pending-preset nil)))
-          (ai-code--behaviors-set-preset pending-preset project-root)
-          (ai-code--behaviors-set-state final-behaviors project-root)
-          (ai-code--behaviors-update-mode-line project-root)
-          (message "Activated preset: @%s" pending-preset)
-          (let ((instruction (ai-code--build-behavior-instruction final-behaviors)))
-            (if instruction
-                (format "%s\n\n<user-prompt>\n%s\n</user-prompt>"
-                        instruction cleaned-prompt)
-              cleaned-prompt))))
+        (let ((final-behaviors (ai-code--merge-preset-with-modifiers pending-preset nil)))
+          (ai-code--behaviors-apply-and-format pending-preset final-behaviors project-root
+                                                (format "Activated preset: @%s" pending-preset))
+          (ai-code--behaviors-wrap-with-instruction final-behaviors cleaned-prompt)))
        (session-state
-        (let ((instruction (ai-code--build-behavior-instruction session-state)))
-          (if instruction
-              (format "%s\n\n<user-prompt>\n%s\n</user-prompt>"
-                      instruction (string-trim prompt-text))
-            prompt-text)))
+        (ai-code--behaviors-wrap-with-instruction session-state prompt-text))
        ((when-let ((classified (and ai-code-behaviors-auto-classify
                                       (ai-code--classify-prompt-intent prompt-text))))
           (let* ((suggested-preset (ai-code--suggest-preset-for-classification classified))
                  (final-behaviors (if suggested-preset
                                        (ai-code--merge-preset-with-modifiers suggested-preset nil)
                                      (ai-code--merge-preset-with-modifiers nil classified))))
-            (ai-code--behaviors-set-preset suggested-preset project-root)
-            (ai-code--behaviors-set-state final-behaviors project-root)
-            (ai-code--behaviors-update-mode-line project-root)
-            (message "Auto-classified: @%s (%s)"
-                     (or suggested-preset "custom")
-                     (or (plist-get final-behaviors :mode) "unknown"))
-            (let ((instruction (ai-code--build-behavior-instruction final-behaviors)))
-              (if instruction
-                  (format "%s\n\n<user-prompt>\n%s\n</user-prompt>"
-                          instruction (string-trim prompt-text))
-                prompt-text)))))
+            (ai-code--behaviors-apply-and-format suggested-preset final-behaviors project-root
+                                                  (format "Auto-classified: @%s (%s)"
+                                                          (or suggested-preset "custom")
+                                                          (or (plist-get final-behaviors :mode) "unknown")))
+            (ai-code--behaviors-wrap-with-instruction final-behaviors prompt-text))))
        (t prompt-text)))))
 
 (defun ai-code-behaviors-status ()
@@ -1816,9 +1824,7 @@ Priority order (gptel-agent context):
       (ai-code--behaviors-clear-pending-preset project-root)
       (let* ((preset-name (plist-get explicit-behaviors :preset))
              (final-behaviors (ai-code--merge-preset-with-modifiers preset-name explicit-behaviors)))
-        (ai-code--behaviors-set-preset preset-name project-root)
-        (ai-code--behaviors-set-state final-behaviors project-root)
-        (ai-code--behaviors-update-mode-line project-root)
+        (ai-code--behaviors-apply-and-format preset-name final-behaviors project-root)
         (if (string-empty-p (string-trim cleaned-prompt))
             (progn
               (message "Preset applied: %s%s"
@@ -1826,58 +1832,32 @@ Priority order (gptel-agent context):
                        (if-let ((mode (plist-get final-behaviors :mode)))
                            (format " (%s)" mode) ""))
               (cons t nil))
-          (let ((instruction (ai-code--build-behavior-instruction final-behaviors)))
-            (cons t
-                  (if instruction
-                      (format "%s\n\n<user-prompt>\n%s\n</user-prompt>"
-                              instruction cleaned-prompt)
-                    cleaned-prompt))))))
+          (cons t (ai-code--behaviors-wrap-with-instruction final-behaviors cleaned-prompt)))))
      ((let ((classified (and ai-code-behaviors-gptel-agent-auto-classify
                                ai-code-behaviors-auto-classify
                                (ai-code--classify-prompt-intent prompt-text))))
-        (when classified
-          (let ((confidence (plist-get classified :confidence))
-                (min-level (cl-position ai-code-behaviors-reclassify-min-confidence '(high medium low))))
-            (and confidence
-                 (<= (or (cl-position confidence '(high medium low)) 0) (or min-level 1))))))
+        (when (and classified
+                   (ai-code--behaviors-meets-confidence-threshold-p
+                    (plist-get classified :confidence)))
+          classified))
       (ai-code--behaviors-clear-pending-preset project-root)
-      (let* ((classified (ai-code--classify-prompt-intent prompt-text))
-             (suggested-preset (ai-code--suggest-preset-for-classification classified))
+      (let* ((suggested-preset (ai-code--suggest-preset-for-classification it))
              (final-behaviors (if suggested-preset
                                    (ai-code--merge-preset-with-modifiers suggested-preset nil)
-                                 (ai-code--merge-preset-with-modifiers nil classified))))
-        (ai-code--behaviors-set-preset suggested-preset project-root)
-        (ai-code--behaviors-set-state final-behaviors project-root)
-        (ai-code--behaviors-update-mode-line project-root)
-        (message "Auto-classified: @%s (%s)"
-                 (or suggested-preset "custom")
-                 (or (plist-get final-behaviors :mode) "unknown"))
-        (let ((instruction (ai-code--build-behavior-instruction final-behaviors)))
-          (cons t
-                (if instruction
-                    (format "%s\n\n<user-prompt>\n%s\n</user-prompt>"
-                            instruction (string-trim prompt-text))
-                  prompt-text)))))
+                                 (ai-code--merge-preset-with-modifiers nil it))))
+        (ai-code--behaviors-apply-and-format suggested-preset final-behaviors project-root
+                                              (format "Auto-classified: @%s (%s)"
+                                                      (or suggested-preset "custom")
+                                                      (or (plist-get final-behaviors :mode) "unknown")))
+        (cons t (ai-code--behaviors-wrap-with-instruction final-behaviors prompt-text))))
      ((and pending-preset (not (string-empty-p (string-trim cleaned-prompt))))
       (ai-code--behaviors-clear-pending-preset project-root)
-      (let* ((final-behaviors (ai-code--merge-preset-with-modifiers pending-preset nil)))
-        (ai-code--behaviors-set-preset pending-preset project-root)
-        (ai-code--behaviors-set-state final-behaviors project-root)
-        (ai-code--behaviors-update-mode-line project-root)
-        (message "Activated preset: @%s" pending-preset)
-        (let ((instruction (ai-code--build-behavior-instruction final-behaviors)))
-          (cons t
-                (if instruction
-                    (format "%s\n\n<user-prompt>\n%s\n</user-prompt>"
-                            instruction cleaned-prompt)
-                  cleaned-prompt)))))
+      (let ((final-behaviors (ai-code--merge-preset-with-modifiers pending-preset nil)))
+        (ai-code--behaviors-apply-and-format pending-preset final-behaviors project-root
+                                              (format "Activated preset: @%s" pending-preset))
+        (cons t (ai-code--behaviors-wrap-with-instruction final-behaviors cleaned-prompt))))
      (session-state
-      (let ((instruction (ai-code--build-behavior-instruction session-state)))
-        (cons t
-              (if instruction
-                  (format "%s\n\n<user-prompt>\n%s\n</user-prompt>"
-                          instruction (string-trim prompt-text))
-                prompt-text))))
+      (cons t (ai-code--behaviors-wrap-with-instruction session-state prompt-text)))
      (t (cons nil prompt-text)))))
 
 (defun ai-code--gptel-agent-transform-inject-behaviors (callback fsm)
