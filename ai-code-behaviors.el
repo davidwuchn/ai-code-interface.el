@@ -2115,22 +2115,39 @@ Returns preset name string or nil."
         "tdd-dev")
        (t nil)))))
 
+(defun ai-code--behaviors-extract-project-from-buffer-name ()
+  "Extract project path from gptel-agent buffer name.
+Returns nil if not a gptel-agent buffer or can't extract."
+  (when (string-match "\\*gptel-agent:\\([^*]+\\)\\*" (buffer-name))
+    (let ((project-name (match-string 1 (buffer-name))))
+      (when (and project-name (not (string-empty-p project-name)))
+        (if (file-name-absolute-p project-name)
+            project-name
+          (expand-file-name project-name))))))
+
 (defun ai-code-behaviors-show-last-prompt ()
   "Show the last prompt processed by behavior injection.
 Displays the original prompt, processed prompt, and applied behaviors.
 Useful for debugging what was actually sent to the LLM.
-In gptel-agent buffers, uses the source buffer's project root."
+In gptel-agent buffers, tries multiple sources to find the project root."
   (interactive)
   (let* ((source-buffer (when (bound-and-true-p gptel-mode)
                           (when-let* ((fsm (bound-and-true-p gptel--fsm-last))
                                       (info (and fsm (gptel-fsm-info fsm))))
                             (plist-get info :buffer))))
-         (project-root (if (buffer-live-p source-buffer)
-                           (ai-code--behaviors-project-root source-buffer)
-                         (ai-code--behaviors-project-root)))
+         (project-root (cond
+                        ((buffer-live-p source-buffer)
+                         (ai-code--behaviors-project-root source-buffer))
+                        ((ai-code--behaviors-extract-project-from-buffer-name))
+                        (t (ai-code--behaviors-project-root))))
          (last-prompt (gethash project-root ai-code--behaviors-last-prompts)))
     (if (not last-prompt)
-        (message "No prompt has been processed yet for this project (root: %s)" project-root)
+        (let (all-roots)
+          (maphash (lambda (k _v) (push k all-roots)) ai-code--behaviors-last-prompts)
+          (if all-roots
+              (message "No prompt for %s. Available: %s" project-root 
+                       (mapconcat #'identity all-roots ", "))
+            (message "No prompts processed yet (root: %s)" project-root)))
       (let* ((original (plist-get last-prompt :original))
              (processed (plist-get last-prompt :processed))
              (behaviors (plist-get last-prompt :behaviors))
