@@ -860,13 +860,30 @@ Confidence is high (2+ matches), medium (1 match), or low."
               :modifiers (delete-dups modifiers)
               :confidence confidence)))))
 
+(defun ai-code--extract-clean-user-prompt (text)
+  "Extract clean user prompt from TEXT for classification.
+Strips behavior injection blocks and extracts content within <user-prompt> tags.
+Returns TEXT unchanged if no special structure found."
+  (let ((result text))
+    (when (stringp result)
+      (when (string-match "<user-prompt>\\s-*\\(\\(?:.\\|\n\\)*?\\)\\s-*</user-prompt>" result)
+        (setq result (match-string 1 result)))
+      (when (string-match "^AdditionalContext:" result)
+        (setq result (replace-regexp-in-string 
+                      "^AdditionalContext:\\(?:.\\|\n\\)*?\\(<user-prompt>\\|\\'\\)"
+                      "" result)))
+      (setq result (string-trim result)))
+    result))
+
 (defun ai-code--classify-prompt-intent (prompt-text)
   "Classify PROMPT-TEXT intent for behavior injection.
 Uses GPTel if available, falls back to keyword matching.
+Only classifies the clean user prompt, ignoring behavior injection blocks.
 Return list of (:mode MODE :modifiers MODIFIERS)."
-  (or (and (bound-and-true-p ai-code-use-gptel-classify-prompt)
-           (ai-code--classify-prompt-intent-gptel prompt-text))
-      (ai-code--classify-prompt-intent-keywords prompt-text)))
+  (let ((clean-prompt (ai-code--extract-clean-user-prompt prompt-text)))
+    (or (and (bound-and-true-p ai-code-use-gptel-classify-prompt)
+             (ai-code--classify-prompt-intent-gptel clean-prompt))
+        (ai-code--classify-prompt-intent-keywords clean-prompt))))
 
 (declare-function ai-code--get-clipboard-text "ai-code" ())
 

@@ -156,6 +156,30 @@
     (should (member "deep" (plist-get result :modifiers)))
     (should (member "tdd" (plist-get result :modifiers)))))
 
+(ert-deftest ai-code-test-extract-clean-user-prompt-plain ()
+  "Test that plain prompts are returned unchanged."
+  (let ((result (ai-code--extract-clean-user-prompt "Implement user authentication")))
+    (should (equal result "Implement user authentication"))))
+
+(ert-deftest ai-code-test-extract-clean-user-prompt-with-tags ()
+  "Test that prompts with <user-prompt> tags are extracted."
+  (let ((result (ai-code--extract-clean-user-prompt 
+                 "AdditionalContext: <operating-mode>\nSome behavior\n</operating-mode>\n\n<user-prompt>\nFix the bug\n</user-prompt>")))
+    (should (equal result "Fix the bug"))))
+
+(ert-deftest ai-code-test-extract-clean-user-prompt-with-behavior-blocks ()
+  "Test that behavior injection blocks are stripped."
+  (let ((result (ai-code--extract-clean-user-prompt 
+                 "AdditionalContext: <operating-mode>\nYou are coding\n</operating-mode>\n\n<user-prompt>\nImplement login\n</user-prompt>")))
+    (should (equal result "Implement login"))))
+
+(ert-deftest ai-code-test-classify-ignores-context ()
+  "Test that classification ignores behavior injection context."
+  (let ((result (ai-code--classify-prompt-intent 
+                 "AdditionalContext: <operating-mode>\nYou are debugging\n</operating-mode>\n\n<user-prompt>\nImplement user authentication\n</user-prompt>")))
+    (should result)
+    (should (equal (plist-get result :mode) "=code"))))
+
 (ert-deftest ai-code-test-all-behavior-names ()
   "Test that all behavior names are returned with # prefix."
   (let ((names (ai-code--all-behavior-names)))
