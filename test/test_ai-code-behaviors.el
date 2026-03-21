@@ -29,13 +29,13 @@
 
 (ert-deftest ai-code-test-extract-single-mode ()
   "Test extracting a single operating mode hashtag."
-  (let ((result (car (ai-code--extract-and-remove-hashtags "Fix the bug #=debug"))))
+  (let ((result (nth 0 (ai-code--extract-and-remove-hashtags "Fix the bug #=debug"))))
     (should result)
     (should (equal (plist-get result :mode) "=debug"))))
 
 (ert-deftest ai-code-test-extract-mode-with-modifiers ()
   "Test extracting mode with modifiers."
-  (let ((result (car (ai-code--extract-and-remove-hashtags "Implement feature #=code #deep #tdd"))))
+  (let ((result (nth 0 (ai-code--extract-and-remove-hashtags "Implement feature #=code #deep #tdd"))))
     (should result)
     (should (equal (plist-get result :mode) "=code"))
     (should (member "deep" (plist-get result :modifiers)))
@@ -43,7 +43,7 @@
 
 (ert-deftest ai-code-test-extract-modifiers-only ()
   "Test extracting modifiers without mode."
-  (let ((result (car (ai-code--extract-and-remove-hashtags "Explain this #deep #wide"))))
+  (let ((result (nth 0 (ai-code--extract-and-remove-hashtags "Explain this #deep #wide"))))
     (should result)
     (should (null (plist-get result :mode)))
     (should (member "deep" (plist-get result :modifiers)))
@@ -51,13 +51,13 @@
 
 (ert-deftest ai-code-test-extract-no-hashtags ()
   "Test that prompts without hashtags return nil."
-  (should (null (car (ai-code--extract-and-remove-hashtags "Fix the bug in auth")))))
+  (should (null (nth 0 (ai-code--extract-and-remove-hashtags "Fix the bug in auth")))))
 
 (ert-deftest ai-code-test-unknown-behavior-warning ()
   "Test that unknown behaviors are preserved in prompt with warning."
   (let* ((extracted (ai-code--extract-and-remove-hashtags "Do something #=code #unknown-behavior"))
-         (result (car extracted))
-         (cleaned (cdr extracted)))
+         (result (nth 0 extracted))
+         (cleaned (nth 1 extracted)))
     (should result)
     (should (equal (plist-get result :mode) "=code"))
     (should (string-match-p "#unknown-behavior" cleaned))))
@@ -286,7 +286,7 @@
 
 (ert-deftest ai-code-test-extract-constraint-modifiers ()
   "Test extracting constraint modifiers from hashtags."
-  (let ((result (car (ai-code--extract-and-remove-hashtags "Fix bug #=code #chinese #test-after"))))
+  (let ((result (nth 0 (ai-code--extract-and-remove-hashtags "Fix bug #=code #chinese #test-after"))))
     (should result)
     (should (equal (plist-get result :mode) "=code"))
     (should (member "chinese" (plist-get result :constraint-modifiers)))
@@ -497,16 +497,16 @@
 (ert-deftest ai-code-test-extract-preset-from-prompt ()
   "Test extracting @preset-name from prompt."
   (let* ((result (ai-code--extract-and-remove-hashtags "@tdd-dev implement feature"))
-         (behaviors (car result))
-         (cleaned (cdr result)))
+         (behaviors (nth 0 result))
+         (cleaned (nth 1 result)))
     (should (equal (plist-get behaviors :preset) "tdd-dev"))
     (should (string= cleaned "implement feature"))))
 
 (ert-deftest ai-code-test-extract-preset-with-modifiers ()
   "Test extracting @preset-name with additional modifiers."
   (let* ((result (ai-code--extract-and-remove-hashtags "@tdd-dev #chinese implement feature"))
-         (behaviors (car result))
-         (cleaned (cdr result)))
+         (behaviors (nth 0 result))
+         (cleaned (nth 1 result)))
     (should (equal (plist-get behaviors :preset) "tdd-dev"))
     (should (member "chinese" (plist-get behaviors :constraint-modifiers)))
     (should (string= cleaned "implement feature"))))
@@ -514,7 +514,7 @@
 (ert-deftest ai-code-test-extract-preset-removes-at-syntax ()
   "Test that @preset-name is removed from cleaned prompt."
   (let* ((result (ai-code--extract-and-remove-hashtags "@mentor-learn how to refactor")))
-    (should (string= (cdr result) "how to refactor"))))
+    (should (string= (nth 1 result) "how to refactor"))))
 
 (ert-deftest ai-code-test-process-preset-in-behaviors ()
   "Test that process-behaviors applies preset correctly."
@@ -535,7 +535,7 @@
 (ert-deftest ai-code-test-unknown-preset-ignored ()
   "Test that unknown @preset-name is ignored."
   (let* ((result (ai-code--extract-and-remove-hashtags "@unknown-preset test")))
-    (should-not (car result))))
+    (should-not (nth 0 result))))
 
 (ert-deftest ai-code-test-merge-preset-with-modifiers-nil-preset ()
   "Test that merge works with nil preset (auto-classify case)."
@@ -697,8 +697,8 @@ This happens when gptel-agent package is not loaded."
          (ai-code-behaviors-gptel-agent-auto-classify nil)
          (result (ai-code--gptel-agent-process-behaviors "Implement a feature" test-root)))
     ;; Without auto-classify and no session state, should not apply behaviors
-    (should-not (car result))
-    (should (string= (cdr result) "Implement a feature"))))
+    (should-not (nth 0 result))
+    (should (string= (nth 1 result) "Implement a feature"))))
 
 (ert-deftest ai-code-test-gptel-agent-process-behaviors-with-auto-classify ()
   "Test that gptel-agent auto-classifies when enabled."
@@ -707,8 +707,8 @@ This happens when gptel-agent package is not loaded."
          (ai-code-behaviors-gptel-agent-auto-classify t)
          (result (ai-code--gptel-agent-process-behaviors "Implement a feature" test-root)))
     ;; With auto-classify, should apply behaviors
-    (should (car result))
-    (should (string-match-p "operating-mode" (cdr result)))))
+    (should (nth 0 result))
+    (should (string-match-p "operating-mode" (nth 1 result)))))
 
 (ert-deftest ai-code-test-gptel-agent-setup-transform ()
   "Test that setup adds transform to gptel-prompt-transform-functions."
@@ -801,6 +801,73 @@ This happens when gptel-agent package is not loaded."
     (should (member "@tdd-dev" names))
     (should (member "@quick-fix" names))
     (should (member "@deep-review" names))))
+
+;;; Plan Mode Restriction Tests
+
+(ert-deftest ai-code-test-plan-allows-readonly-mode ()
+  "Test that #=review works in gptel-plan context."
+  (let* ((result (ai-code--extract-and-remove-hashtags "#=review this code" 'gptel-plan))
+         (behaviors (nth 0 result))
+         (switch-needed (nth 2 result)))
+    (should (equal (plist-get behaviors :mode) "=review"))
+    (should-not switch-needed)))
+
+(ert-deftest ai-code-test-plan-switches-for-modify-mode ()
+  "Test that #=code triggers switch in gptel-plan context."
+  (let* ((result (ai-code--extract-and-remove-hashtags "#=code fix this" 'gptel-plan))
+         (behaviors (nth 0 result))
+         (switch-needed (nth 2 result)))
+    (should (equal (plist-get behaviors :mode) "=code"))
+    (should switch-needed)))
+
+(ert-deftest ai-code-test-plan-allows-readonly-preset ()
+  "Test that @quick-review works in gptel-plan context."
+  (let* ((result (ai-code--extract-and-remove-hashtags "@quick-review this" 'gptel-plan))
+         (behaviors (nth 0 result))
+         (switch-needed (nth 2 result)))
+    (should (equal (plist-get behaviors :preset) "quick-review"))
+    (should-not switch-needed)))
+
+(ert-deftest ai-code-test-plan-switches-for-modify-preset ()
+  "Test that @tdd-dev triggers switch in gptel-plan context."
+  (let* ((result (ai-code--extract-and-remove-hashtags "@tdd-dev test this" 'gptel-plan))
+         (behaviors (nth 0 result))
+         (switch-needed (nth 2 result)))
+    (should (equal (plist-get behaviors :preset) "tdd-dev"))
+    (should switch-needed)))
+
+(ert-deftest ai-code-test-agent-allows-all-modes ()
+  "Test that all modes work in gptel-agent context."
+  (let* ((result (ai-code--extract-and-remove-hashtags "#=code fix this" 'gptel-agent))
+         (behaviors (nth 0 result))
+         (switch-needed (nth 2 result)))
+    (should (equal (plist-get behaviors :mode) "=code"))
+    (should-not switch-needed)))
+
+(ert-deftest ai-code-test-unknown-mode-without-equals ()
+  "Test that #review (without =) is treated as unknown."
+  (let* ((result (ai-code--extract-and-remove-hashtags "#review this" 'gptel-plan))
+         (behaviors (nth 0 result)))
+    (should (null (plist-get behaviors :mode)))))
+
+(ert-deftest ai-code-test-readonly-modes-include-review ()
+  "Test that review mode is in readonly modes."
+  (should (member "=review" ai-code--behavior-readonly-modes))
+  (should (member "=research" ai-code--behavior-readonly-modes))
+  (should (member "=spec" ai-code--behavior-readonly-modes)))
+
+(ert-deftest ai-code-test-modify-modes-include-code ()
+  "Test that code mode is in modify modes."
+  (should (member "=code" ai-code--behavior-modify-modes))
+  (should (member "=debug" ai-code--behavior-modify-modes)))
+
+(ert-deftest ai-code-test-preset-readonly-check ()
+  "Test preset readonly predicate."
+  (should (ai-code--behaviors-preset-readonly-p "quick-review"))
+  (should (ai-code--behaviors-preset-readonly-p "deep-review"))
+  (should (ai-code--behaviors-preset-readonly-p "research-deep"))
+  (should-not (ai-code--behaviors-preset-readonly-p "tdd-dev"))
+  (should-not (ai-code--behaviors-preset-readonly-p "quick-fix")))
 
 (provide 'test_ai-code-behaviors)
 

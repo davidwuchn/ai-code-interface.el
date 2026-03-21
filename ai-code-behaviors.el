@@ -235,6 +235,15 @@ If ROOT is nil, use current project root."
     "io" "contract" "backward" "analogy" "temporal" "name")
   "Modifier behaviors. Multiple can be active simultaneously.")
 
+(defconst ai-code--behavior-readonly-modes
+  '("=review" "=research" "=spec" "=test" "=assess" "=probe" "=mentor" "=navigate")
+  "Operating modes compatible with gptel-plan (read-only phase).
+These modes analyze, plan, or guide without modifying files.")
+
+(defconst ai-code--behavior-modify-modes
+  '("=code" "=debug" "=drive" "=record")
+  "Operating modes that modify files - require gptel-agent.")
+
 (defconst ai-code--constraint-modifiers
   '(("chinese" . "Reply in Simplified Chinese, use English in code files and comments")
     ("english" . "Reply in English")
@@ -254,6 +263,18 @@ These are lighter-weight than repo behaviors and cover common constraints.")
 (defconst ai-code-behaviors--synced-commit "8633aa9"
   "The upstream ai-behaviors commit this source code is synced with.
 Update this when syncing with upstream behavior changes.")
+
+(defun ai-code--behaviors-mode-readonly-p (mode)
+  "Return non-nil if MODE is compatible with gptel-plan (read-only)."
+  (member mode ai-code--behavior-readonly-modes))
+
+(defun ai-code--behaviors-preset-readonly-p (preset-name)
+  "Return non-nil if PRESET-NAME is compatible with gptel-plan (read-only).
+Checks the preset's operating mode against readonly modes."
+  (when-let ((data (assoc preset-name ai-code--behavior-presets)))
+    (let ((mode (plist-get (cdr data) :mode)))
+      (or (null mode)
+          (ai-code--behaviors-mode-readonly-p mode)))))
 
 (defun ai-code--behaviors-get-repo-behavior-names ()
   "Get list of behavior names from upstream repository.
@@ -679,17 +700,20 @@ whitespace, offer behavior completion instead of symbol completion."
   "Return non-nil if NAME is an operating mode behavior."
   (member name ai-code--behavior-operating-modes))
 
-(defun ai-code--extract-and-remove-hashtags (prompt-text)
+(defun ai-code--extract-and-remove-hashtags (prompt-text &optional context-preset)
   "Extract behaviors and remove hashtags from PROMPT-TEXT in single pass.
-Return cons cell (BEHAVIORS . CLEANED-PROMPT) where BEHAVIORS is plist
+CONTEXT-PRESET is 'gptel-plan or 'gptel-agent for context-aware validation.
+Return list (BEHAVIORS CLEANED-PROMPT SWITCH-NEEDED) where BEHAVIORS is plist
 (:mode MODE :modifiers MODS :constraint-modifiers CONSTRAINTS :preset PRESET) or nil.
-PRESET is the name of a preset detected via @preset-name syntax."
+PRESET is the name of a preset detected via @preset-name syntax.
+SWITCH-NEEDED is t when in gptel-plan and a modify mode/preset is used."
   (let ((mode nil)
         (modifiers nil)
         (constraints nil)
         (preset nil)
         (unknown nil)
         (unknown-presets nil)
+        (switch-needed nil)
         (valid-tags (append ai-code--behavior-operating-modes
                             ai-code--behavior-modifiers
                             (mapcar #'car ai-code--constraint-modifiers)))
@@ -724,6 +748,13 @@ PRESET is the name of a preset detected via @preset-name syntax."
         (when unknown-presets
           (message "Warning: Unknown presets preserved in prompt: @%s"
                    (mapconcat #'identity unknown-presets " @")))
+        (when (eq context-preset 'gptel-plan)
+          (when (and mode (not (ai-code--behaviors-mode-readonly-p mode)))
+            (message "Switching to agent mode for #%s..." mode)
+            (setq switch-needed t))
+          (when (and preset (not (ai-code--behaviors-preset-readonly-p preset)))
+            (message "Switching to agent mode for @%s..." preset)
+            (setq switch-needed t)))
         (goto-char (point-min))
         (while (re-search-forward "@\\([a-zA-Z0-9_-]+\\)\\s-*" nil t)
           (let ((name (match-string 1)))
@@ -735,12 +766,13 @@ PRESET is the name of a preset detected via @preset-name syntax."
           (while (re-search-forward (concat "#" (regexp-quote tag) "\\s-*") nil t)
             (replace-match "")))
         (setq result (string-trim (buffer-string)))))
-    (cons (when (or mode modifiers constraints preset)
+    (list (when (or mode modifiers constraints preset)
             (list :mode mode
                   :modifiers (nreverse modifiers)
                   :constraint-modifiers (nreverse constraints)
                   :preset preset))
-          result)))
+          result
+          switch-needed)))
 
 (defun ai-code--classify-prompt-intent-gptel (prompt-text)
   "Classify PROMPT-TEXT intent using GPTel.
@@ -1014,8 +1046,8 @@ Note: Preset-only prompts (empty after tag removal) are handled by
   (if (not ai-code-behaviors-enabled)
       prompt-text
     (let* ((extracted (ai-code--extract-and-remove-hashtags prompt-text))
-           (explicit-behaviors (car extracted))
-           (cleaned-prompt (cdr extracted))
+           (explicit-behaviors (nth 0 extracted))
+           (cleaned-prompt (nth 1 extracted))
            (session-state (ai-code--behaviors-get-state project-root))
            (pending-preset (ai-code--behaviors-get-pending-preset project-root)))
       (cond
@@ -1580,7 +1612,7 @@ Sets session state based on selection."
           (pcase (car value)
             ('preset (ai-code-behaviors-apply-preset (cdr value)))
             ('behavior
-             (let* ((extracted (car (ai-code--extract-and-remove-hashtags (cdr value))))
+             (let* ((extracted (nth 0 (ai-code--extract-and-remove-hashtags (cdr value))))
                     (behaviors (ai-code--merge-preset-with-modifiers nil extracted)))
                (when behaviors
                  (ai-code--behaviors-set-preset nil)
@@ -1703,8 +1735,8 @@ Otherwise return nil to continue normal processing."
   (when (and ai-code-behaviors-enabled
              (stringp prompt-text))
     (let* ((extracted (ai-code--extract-and-remove-hashtags prompt-text))
-           (explicit-behaviors (car extracted))
-           (cleaned-prompt (cdr extracted)))
+           (explicit-behaviors (nth 0 extracted))
+           (cleaned-prompt (nth 1 extracted)))
       (when (and explicit-behaviors
                  (string-empty-p (string-trim cleaned-prompt)))
         (let* ((preset-name (plist-get explicit-behaviors :preset))
@@ -1800,13 +1832,15 @@ Returns t if enabled, nil if `ai-code--insert-prompt' is not defined."
 (defvar gptel--fsm-last)
 (declare-function gptel-fsm-info "gptel-request" (fsm))
 
-(defun ai-code--gptel-agent-process-behaviors (prompt-text project-root)
+(defun ai-code--gptel-agent-process-behaviors (prompt-text project-root &optional context-preset)
   "Process behaviors for PROMPT-TEXT in gptel-agent context.
 PROJECT-ROOT specifies the project for state lookup.
+CONTEXT-PRESET is 'gptel-plan or 'gptel-agent for mode validation.
 Respects `ai-code-behaviors-gptel-agent-auto-classify'.
-Returns cons cell (BEHAVIORS-APPLIED . RESULT-TEXT).
+Returns list (BEHAVIORS-APPLIED RESULT-TEXT SWITCH-NEEDED).
 BEHAVIORS-APPLIED is t if behaviors were applied (or preset-only).
 RESULT-TEXT is the processed text or nil for preset-only prompts.
+SWITCH-NEEDED is t when in gptel-plan and modify mode/preset is used.
 
 Priority order (gptel-agent context):
 1. Explicit #hashtags/@preset - always wins
@@ -1814,9 +1848,10 @@ Priority order (gptel-agent context):
 3. Pending preset (committed on first prompt)
 4. Session state (fallback)
 5. No changes"
-  (let* ((extracted (ai-code--extract-and-remove-hashtags prompt-text))
-         (explicit-behaviors (car extracted))
-         (cleaned-prompt (cdr extracted))
+  (let* ((extracted (ai-code--extract-and-remove-hashtags prompt-text context-preset))
+         (explicit-behaviors (nth 0 extracted))
+         (cleaned-prompt (nth 1 extracted))
+         (switch-needed (nth 2 extracted))
          (session-state (ai-code--behaviors-get-state project-root))
          (pending-preset (ai-code--behaviors-get-pending-preset project-root))
          (classified (and ai-code-behaviors-gptel-agent-auto-classify
@@ -1837,8 +1872,8 @@ Priority order (gptel-agent context):
                        (if preset-name (concat "@" preset-name) "")
                        (if-let ((mode (plist-get final-behaviors :mode)))
                            (format " (%s)" mode) ""))
-              (cons t nil))
-          (cons t (ai-code--behaviors-wrap-with-instruction final-behaviors cleaned-prompt)))))
+              (list t nil switch-needed))
+          (list t (ai-code--behaviors-wrap-with-instruction final-behaviors cleaned-prompt) switch-needed))))
      (meets-threshold
       (ai-code--behaviors-clear-pending-preset project-root)
       (let* ((suggested-preset (ai-code--suggest-preset-for-classification classified))
@@ -1849,16 +1884,16 @@ Priority order (gptel-agent context):
                                               (format "Auto-classified: @%s (%s)"
                                                       (or suggested-preset "custom")
                                                       (or (plist-get final-behaviors :mode) "unknown")))
-        (cons t (ai-code--behaviors-wrap-with-instruction final-behaviors prompt-text))))
+        (list t (ai-code--behaviors-wrap-with-instruction final-behaviors prompt-text) nil)))
      ((and pending-preset (not (string-empty-p (string-trim cleaned-prompt))))
       (ai-code--behaviors-clear-pending-preset project-root)
       (let ((final-behaviors (ai-code--merge-preset-with-modifiers pending-preset nil)))
         (ai-code--behaviors-apply-and-format pending-preset final-behaviors project-root
                                               (format "Activated preset: @%s" pending-preset))
-        (cons t (ai-code--behaviors-wrap-with-instruction final-behaviors cleaned-prompt))))
+        (list t (ai-code--behaviors-wrap-with-instruction final-behaviors cleaned-prompt) nil)))
      (session-state
-      (cons t (ai-code--behaviors-wrap-with-instruction session-state prompt-text)))
-     (t (cons nil prompt-text)))))
+      (list t (ai-code--behaviors-wrap-with-instruction session-state prompt-text) nil))
+     (t (list nil prompt-text nil)))))
 
 (defun ai-code--gptel-agent-transform-inject-behaviors (callback fsm)
   "Transform function for gptel-agent to inject behaviors.
@@ -1889,10 +1924,15 @@ Handles preset-only prompts by applying state without sending."
                 (message "ai-code-behaviors: Repository not available, skipping behavior injection")
                 (funcall callback))
             (let* ((project-root (ai-code--behaviors-project-root source-buffer))
-                   (result (ai-code--gptel-agent-process-behaviors prompt-text project-root))
-                   (behaviors-applied (car result))
-                   (processed-text (cdr result))
+                   (result (ai-code--gptel-agent-process-behaviors prompt-text project-root preset))
+                   (behaviors-applied (nth 0 result))
+                   (processed-text (nth 1 result))
+                   (switch-needed (nth 2 result))
                    (behaviors-state (ai-code--behaviors-get-state project-root)))
+              (when (and switch-needed (buffer-live-p source-buffer))
+                (with-current-buffer source-buffer
+                  (gptel--apply-preset 'gptel-agent
+                    (lambda (sym val) (set (make-local-variable sym) val)))))
               (puthash project-root
                        (list :original prompt-text
                              :processed processed-text
@@ -1985,28 +2025,64 @@ Return fontification info for text up to END."
 (defun ai-code--behavior-hashtag-capf ()
   "Completion-at-point function for #behavior hashtags.
 Works in gptel-agent buffers and ai-code-prompt-mode.
-Shows operating modes, modifiers, and constraints with annotations."
+Requires #= prefix for operating modes, # prefix for modifiers/constraints.
+In gptel-plan mode, only shows readonly operating modes."
   (when (and ai-code-behaviors-enabled
              (or (bound-and-true-p gptel-mode)
                  (and (boundp 'major-mode) (eq major-mode 'ai-code-prompt-mode))))
-    (let ((pos (save-excursion
-                 (skip-chars-backward "=a-zA-Z0-9_-")
-                 (point))))
+    (let* ((pos (save-excursion
+                  (skip-chars-backward "=a-zA-Z0-9_-")
+                  (point)))
+           (current-preset (when (boundp 'gptel--preset) gptel--preset))
+           (has-equals (and (< pos (point))
+                            (eq (char-after pos) ?=))))
       (when (and (> pos (point-min))
                  (eq (char-before pos) ?#)
                  (or (= pos (1+ (point-min)))
                      (memq (char-syntax (char-before (1- pos))) '(?\s ?\t ?\n))))
-        (list pos (point)
-              (ai-code--behavior-hashtag-completion-table)
-              :exclusive 'no
-              :annotation-function #'ai-code--behavior-hashtag-annotation
-              :exit-function
-              (lambda (_str _status)
-                (when (looking-at "\\>")
-                  (insert " "))))))))
+        (cond
+         (has-equals
+          (let ((start-pos (1+ pos)))
+            (list start-pos (point)
+                  (ai-code--behavior-modes-completion-table current-preset)
+                  :exclusive 'no
+                  :annotation-function #'ai-code--behavior-mode-annotation
+                  :exit-function
+                  (lambda (_str _status)
+                    (when (looking-at "\\>")
+                      (insert " "))))))
+         (t
+          (list pos (point)
+                (ai-code--behavior-modifiers-completion-table)
+                :exclusive 'no
+                :annotation-function #'ai-code--behavior-hashtag-annotation
+                :exit-function
+                (lambda (_str _status)
+                  (when (looking-at "\\>")
+                    (insert " "))))))))))
+
+(defun ai-code--behavior-modes-completion-table (&optional context-preset)
+  "Return completion table for operating modes.
+CONTEXT-PRESET filters to readonly modes when 'gptel-plan."
+  (let ((modes (if (eq context-preset 'gptel-plan)
+                   ai-code--behavior-readonly-modes
+                 ai-code--behavior-operating-modes)))
+    (mapcar (lambda (m) (substring m 1)) modes)))
+
+(defun ai-code--behavior-modifiers-completion-table ()
+  "Return completion table for modifiers and constraints."
+  (append ai-code--behavior-modifiers
+          (mapcar #'car ai-code--constraint-modifiers)))
+
+(defun ai-code--behavior-mode-annotation (name)
+  "Return annotation for operating mode NAME."
+  (let ((annotation (ai-code--extract-behavior-annotation (concat "=" name))))
+    (if annotation (format "  %s" annotation) "  (operating mode)")))
 
 (defun ai-code--behavior-hashtag-completion-table ()
-  "Return completion table for behavior hashtags."
+  "Return completion table for behavior hashtags.
+Deprecated: Use ai-code--behavior-modes-completion-table and
+ai-code--behavior-modifiers-completion-table instead."
   (append
    (mapcar (lambda (m) (substring m 1)) ai-code--behavior-operating-modes)
    (mapcar (lambda (m) m) ai-code--behavior-modifiers)
@@ -2029,19 +2105,27 @@ Shows operating modes, modifiers, and constraints with annotations."
 (defun ai-code--behavior-preset-gptel-capf ()
   "Completion at point for behavior presets in gptel-mode.
 Shows behavior presets like @tdd-dev with descriptions.
+In gptel-plan mode, only shows readonly-compatible presets.
 Works alongside gptel's built-in preset completion."
   (when (and ai-code-behaviors-enabled
              (bound-and-true-p gptel-mode)
              ai-code--behavior-presets)
-    (let ((pos (save-excursion
-                 (skip-chars-backward "a-zA-Z0-9_-")
-                 (point))))
+    (let* ((pos (save-excursion
+                  (skip-chars-backward "a-zA-Z0-9_-")
+                  (point)))
+           (current-preset (when (boundp 'gptel--preset) gptel--preset))
+           (available-presets
+            (if (eq current-preset 'gptel-plan)
+                (cl-remove-if-not
+                 (lambda (p) (ai-code--behaviors-preset-readonly-p (car p)))
+                 ai-code--behavior-presets)
+              ai-code--behavior-presets)))
       (when (and (> pos (point-min))
                  (eq (char-before pos) ?@)
                  (or (= pos (1+ (point-min)))
                      (memq (char-syntax (char-before (1- pos))) '(?\s ?\t ?\n))))
         (list pos (point)
-              (mapcar #'car ai-code--behavior-presets)
+              (mapcar #'car available-presets)
               :exclusive 'no
               :annotation-function #'ai-code--behavior-preset-gptel-annotation
               :exit-function
