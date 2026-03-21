@@ -1970,14 +1970,12 @@ We add `t' to local transform list so gptel merges with default value."
     (unless (memq t gptel-prompt-transform-functions)
       (setq gptel-prompt-transform-functions
             (cons t gptel-prompt-transform-functions))))
-  (let ((keyword `((ai-code--fontify-behavior-keyword
-                    0 (when (member (match-string 1)
-                                    ',(append ai-code--behavior-operating-modes
-                                              ai-code--behavior-modifiers
-                                              (mapcar #'car ai-code--constraint-modifiers)))
-                       '(:box -1 :inherit font-lock-keyword-face))
-                    prepend))))
-    (font-lock-add-keywords nil keyword t)))
+  (font-lock-add-keywords
+   nil
+   `((ai-code--fontify-behavior-keyword
+      0 ',(list :box -1 :inherit 'font-lock-keyword-face)
+      prepend))
+   t))
 
 (defun ai-code--fontify-behavior-keyword (end)
   "Font-lock function for behavior hashtags in chat buffers.
