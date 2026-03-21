@@ -284,6 +284,39 @@
   (should (assoc "test-after" ai-code--constraint-modifiers))
   (should (assoc "strict-lint" ai-code--constraint-modifiers)))
 
+(ert-deftest ai-code-test-constraint-bundles-defined ()
+  "Test that constraint bundles are defined."
+  (should ai-code--constraint-bundles)
+  (should (assoc "react-stack" ai-code--constraint-bundles))
+  (should (assoc "rust-stack" ai-code--constraint-bundles))
+  (should (assoc "python-stack" ai-code--constraint-bundles)))
+
+(ert-deftest ai-code-test-expand-constraint-bundle ()
+  "Test expanding a constraint bundle to its constraints."
+  (let ((constraints (ai-code--expand-constraint-bundle "react-stack")))
+    (should constraints)
+    (should (member "strict-types" constraints))
+    (should (member "functional" constraints))
+    (should (member "async-await" constraints))))
+
+(ert-deftest ai-code-test-extract-constraint-bundle-from-prompt ()
+  "Test extracting constraint bundle from @bundle-name in prompt."
+  (let* ((result (nth 0 (ai-code--extract-and-remove-hashtags "@react-stack implement feature")))
+         (constraints (plist-get result :constraint-modifiers)))
+    (should result)
+    (should (member "strict-types" constraints))
+    (should (member "functional" constraints))))
+
+(ert-deftest ai-code-test-extract-constraint-bundle-with-preset ()
+  "Test that constraint bundle and preset can be used together."
+  (let* ((result (nth 0 (ai-code--extract-and-remove-hashtags "@tdd-dev @rust-stack test the parser")))
+         (preset (plist-get result :preset))
+         (constraints (plist-get result :constraint-modifiers)))
+    (should result)
+    (should (equal preset "tdd-dev"))
+    (should (member "strict-types" constraints))
+    (should (member "immutable" constraints))))
+
 (ert-deftest ai-code-test-extract-constraint-modifiers ()
   "Test extracting constraint modifiers from hashtags."
   (let ((result (nth 0 (ai-code--extract-and-remove-hashtags "Fix bug #=code #chinese #test-after"))))
@@ -291,6 +324,77 @@
     (should (equal (plist-get result :mode) "=code"))
     (should (member "chinese" (plist-get result :constraint-modifiers)))
     (should (member "test-after" (plist-get result :constraint-modifiers)))))
+
+(ert-deftest ai-code-test-glob-to-regexp ()
+  "Test glob pattern to regexp conversion."
+  (let ((regex (ai-code--glob-to-regexp "*.csproj")))
+    (should (string-match-p (concat regex "$") "MyProject.csproj"))
+    (should (string-match-p (concat regex "$") "test.csproj"))
+    (should-not (string-match-p (concat regex "$") "test.txt")))
+  (let ((regex (ai-code--glob-to-regexp "*.json")))
+    (should (string-match-p (concat regex "$") "tsconfig.json"))
+    (should-not (string-match-p (concat regex "$") "tsconfig.js"))))
+
+(ert-deftest ai-code-test-glob-pattern-p ()
+  "Test glob pattern detection."
+  (should (ai-code--glob-pattern-p "*.csproj"))
+  (should (ai-code--glob-pattern-p "test?.txt"))
+  (should-not (ai-code--glob-pattern-p "tsconfig.json"))
+  (should-not (ai-code--glob-pattern-p "Cargo.toml")))
+
+(ert-deftest ai-code-test-expand-glob-in-dir ()
+  "Test glob expansion in directory."
+  (let ((temp-dir (make-temp-file "glob-test" t)))
+    (unwind-protect
+        (progn
+          (write-region "" nil (expand-file-name "Project.csproj" temp-dir))
+          (write-region "" nil (expand-file-name "Other.csproj" temp-dir))
+          (write-region "" nil (expand-file-name "test.txt" temp-dir))
+          (let ((matches (ai-code--expand-glob-in-dir "*.csproj" temp-dir)))
+            (should (= (length matches) 2))
+            (should (cl-find-if (lambda (f) (string-suffix-p "Project.csproj" f)) matches))
+            (should (cl-find-if (lambda (f) (string-suffix-p "Other.csproj" f)) matches))
+            (should-not (cl-find-if (lambda (f) (string-suffix-p "test.txt" f)) matches))))
+      (delete-directory temp-dir t))))
+
+(ert-deftest ai-code-test-bundle-persistence-parsing ()
+  "Test that bundle is correctly parsed from persistence file format."
+  (let ((test-content "# Auto-detected constraints
+
+#strict-types
+#chinese
+
+# Bundle: rust-stack
+"))
+    (with-temp-buffer
+      (insert test-content)
+      (goto-char (point-min))
+      (let ((constraints nil)
+            (bundle nil))
+        (while (not (eobp))
+          (let ((line (string-trim (thing-at-point 'line t))))
+            (when (string-match-p "^#" line)
+              (let ((name (string-trim (substring line 1))))
+                (cond
+                 ((string-prefix-p "Bundle:" name)
+                  (setq bundle (string-trim (substring name 7))))
+                 ((assoc name ai-code--constraint-modifiers)
+                  (push name constraints))))))
+          (forward-line 1))
+        (should (equal bundle "rust-stack"))
+        (should (member "strict-types" constraints))
+        (should (member "chinese" constraints))))))
+
+(ert-deftest ai-code-test-project-scoped-bundle-storage ()
+  "Test that active bundles are stored per-project."
+  (let ((project-a "/tmp/test-project-a")
+        (project-b "/tmp/test-project-b"))
+    (ai-code--behaviors-set-active-bundle "rust-stack" project-a)
+    (ai-code--behaviors-set-active-bundle "react-stack" project-b)
+    (should (equal (ai-code--behaviors-get-active-bundle project-a) "rust-stack"))
+    (should (equal (ai-code--behaviors-get-active-bundle project-b) "react-stack"))
+    (ai-code--behaviors-clear-active-bundle project-a)
+    (ai-code--behaviors-clear-active-bundle project-b)))
 
 (ert-deftest ai-code-test-build-instruction-with-constraints ()
   "Test that behavior instructions include constraints."
@@ -302,7 +406,7 @@
          (instruction (ai-code--build-behavior-instruction behaviors)))
     (should instruction)
     (should (string-match-p "AdditionalContext: <constraints>" instruction))
-    (should (string-match-p "Reply in Simplified Chinese" instruction))))
+    (should (string-match-p "简体中文" instruction))))
 
 (ert-deftest ai-code-test-build-instruction-with-custom-suffix ()
   "Test that behavior instructions include custom suffix."
@@ -332,6 +436,18 @@
          :custom-suffix nil))
   (ai-code--behaviors-update-mode-line)
   (should (string= (ai-code--behaviors-mode-line-string) "[=code deep +2]"))
+  (ai-code-behaviors-clear))
+
+(ert-deftest ai-code-test-mode-line-with-bundle ()
+  "Test that mode-line shows bundle name when bundle is active."
+  (ai-code-behaviors-clear)
+  (ai-code--behaviors-set-active-bundle "rust-stack")
+  (ai-code--behaviors-set-state
+   (list :mode nil
+         :modifiers nil
+         :constraint-modifiers '("strict-types" "immutable")))
+  (ai-code--behaviors-update-mode-line)
+  (should (string-match-p "@rust-stack" (ai-code--behaviors-mode-line-string)))
   (ai-code-behaviors-clear))
 
 (ert-deftest ai-code-test-mode-line-with-custom-suffix ()
@@ -530,7 +646,7 @@
   (let ((result (ai-code--process-behaviors "@tdd-dev #chinese implement feature")))
     (should (string-match-p "operating-mode" result))
     (should (string-match-p "constraints" result))
-    (should (string-match-p "Chinese" result))))
+    (should (string-match-p "中文" result))))
 
 (ert-deftest ai-code-test-unknown-preset-ignored ()
   "Test that unknown @preset-name is ignored."
@@ -776,6 +892,23 @@ This happens when gptel-agent package is not loaded."
     (should (member "tdd" table))
     (should (member "chinese" table))))
 
+(ert-deftest ai-code-test-preset-and-bundle-completion ()
+  "Test that completion includes both presets and bundles."
+  (let ((names (ai-code--behavior-preset-and-bundle-names)))
+    (should (member "@tdd-dev" names))
+    (should (member "@quick-fix" names))
+    (should (member "@rust-stack" names))
+    (should (member "@react-stack" names))
+    (should (member "@python-stack" names))))
+
+(ert-deftest ai-code-test-bundle-names-with-prefix ()
+  "Test that bundle names have @ prefix."
+  (let ((names (ai-code--constraint-bundle-names)))
+    (should (member "@rust-stack" names))
+    (should (member "@react-stack" names))
+    (dolist (name names)
+      (should (string-prefix-p "@" name)))))
+
 (ert-deftest ai-code-test-behavior-hashtag-annotation ()
   "Test that hashtag annotation function works."
   (let ((annotation (ai-code--behavior-hashtag-annotation "code")))
@@ -784,7 +917,7 @@ This happens when gptel-agent package is not loaded."
     (should (stringp annotation)))
   (let ((annotation (ai-code--behavior-hashtag-annotation "chinese")))
     (should (stringp annotation))
-    (should (string-match-p "Chinese" annotation))))
+    (should (string-match-p "中文" annotation))))
 
 ;;; Preset Completion Tests
 

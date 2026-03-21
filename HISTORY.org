@@ -2,6 +2,15 @@
 * Release history
 
 ** Main branch change
+- Feat: Add constraint bundles system with 20 tech stack presets (@rust-stack, @react-stack, etc.)
+- Feat: Expand constraint catalog with 50+ constraints (testing, safety, error handling, performance, API design, logging)
+- Feat: Auto-detect constraints from project config files (tsconfig.json, pyproject.toml, Cargo.toml, etc.)
+- Feat: Add project-scoped constraint persistence (.ai-behaviors/constraints)
+- Feat: Mode-line integration for constraint bundles with gptel-plan filtering
+- Feat: Completion support for @bundle-name in prompts
+- Fix: Glob pattern matching for *.csproj and similar patterns in auto-detect
+- Fix: Bundle loading from persistence file with space handling
+- Fix: Mode-line update on bundle apply/clear
 - Feat: Add configurable two-column ai-code transient menu
 - Chore: Add Claude Code support for Emacs MCP server 
 - Feat: Add an Emacs MCP server with built-in tools and agent integration for Codex CLI and GitHub Copilot CLI

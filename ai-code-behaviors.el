@@ -223,6 +223,21 @@ If ROOT is nil, use current project root."
   (remhash (or root (ai-code--behaviors-project-root))
            ai-code--behaviors-pending-presets))
 
+(defun ai-code--behaviors-get-active-bundle (&optional root)
+  "Get active constraint bundle for project ROOT, or current project if nil."
+  (gethash (or root (ai-code--behaviors-project-root))
+           ai-code--active-constraint-bundles))
+
+(defun ai-code--behaviors-set-active-bundle (bundle &optional root)
+  "Set active constraint BUNDLE for project ROOT, or current project if nil."
+  (puthash (or root (ai-code--behaviors-project-root)) bundle
+           ai-code--active-constraint-bundles))
+
+(defun ai-code--behaviors-clear-active-bundle (&optional root)
+  "Clear active constraint bundle for project ROOT."
+  (remhash (or root (ai-code--behaviors-project-root))
+           ai-code--active-constraint-bundles))
+
 (defconst ai-code--behavior-operating-modes
   '("=code" "=debug" "=research" "=review" "=spec" "=test"
     "=mentor" "=assess" "=record" "=drive" "=navigate" "=probe")
@@ -245,20 +260,243 @@ These modes analyze, plan, or guide without modifying files.")
   "Operating modes that modify files - require gptel-agent.")
 
 (defconst ai-code--constraint-modifiers
-  '(("chinese" . "Reply in Simplified Chinese, use English in code files and comments")
-    ("english" . "Reply in English")
-    ("test-after" . "Run unit-tests after code changes and follow up on test results")
-    ("strict-lint" . "Run linter before considering code complete, fix all lint errors")
-    ("no-comments" . "Do not add comments to code unless explicitly requested")
-    ("doc-comments" . "Add docstrings/documentation comments to all public functions")
-    ("strict-types" . "Use strict type annotations, avoid 'any' or dynamic types")
-    ("functional" . "Prefer functional programming style: pure functions, no mutations, immutability")
-    ("defensive" . "Add input validation and error handling to all public functions")
-    ("secure" . "Review for security vulnerabilities: sanitize inputs, avoid injection risks")
-    ("performant" . "Optimize for performance: avoid unnecessary allocations, use efficient algorithms")
-    ("minimal" . "Write minimal code: prefer built-in functions, no over-engineering, keep it simple"))
+  '(;; Language
+    ("chinese" . "∀ response: 简体中文. code ∪ comments = English.    -- HARD CONSTRAINT")
+    ("english" . "∀ response: English.    -- HARD CONSTRAINT")
+    ("japanese" . "∀ response: 日本語. code ∪ comments = English.    -- HARD CONSTRAINT")
+    ("korean" . "∀ response: 한국어. code ∪ comments = English.    -- HARD CONSTRAINT")
+    
+    ;; Testing
+    ("test-after" . "code → test → verify. No untested code ships.    -- HARD CONSTRAINT")
+    ("test-unit" . "Unit tests for every function. Isolated, fast, deterministic.    -- HARD CONSTRAINT")
+    ("test-integration" . "Integration tests for component boundaries.    -- HARD CONSTRAINT")
+    ("test-e2e" . "End-to-end tests for critical user flows.    -- HARD CONSTRAINT")
+    ("test-coverage" . "Coverage ≥ 80%. Track and report gaps.    -- HARD CONSTRAINT")
+    
+    ;; Code Style
+    ("strict-lint" . "lint ∩ errors = ∅. Fix before commit.    -- HARD CONSTRAINT")
+    ("strict-types" . "∀ params/returns: explicit types. 'any' ⊆ forbidden.    -- HARD CONSTRAINT")
+    ("no-comments" . "code = documentation. Comments only when code cannot speak.    -- HARD CONSTRAINT")
+    ("doc-comments" . "∀ public: docstring. Parameters, returns, throws, examples.    -- HARD CONSTRAINT")
+    ("no-todos" . "No TODO/FIXME in committed code. Resolve or create issue.    -- HARD CONSTRAINT")
+    
+    ;; Paradigm
+    ("functional" . "state ∩ mutation = ∅. Pure functions. Immutable data.    -- HARD CONSTRAINT")
+    ("immutable" . "∀ data: const/final. No in-place mutation.    -- HARD CONSTRAINT")
+    ("oop" . "Encapsulate state. Message passing. Single responsibility.    -- HARD CONSTRAINT")
+    ("procedural" . "Step-by-step functions. Explicit state. Clear flow.    -- HARD CONSTRAINT")
+    
+    ;; Safety
+    ("defensive" . "∀ public input: validate. Fail fast, fail explicitly.    -- HARD CONSTRAINT")
+    ("secure" . "∀ input: untrusted. OWASP Top 10 ⊆ review.    -- HARD CONSTRAINT")
+    ("no-unsafe" . "unsafe/raw pointers ⊆ forbidden. Bounds checked.    -- HARD CONSTRAINT")
+    ("memory-safe" . "No memory leaks. Ownership clear. Resources freed.    -- HARD CONSTRAINT")
+    
+    ;; Error Handling
+    ("errors-raise" . "Error → throw/raise. Let caller handle.    -- HARD CONSTRAINT")
+    ("errors-result" . "Error → Result/Either type. Explicit handling.    -- HARD CONSTRAINT")
+    ("errors-checked" . "∀ errors: declared and handled. No silent failures.    -- HARD CONSTRAINT")
+    ("errors-typed" . "Typed exceptions. Specific error types per domain.    -- HARD CONSTRAINT")
+    
+    ;; Performance
+    ("performant" . "O(n) preferred. Allocations minimized. Hot paths identified.    -- HARD CONSTRAINT")
+    ("minimal" . "Least code. Built-ins preferred. No over-engineering.    -- HARD CONSTRAINT")
+    ("lazy" . "Compute on demand. Defer until needed. Cache results.    -- HARD CONSTRAINT")
+    ("batch" . "Batch operations. Minimize round-trips. Chunk large datasets.    -- HARD CONSTRAINT")
+    
+    ;; Async
+    ("async-await" . "async/await preferred. No callback hell.    -- HARD CONSTRAINT")
+    ("sync-only" . "No async. Blocking calls acceptable.    -- HARD CONSTRAINT")
+    ("reactive" . "Streams and observables. Push-based data flow.    -- HARD CONSTRAINT")
+    
+    ;; API Design
+    ("api-rest" . "REST conventions. Resources, verbs, status codes.    -- HARD CONSTRAINT")
+    ("api-graphql" . "GraphQL conventions. Schema-first.    -- HARD CONSTRAINT")
+    ("api-rpc" . "RPC style. Procedure calls. Named operations.    -- HARD CONSTRAINT")
+    ("api-versioned" . "Version all endpoints. Backwards compatible.    -- HARD CONSTRAINT")
+    
+    ;; Logging
+    ("logging-verbose" . "Log entry/exit, params, timing. Debug-friendly.    -- HARD CONSTRAINT")
+    ("logging-minimal" . "Errors only. Production-ready.    -- HARD CONSTRAINT")
+    ("no-logging" . "No log statements. Pure functions.    -- HARD CONSTRAINT")
+    ("structured-logging" . "JSON logs. Correlation IDs. Searchable.    -- HARD CONSTRAINT")
+    
+    ;; State
+    ("stateless" . "No internal state. Pure functions. Idempotent.    -- HARD CONSTRAINT")
+    ("state-explicit" . "State changes logged. Transitions named.    -- HARD CONSTRAINT")
+    
+    ;; Naming
+    ("naming-verbose" . "Descriptive names. No abbreviations. Self-documenting.    -- HARD CONSTRAINT")
+    ("naming-short" . "Concise names. Common abbreviations OK.    -- HARD CONSTRAINT")
+    
+    ;; Dependencies
+    ("no-deps" . "No new dependencies. Use built-ins.    -- HARD CONSTRAINT")
+    ("minimal-deps" . "Minimize dependencies. Audit each addition.    -- HARD CONSTRAINT"))
   "Built-in constraint modifiers with their template instructions.
-These are lighter-weight than repo behaviors and cover common constraints.")
+These are lighter-weight than repo behaviors and cover common constraints.
+Format: terse formal notation with -- HARD CONSTRAINT marker for LLM parsing.")
+
+(defconst ai-code--constraint-bundles
+  '(("react-stack" . (:constraints ("strict-types" "functional" "async-await" "test-unit")
+                      :description "React + TypeScript stack"))
+    ("spring-stack" . (:constraints ("defensive" "doc-comments" "errors-raise" "test-integration")
+                       :description "Spring Boot stack"))
+    ("clojure-stack" . (:constraints ("functional" "immutable" "errors-result" "test-unit")
+                         :description "Clojure/Scheme functional stack"))
+    ("rust-stack" . (:constraints ("strict-types" "immutable" "errors-result" "no-unsafe" "memory-safe")
+                      :description "Rust safety-first stack"))
+    ("python-stack" . (:constraints ("strict-types" "test-after" "doc-comments" "secure")
+                        :description "Python production stack"))
+    ("node-stack" . (:constraints ("strict-types" "async-await" "test-unit" "minimal")
+                      :description "Node.js/TypeScript stack"))
+    ("go-stack" . (:constraints ("errors-checked" "minimal" "test-unit" "performant")
+                     :description "Go production stack"))
+    ("elixir-stack" . (:constraints ("functional" "immutable" "async-await" "test-unit")
+                        :description "Elixir/Phoenix stack"))
+    ("kotlin-stack" . (:constraints ("strict-types" "defensive" "doc-comments" "test-integration")
+                        :description "Kotlin/JVM stack"))
+    ("swift-stack" . (:constraints ("strict-types" "memory-safe" "async-await" "test-unit")
+                       :description "Swift/iOS stack"))
+    ("dotnet-stack" . (:constraints ("strict-types" "defensive" "async-await" "test-unit")
+                        :description ".NET/C# stack"))
+    ("rails-stack" . (:constraints ("strict-types" "test-after" "secure" "api-rest")
+                       :description "Ruby on Rails stack"))
+    ("django-stack" . (:constraints ("strict-types" "secure" "test-after" "api-rest")
+                        :description "Django stack"))
+    ("fastapi-stack" . (:constraints ("strict-types" "async-await" "api-rest" "test-unit")
+                         :description "FastAPI stack"))
+    ("graphql-stack" . (:constraints ("strict-types" "api-graphql" "test-integration" "secure")
+                         :description "GraphQL API stack"))
+    ("microservices-stack" . (:constraints ("api-rest" "async-await" "stateless" "secure" "structured-logging")
+                               :description "Microservices architecture"))
+    ("serverless-stack" . (:constraints ("stateless" "minimal" "async-await" "test-unit")
+                            :description "Serverless/Lambda stack"))
+    ("embedded-stack" . (:constraints ("minimal" "no-deps" "memory-safe" "performant")
+                          :description "Embedded systems stack"))
+    ("data-pipeline-stack" . (:constraints ("functional" "lazy" "batch" "test-unit")
+                               :description "Data processing pipeline stack"))
+    ("cli-tool-stack" . (:constraints ("minimal" "errors-checked" "stateless" "doc-comments")
+                          :description "CLI tool stack")))
+  "Predefined constraint bundles for common tech stacks.
+Each bundle is (NAME . (:constraints (C1 C2 ...) :description DESC)).")
+
+(defconst ai-code--project-config-constraint-map
+  '(;; TypeScript/JavaScript
+    ("tsconfig.json" . (:patterns (("strict.*true" . "strict-types")
+                                   ("noImplicitAny.*true" . "strict-types"))
+                       :constraints ("strict-types")))
+    (".eslintrc" . (:constraints ("strict-lint")))
+    (".eslintrc.js" . (:constraints ("strict-lint")))
+    (".eslintrc.json" . (:constraints ("strict-lint")))
+    (".eslintrc.yml" . (:constraints ("strict-lint")))
+    (".eslintrc.yaml" . (:constraints ("strict-lint")))
+    ("eslint.config.js" . (:constraints ("strict-lint")))
+    (".prettierrc" . (:constraints ("strict-lint")))
+    (".prettierrc.json" . (:constraints ("strict-lint")))
+    
+    ;; Python
+    ("pyproject.toml" . (:patterns (("\\[tool.mypy\\]" . "strict-types")
+                                    ("\\[tool.pytest\\]" . "test-after")
+                                    ("pytest" . "test-unit")
+                                    ("strict = true" . "strict-types"))))
+    ("setup.cfg" . (:patterns (("mypy" . "strict-types")
+                               ("pytest" . "test-after"))))
+    ("mypy.ini" . (:constraints ("strict-types")))
+    ("pytest.ini" . (:constraints ("test-after" "test-unit")))
+    ("tox.ini" . (:constraints ("test-after")))
+    ("ruff.toml" . (:constraints ("strict-lint")))
+    (".ruff.toml" . (:constraints ("strict-lint")))
+    
+    ;; Rust
+    ("Cargo.toml" . (:constraints ("strict-types")
+                      :patterns (("\\[dev-dependencies\\]" . "test-unit"))))
+    
+    ;; Go
+    ("go.mod" . (:constraints ("errors-checked" "minimal")))
+    
+    ;; Java/Kotlin
+    ("pom.xml" . (:constraints ("doc-comments" "defensive")))
+    ("build.gradle" . (:constraints ("doc-comments" "defensive")))
+    ("build.gradle.kts" . (:constraints ("doc-comments" "defensive")))
+    
+    ;; Clojure
+    ("project.clj" . (:constraints ("functional" "immutable")))
+    ("deps.edn" . (:constraints ("functional" "immutable")))
+    ("shadow-cljs.edn" . (:constraints ("functional" "immutable")))
+    
+    ;; Ruby
+    ("Gemfile" . (:constraints ("test-after")))
+    (".rubocop.yml" . (:constraints ("strict-lint")))
+    
+    ;; Elixir
+    ("mix.exs" . (:constraints ("functional" "immutable" "test-unit")))
+    
+    ;; Swift
+    ("Package.swift" . (:constraints ("memory-safe" "async-await")))
+    (".swiftlint.yml" . (:constraints ("strict-lint")))
+    
+    ;; .NET
+    ("*.csproj" . (:constraints ("strict-types" "async-await")))
+    ("Directory.Build.props" . (:constraints ("strict-types")))
+    
+    ;; CI/CD - implies security focus
+    (".github/workflows" . (:constraints ("secure")))
+    (".gitlab-ci.yml" . (:constraints ("secure")))
+    ("azure-pipelines.yml" . (:constraints ("secure")))
+    ("Jenkinsfile" . (:constraints ("secure")))
+    
+    ;; Testing frameworks
+    ("jest.config.js" . (:constraints ("test-unit")))
+    ("jest.config.ts" . (:constraints ("test-unit")))
+    ("vitest.config.ts" . (:constraints ("test-unit")))
+    ("karma.conf.js" . (:constraints ("test-unit")))
+    ("mocha.opts" . (:constraints ("test-unit")))
+    (".mocharc.json" . (:constraints ("test-unit")))
+    
+    ;; API definitions
+    ("openapi.yaml" . (:constraints ("api-rest")))
+    ("openapi.json" . (:constraints ("api-rest")))
+    ("swagger.yaml" . (:constraints ("api-rest")))
+    ("schema.graphql" . (:constraints ("api-graphql")))
+    ("schema.gql" . (:constraints ("api-graphql")))
+    
+    ;; Docker/Container
+    ("Dockerfile" . (:constraints ("minimal" "secure")))
+    ("docker-compose.yml" . (:constraints ("secure")))
+    ("docker-compose.yaml" . (:constraints ("secure")))
+    
+    ;; Kubernetes
+    ("k8s" . (:constraints ("secure" "stateless")))
+    ("kubernetes" . (:constraints ("secure" "stateless")))
+    ("helm" . (:constraints ("secure")))
+    ("Chart.yaml" . (:constraints ("secure")))
+    
+    ;; Config management
+    ("terraform" . (:constraints ("immutable" "state-explicit")))
+    ("ansible" . (:constraints ("defensive" "state-explicit")))
+    ("puppet" . (:constraints ("defensive"))))
+  "Map project files/patterns to auto-detected constraints.
+Each entry is (FILENAME . (:constraints (C1 C2 ...) :patterns ((REGEX . CONSTRAINT) ...))).
+Patterns are matched against file content for conditional constraint activation.")
+
+(defcustom ai-code-constraints-auto-detect-enabled t
+  "When non-nil, automatically detect constraints from project configuration files."
+  :type 'boolean
+  :group 'ai-code-behaviors)
+
+(defcustom ai-code-constraints-persistence-file ".ai-behaviors/constraints"
+  "Relative path for project-level constraint persistence.
+Stored in the project root directory."
+  :type 'string
+  :group 'ai-code-behaviors)
+
+(defvar ai-code--constraints-cache (make-hash-table :test #'equal)
+  "Cache for auto-detected constraints per project root.
+Key: project root, Value: (:constraints (C1 C2 ...) :timestamp TIME).")
+
+(defvar ai-code--active-constraint-bundles (make-hash-table :test #'equal)
+  "Hash table of active constraint bundles per project.
+Key: project root, Value: bundle name string or nil.")
 
 (defconst ai-code-behaviors--synced-commit "8633aa9"
   "The upstream ai-behaviors commit this source code is synced with.
@@ -574,18 +812,28 @@ Return the prompt content string, or nil if not found."
           content)))))
 
 (defun ai-code--all-behavior-names ()
-  "Return list of all available behavior names including presets and constraints."
+  "Return list of all available behavior names including presets, constraints, and bundles."
   (append (ai-code--behavior-preset-names)
           (mapcar (lambda (m) (concat "#" m)) ai-code--behavior-operating-modes)
           (mapcar (lambda (m) (concat "#" m)) ai-code--behavior-modifiers)
-          (mapcar (lambda (c) (concat "#" (car c))) ai-code--constraint-modifiers)))
+          (mapcar (lambda (c) (concat "#" (car c))) ai-code--constraint-modifiers)
+          (ai-code--constraint-bundle-names)))
 
 (defun ai-code--behavior-preset-names ()
   "Return list of all preset names with @ prefix for completion."
   (mapcar (lambda (p) (concat "@" (car p))) ai-code--behavior-presets))
 
+(defun ai-code--constraint-bundle-names ()
+  "Return list of constraint bundle names with @ prefix for completion."
+  (mapcar (lambda (b) (concat "@" (car b))) ai-code--constraint-bundles))
+
+(defun ai-code--behavior-preset-and-bundle-names ()
+  "Return list of all preset and bundle names with @ prefix for completion."
+  (append (ai-code--behavior-preset-names)
+          (ai-code--constraint-bundle-names)))
+
 (defun ai-code--behavior-preset-capf ()
-  "Completion-at-point function for @preset names.
+  "Completion-at-point function for @preset and @bundle names.
 Add to `completion-at-point-functions' in prompt buffers."
   (when (and (boundp 'major-mode)
              (eq major-mode 'ai-code-prompt-mode)
@@ -594,7 +842,7 @@ Add to `completion-at-point-functions' in prompt buffers."
                (eq (char-before) ?@)))
     (let ((start (1- (point)))
           (end (point)))
-      (list start end (ai-code--behavior-preset-names) :exclusive 'no))))
+      (list start end (ai-code--behavior-preset-and-bundle-names) :exclusive 'no))))
 
 (defun ai-code--behavior-setup-preset-completion ()
   "Add preset completion and mode-line to prompt mode buffers."
@@ -606,10 +854,10 @@ Add to `completion-at-point-functions' in prompt buffers."
   (remove-hook 'completion-at-point-functions #'ai-code--behavior-preset-capf t))
 
 (defun ai-code--behavior-merge-preset-candidates (candidates)
-  "Append preset names to CANDIDATES for @ completion.
-This allows preset names to appear alongside file paths in the
+  "Append preset and bundle names to CANDIDATES for @ completion.
+This allows preset and bundle names to appear alongside file paths in the
 auto-triggered completion from `ai-code--prompt-auto-trigger-filepath-completion'."
-  (append candidates (ai-code--behavior-preset-names)))
+  (append candidates (ai-code--behavior-preset-and-bundle-names)))
 
 (defun ai-code--behavior-enable-preset-in-file-completion ()
   "Enable preset names in @ file completion via advice."
@@ -700,6 +948,16 @@ whitespace, offer behavior completion instead of symbol completion."
   "Return non-nil if NAME is an operating mode behavior."
   (member name ai-code--behavior-operating-modes))
 
+(defun ai-code--constraint-bundle-p (name)
+  "Return non-nil if NAME is a constraint bundle."
+  (assoc name ai-code--constraint-bundles))
+
+(defun ai-code--expand-constraint-bundle (bundle-name)
+  "Expand BUNDLE-NAME to its constraint list.
+Returns list of constraint names from the bundle."
+  (when-let ((bundle-data (assoc bundle-name ai-code--constraint-bundles)))
+    (plist-get (cdr bundle-data) :constraints)))
+
 (defun ai-code--extract-and-remove-hashtags (prompt-text &optional context-preset)
   "Extract behaviors and remove hashtags from PROMPT-TEXT in single pass.
 CONTEXT-PRESET is 'gptel-plan or 'gptel-agent for context-aware validation.
@@ -711,6 +969,7 @@ SWITCH-NEEDED is t when in gptel-plan and a modify mode/preset is used."
         (modifiers nil)
         (constraints nil)
         (preset nil)
+        (constraint-bundle nil)
         (unknown nil)
         (unknown-presets nil)
         (switch-needed nil)
@@ -723,12 +982,20 @@ SWITCH-NEEDED is t when in gptel-plan and a modify mode/preset is used."
         (insert prompt-text)
         (goto-char (point-min))
         (while (re-search-forward "@\\([a-zA-Z0-9_-]+\\)" nil t)
-          (let ((preset-name (match-string 1)))
-            (if (assoc preset-name ai-code--behavior-presets)
-                (if preset
-                    (message "Warning: Multiple presets, keeping @%s" preset)
-                  (setq preset preset-name))
-              (cl-pushnew preset-name unknown-presets :test #'equal))))
+          (let ((at-name (match-string 1)))
+            (cond
+             ((assoc at-name ai-code--behavior-presets)
+              (if preset
+                  (message "Warning: Multiple presets, keeping @%s" preset)
+                (setq preset at-name)))
+             ((ai-code--constraint-bundle-p at-name)
+              (if constraint-bundle
+                  (message "Warning: Multiple constraint bundles, keeping @%s" constraint-bundle)
+                (setq constraint-bundle at-name)
+                (let ((bundle-constraints (ai-code--expand-constraint-bundle at-name)))
+                  (dolist (c bundle-constraints)
+                    (cl-pushnew c constraints :test #'equal)))))
+             (t (cl-pushnew at-name unknown-presets :test #'equal)))))
         (goto-char (point-min))
         (while (re-search-forward "#\\([=a-zA-Z0-9_-]+\\)" nil t)
           (let ((tag (match-string 1)))
@@ -755,10 +1022,13 @@ SWITCH-NEEDED is t when in gptel-plan and a modify mode/preset is used."
           (when (and preset (not (ai-code--behaviors-preset-readonly-p preset)))
             (message "Switching to agent mode for @%s..." preset)
             (setq switch-needed t)))
+        (when constraint-bundle
+          (ai-code--behaviors-set-active-bundle constraint-bundle))
         (goto-char (point-min))
         (while (re-search-forward "@\\([a-zA-Z0-9_-]+\\)\\s-*" nil t)
           (let ((name (match-string 1)))
-            (when (assoc name ai-code--behavior-presets)
+            (when (or (assoc name ai-code--behavior-presets)
+                      (ai-code--constraint-bundle-p name))
               (replace-match ""))))
         (goto-char (point-min))
         (dolist (tag valid-tags)
@@ -1099,9 +1369,10 @@ Note: Preset-only prompts (empty after tag removal) are handled by
       (message "No active behaviors"))))
 
 (defun ai-code-behaviors-clear ()
-  "Clear active behaviors for current project."
+  "Clear active behaviors and constraint bundle for current project."
   (interactive)
   (ai-code--behaviors-clear-state)
+  (ai-code--behaviors-clear-active-bundle)
   (ai-code--behaviors-update-mode-line)
   (message "Behaviors cleared for current project"))
 
@@ -1244,21 +1515,25 @@ Return short description string or nil if not found."
 (defun ai-code--behaviors-build-tooltip (preset state)
   "Build tooltip text for PRESET and STATE."
   (if (not (or preset state))
-      "No behaviors active\n\nmouse-1: Select preset\nmouse-3: Actions"
+      "No behaviors active\n\nmouse-1: Select preset/bundle\nmouse-3: Actions"
     (let* ((mode (plist-get state :mode))
            (modifiers (plist-get state :modifiers))
            (constraints (plist-get state :constraint-modifiers))
            (custom-suffix (plist-get state :custom-suffix))
+           (active-bundle (ai-code--behaviors-get-active-bundle))
            (preset-desc (when preset 
                           (plist-get (cdr (assoc preset ai-code--behavior-presets)) 
+                                     :description)))
+           (bundle-desc (when active-bundle
+                          (plist-get (cdr (assoc active-bundle ai-code--constraint-bundles))
                                      :description)))
            (lines nil))
       (push "" lines)
       (push "mouse-3: Actions" lines)
-      (push "mouse-1: Select preset" lines)
+      (push "mouse-1: Select preset/bundle" lines)
       (when custom-suffix
         (push "+custom-suffix" lines))
-      (when constraints
+      (when (and constraints (not active-bundle))
         (push (format "Constraints: %s" 
                       (mapconcat (lambda (c) (concat "#" c)) constraints " "))
               lines))
@@ -1268,6 +1543,11 @@ Return short description string or nil if not found."
               lines))
       (when mode
         (push (format "Mode: #%s" mode) lines))
+      (when active-bundle
+        (push "" lines)
+        (when bundle-desc
+          (push bundle-desc lines))
+        (push (format "Bundle: @%s" active-bundle) lines))
       (when preset
         (push "" lines)
         (when preset-desc
@@ -1420,14 +1700,37 @@ Returns preset name string, or `ai-code-behaviors-default-preset' if no signals 
   "Keymap for behavior mode-line indicator.")
 
 (defun ai-code-behaviors-mode-line-select-preset (&optional event)
-  "Show preset selection popup menu.
-EVENT is the mouse event."
+  "Show preset and bundle selection popup menu.
+EVENT is the mouse event.
+In gptel-plan mode, only shows readonly-compatible presets."
   (interactive)
-  (let ((menu (make-sparse-keymap "Select Preset")))
+  (let* ((menu (make-sparse-keymap "Select Preset or Bundle"))
+         (current-preset (when (boundp 'gptel--preset) gptel--preset))
+         (plan-mode-p (eq current-preset 'gptel-plan))
+         (available-presets
+          (if plan-mode-p
+              (cl-remove-if-not
+               (lambda (p) (ai-code--behaviors-preset-readonly-p (car p)))
+               ai-code--behavior-presets)
+            ai-code--behavior-presets)))
     (define-key menu [clear]
       '(menu-item "Clear behaviors" ai-code-behaviors-clear))
-    (define-key menu [sep] '(menu-item "--"))
-    (dolist (p (reverse ai-code--behavior-presets))
+    (define-key menu [sep-constraints] '(menu-item "--"))
+    (define-key menu [constraint-header]
+      '(menu-item "Constraint Bundles" nil :enable nil))
+    (dolist (b (reverse ai-code--constraint-bundles))
+      (define-key menu (vector (intern (concat "bundle-" (car b))))
+        `(menu-item ,(format "@%s - %s" (car b)
+                             (plist-get (cdr b) :description))
+                    (lambda () (interactive)
+                      (ai-code-constraints-apply-bundle ,(car b))))))
+    (define-key menu [sep-presets] '(menu-item "--"))
+    (define-key menu [preset-header]
+      '(menu-item "Behavior Presets" nil :enable nil))
+    (when (and plan-mode-p available-presets)
+      (define-key menu [plan-notice]
+        '(menu-item "(gptel-plan: readonly presets only)" nil :enable nil)))
+    (dolist (p (reverse available-presets))
       (define-key menu (vector (intern (car p)))
         `(menu-item ,(format "@%s - %s" (car p)
                              (plist-get (cdr p) :description))
@@ -1442,23 +1745,30 @@ EVENT is the mouse event."
 EVENT is the mouse event."
   (interactive)
   (let ((menu (make-sparse-keymap "Actions"))
-        (preset (ai-code--behaviors-get-preset)))
+        (preset (ai-code--behaviors-get-preset))
+        (active-bundle (ai-code--behaviors-get-active-bundle)))
     (define-key menu [disable]
       '(menu-item "Disable mode-line indicator" 
                   ai-code-behaviors-mode-line-disable))
     (define-key menu [sep2] '(menu-item "--"))
     (define-key menu [clear-all]
       '(menu-item "Clear all projects" ai-code-behaviors-clear-all))
+    (define-key menu [clear-constraints]
+      '(menu-item "Clear constraints" ai-code-constraints-clear))
     (define-key menu [update]
       '(menu-item "Update behavior repo" ai-code-behaviors-install))
     (define-key menu [sep1] '(menu-item "--"))
+    (define-key menu [list-constraints]
+      '(menu-item "List all constraints" ai-code-constraints-list))
+    (define-key menu [auto-detect]
+      '(menu-item "Auto-detect constraints" ai-code-constraints-auto-detect-and-apply))
     (define-key menu [add-constraint]
       '(menu-item "Add constraint..." ai-code-behaviors-select))
-    (when preset
+    (when (or preset active-bundle)
       (define-key menu [describe]
         `(menu-item "Describe current behavior"
                     (lambda () (interactive)
-                      (ai-code-describe-behavior ,preset)))))
+                      (ai-code-describe-behavior ,(or preset active-bundle))))))
     (define-key menu [status]
       '(menu-item "Show status" ai-code-behaviors-status))
     (if event
@@ -1470,6 +1780,7 @@ EVENT is the mouse event."
   (when ai-code-behaviors-enabled
     (let* ((state (ai-code--behaviors-get-state))
            (preset (ai-code--behaviors-get-preset))
+           (active-bundle (ai-code--behaviors-get-active-bundle))
            (mode (and state (plist-get state :mode)))
            (modifiers (and state (plist-get state :modifiers)))
            (constraints (and state (plist-get state :constraint-modifiers)))
@@ -1477,9 +1788,13 @@ EVENT is the mouse event."
            (constraint-count (+ (length constraints) (if has-custom 1 0)))
            (face (ai-code--behaviors-get-mode-face mode))
            (text (cond
+                  ((and preset active-bundle)
+                   (format "[@%s @%s]" preset active-bundle))
                   ((and preset (> constraint-count 0))
                    (format "[@%s +%d]" preset constraint-count))
                   (preset (format "[@%s]" preset))
+                  (active-bundle
+                   (format "[@%s +%d]" active-bundle constraint-count))
                   ((or mode modifiers constraints has-custom)
                    (concat "["
                            (or mode "")
@@ -1511,29 +1826,45 @@ Otherwise, update current buffer only."
 
 (defun ai-code-describe-behavior (behavior-name)
   "Display documentation for BEHAVIOR-NAME.
-Shows the behavior's README.md in a help buffer, or constraint description.
+Shows the behavior's README.md in a help buffer, or constraint/bundle description.
 BEHAVIOR-NAME should not include the # or @ prefix."
   (interactive
    (let* ((presets (mapcar (lambda (p) (concat "@" (car p))) ai-code--behavior-presets))
+          (bundles (mapcar (lambda (b) (concat "@" (car b))) ai-code--constraint-bundles))
           (modes (mapcar (lambda (m) (concat "#" m)) ai-code--behavior-operating-modes))
           (modifiers (mapcar (lambda (m) (concat "#" m)) ai-code--behavior-modifiers))
           (constraints (mapcar (lambda (c) (concat "#" (car c))) ai-code--constraint-modifiers))
-          (all-behaviors (append presets modes modifiers constraints))
+          (all-behaviors (append presets bundles modes modifiers constraints))
           (input (completing-read "Describe behavior: " all-behaviors nil t)))
      (list (when (string-match "[#@]\\(.+\\)" input) (match-string 1 input)))))
   (if (not behavior-name)
       (message "No behavior selected")
-    (let ((constraint-desc (cdr (assoc behavior-name ai-code--constraint-modifiers))))
-      (if constraint-desc
+    (cond
+     ((assoc behavior-name ai-code--constraint-bundles)
+      (let* ((bundle (assoc behavior-name ai-code--constraint-bundles))
+             (desc (plist-get (cdr bundle) :description))
+             (constraints (plist-get (cdr bundle) :constraints)))
+        (with-help-window (help-buffer)
+          (princ (format "@%s - Constraint Bundle\n\n" behavior-name))
+          (when desc (princ (format "Description: %s\n\n" desc)))
+          (princ "Constraints:\n")
+          (dolist (c constraints)
+            (let ((c-desc (cdr (assoc c ai-code--constraint-modifiers))))
+              (princ (format "  #%s\n" c))
+              (when c-desc
+                (princ (format "    %s\n" c-desc))))))))
+     ((assoc behavior-name ai-code--constraint-modifiers)
+      (let ((constraint-desc (cdr (assoc behavior-name ai-code--constraint-modifiers))))
+        (with-help-window (help-buffer)
+          (princ (format "#%s\n\n" behavior-name))
+          (princ constraint-desc))))
+     (t
+      (let ((content (ai-code--load-behavior-readme behavior-name)))
+        (if (not content)
+            (message "No documentation found for %s" behavior-name)
           (with-help-window (help-buffer)
             (princ (format "#%s\n\n" behavior-name))
-            (princ constraint-desc))
-        (let ((content (ai-code--load-behavior-readme behavior-name)))
-          (if (not content)
-              (message "No documentation found for %s" behavior-name)
-            (with-help-window (help-buffer)
-              (princ (format "#%s\n\n" behavior-name))
-              (princ content))))))))
+            (princ content))))))))
 
 (defun ai-code--behavior-annotated-candidates ()
   "Return completion candidates with annotations.
@@ -1592,15 +1923,27 @@ Preserves existing constraint-modifiers from current state."
                    ""))))))
 
 (defun ai-code-behaviors-preset ()
-  "Select and apply a behavior preset."
+  "Select and apply a behavior preset.
+In gptel-plan mode, only shows readonly-compatible presets."
   (interactive)
-  (let* ((presets (mapcar (lambda (p) 
+  (let* ((current-preset (when (boundp 'gptel--preset) gptel--preset))
+         (plan-mode-p (eq current-preset 'gptel-plan))
+         (available-presets
+          (if plan-mode-p
+              (cl-remove-if-not
+               (lambda (p) (ai-code--behaviors-preset-readonly-p (car p)))
+               ai-code--behavior-presets)
+            ai-code--behavior-presets))
+         (presets (mapcar (lambda (p) 
                             (cons (format "%-15s %s" 
                                          (car p) 
                                          (plist-get (cdr p) :description))
                                   (car p)))
-                          ai-code--behavior-presets))
-         (choice (completing-read "Select preset: " presets nil t)))
+                          available-presets))
+         (prompt (if plan-mode-p
+                     "Select preset (gptel-plan: readonly only): "
+                   "Select preset: "))
+         (choice (completing-read prompt presets nil t)))
     (when (and choice (not (string-empty-p choice)))
       (let ((preset-name (cdr (assoc choice presets))))
         (when preset-name
@@ -2109,13 +2452,12 @@ ai-code--behavior-modifiers-completion-table instead."
    (t "")))
 
 (defun ai-code--behavior-preset-gptel-capf ()
-  "Completion at point for behavior presets in gptel-mode.
-Shows behavior presets like @tdd-dev with descriptions.
+  "Completion at point for behavior presets and constraint bundles in gptel-mode.
+Shows behavior presets like @tdd-dev and constraint bundles like @rust-stack.
 In gptel-plan mode, only shows readonly-compatible presets.
 Works alongside gptel's built-in preset completion."
   (when (and ai-code-behaviors-enabled
-             (bound-and-true-p gptel-mode)
-             ai-code--behavior-presets)
+             (bound-and-true-p gptel-mode))
     (let* ((pos (save-excursion
                   (skip-chars-backward "a-zA-Z0-9_-")
                   (point)))
@@ -2125,19 +2467,43 @@ Works alongside gptel's built-in preset completion."
                 (cl-remove-if-not
                  (lambda (p) (ai-code--behaviors-preset-readonly-p (car p)))
                  ai-code--behavior-presets)
-              ai-code--behavior-presets)))
+              ai-code--behavior-presets))
+           (all-candidates
+            (append (mapcar #'car available-presets)
+                    (mapcar #'car ai-code--constraint-bundles))))
       (when (and (> pos (point-min))
                  (eq (char-before pos) ?@)
                  (or (= pos (1+ (point-min)))
                      (memq (char-syntax (char-before (1- pos))) '(?\s ?\t ?\n))))
         (list pos (point)
-              (mapcar #'car available-presets)
+              all-candidates
               :exclusive 'no
-              :annotation-function #'ai-code--behavior-preset-gptel-annotation
+              :annotation-function #'ai-code--behavior-preset-or-bundle-annotation
               :exit-function
               (lambda (_str _status)
                 (when (looking-at "\\>")
                   (insert " "))))))))
+
+(defun ai-code--behavior-preset-or-bundle-annotation (name)
+  "Return annotation for preset or bundle NAME."
+  (cond
+   ((assoc name ai-code--behavior-presets)
+    (let* ((preset (assoc name ai-code--behavior-presets))
+           (desc (plist-get (cdr preset) :description))
+           (mode (plist-get (cdr preset) :mode))
+           (modifiers (plist-get (cdr preset) :modifiers)))
+      (format "    %s [%s %s]"
+              (or desc "")
+              (or mode "")
+              (mapconcat #'identity (or modifiers '()) " "))))
+   ((assoc name ai-code--constraint-bundles)
+    (let* ((bundle (assoc name ai-code--constraint-bundles))
+           (desc (plist-get (cdr bundle) :description))
+           (constraints (plist-get (cdr bundle) :constraints)))
+      (format "    [bundle] %s (%s)"
+              (or desc "")
+              (mapconcat #'identity constraints ", "))))
+   (t "")))
 
 (defun ai-code--behavior-preset-gptel-annotation (name)
   "Return annotation for preset NAME."
@@ -2285,6 +2651,229 @@ Default is t to enable automatic behavior detection in agent workflows."
       (ai-code--gptel-agent-setup-transform)
     (eval-after-load 'gptel
       #'ai-code--gptel-agent-setup-transform)))
+
+;;; Constraint Bundle and Persistence Functions
+
+(defun ai-code--constraints-get-persistence-path ()
+  "Get the path to the constraints persistence file for current project."
+  (let ((root (ai-code--behaviors-project-root)))
+    (when root
+      (expand-file-name ai-code-constraints-persistence-file root))))
+
+(defun ai-code--constraints-load-from-project ()
+  "Load constraints from project persistence file.
+Returns list of constraint names, or nil if no file exists."
+  (let ((path (ai-code--constraints-get-persistence-path)))
+    (when (and path (file-exists-p path))
+      (with-temp-buffer
+        (insert-file-contents path)
+        (goto-char (point-min))
+        (let ((constraints nil)
+              (bundle nil))
+          (while (not (eobp))
+            (let ((line (string-trim (thing-at-point 'line t))))
+              (when (string-match-p "^#" line)
+                (let ((name (string-trim (substring line 1))))
+                  (cond
+                   ((string-prefix-p "Bundle:" name)
+                    (setq bundle (string-trim (substring name 7))))
+                   ((assoc name ai-code--constraint-modifiers)
+                    (push name constraints))))))
+            (forward-line 1))
+          (when bundle
+            (ai-code--behaviors-set-active-bundle bundle))
+          (nreverse constraints))))))
+
+(defun ai-code--constraints-save-to-project (constraints)
+  "Save CONSTRAINTS to project persistence file.
+CONSTRAINTS is a list of constraint names."
+  (let ((path (ai-code--constraints-get-persistence-path)))
+    (when path
+      (let ((dir (file-name-directory path)))
+        (unless (file-directory-p dir)
+          (make-directory dir t)))
+      (with-temp-buffer
+        (insert "# Auto-detected and user-set constraints\n")
+        (insert "# Lines starting with # are constraints\n")
+        (insert "# Bundle: <name> applies a predefined bundle\n\n")
+        (dolist (c constraints)
+          (insert (concat "#" c "\n")))
+        (when-let ((bundle (ai-code--behaviors-get-active-bundle)))
+          (insert (concat "\n# Bundle: " bundle "\n")))
+        (write-region (point-min) (point-max) path nil 'silent)))))
+
+(defun ai-code--glob-to-regexp (glob)
+  "Convert GLOB pattern to regexp.
+Handles * (matches anything) and ? (matches single char)."
+  (let ((result "")
+        (i 0)
+        (len (length glob)))
+    (while (< i len)
+      (let ((char (aref glob i)))
+        (cond
+         ((eq char ?*)
+          (setq result (concat result ".*")))
+         ((eq char ??)
+          (setq result (concat result ".")))
+         ((memq char '(?. ?^ ?$ ?+ ?\\ ?\[ ?\] ?\( ?\)))
+          (setq result (concat result "\\" (string char))))
+         (t
+          (setq result (concat result (string char))))))
+      (setq i (1+ i)))
+    result))
+
+(defun ai-code--constraints-detect-from-file (file-path)
+  "Detect constraints from a single project config FILE-PATH.
+Returns list of detected constraint names."
+  (let* ((file-name (file-name-nondirectory file-path))
+         (entry (cl-find-if (lambda (e)
+                              (let ((pattern (car e)))
+                                (or (string= pattern file-name)
+                                    (string-match-p (concat (ai-code--glob-to-regexp pattern) "$") file-name))))
+                           ai-code--project-config-constraint-map)))
+    (when entry
+      (let ((base-constraints (plist-get (cdr entry) :constraints))
+            (patterns (plist-get (cdr entry) :patterns))
+            (detected nil))
+        (setq detected (or base-constraints '()))
+        (when (and patterns (file-exists-p file-path))
+          (with-temp-buffer
+            (insert-file-contents file-path)
+            (dolist (pattern-entry patterns)
+              (let ((pattern (car pattern-entry))
+                    (constraint (cdr pattern-entry)))
+                (goto-char (point-min))
+                (when (re-search-forward pattern nil t)
+                  (cl-pushnew constraint detected :test #'equal))))))
+        detected))))
+
+(defun ai-code--glob-pattern-p (pattern)
+  "Return non-nil if PATTERN contains glob wildcards (* or ?)."
+  (string-match-p "[*?]" pattern))
+
+(defun ai-code--expand-glob-in-dir (pattern dir)
+  "Expand glob PATTERN in directory DIR.
+Returns list of matching file paths."
+  (let ((regex (concat (ai-code--glob-to-regexp pattern) "$")))
+    (delq nil
+          (mapcar (lambda (file)
+                    (when (string-match-p regex file)
+                      (expand-file-name file dir)))
+                  (directory-files dir nil)))))
+
+(defun ai-code--constraints-auto-detect ()
+  "Auto-detect constraints from project configuration files.
+Scans project root for known config files and extracts constraints.
+Returns list of detected constraint names."
+  (let ((root (ai-code--behaviors-project-root)))
+    (let ((cached (gethash root ai-code--constraints-cache)))
+      (if (and cached
+               (< (- (float-time) (plist-get cached :timestamp))
+                  ai-code-behaviors-detection-cache-ttl))
+          (plist-get cached :constraints)
+        (let ((all-constraints nil))
+          (dolist (entry ai-code--project-config-constraint-map)
+            (let* ((pattern (car entry))
+                   (matched-files nil))
+              (if (ai-code--glob-pattern-p pattern)
+                  (setq matched-files (ai-code--expand-glob-in-dir pattern root))
+                (let ((full-path (expand-file-name pattern root)))
+                  (when (or (file-exists-p full-path)
+                            (file-directory-p full-path))
+                    (setq matched-files (list full-path)))))
+              (dolist (file-path matched-files)
+                (let ((detected (ai-code--constraints-detect-from-file file-path)))
+                  (setq all-constraints (append all-constraints detected))))))
+          (setq all-constraints (delete-dups all-constraints))
+          (puthash root (list :constraints all-constraints
+                              :timestamp (float-time))
+                   ai-code--constraints-cache)
+          all-constraints)))))
+
+(defun ai-code-constraints-apply-bundle (bundle-name)
+  "Apply constraint bundle BUNDLE-NAME to current session.
+Fetches constraints from `ai-code--constraint-bundles' and merges
+with existing session state."
+  (interactive
+   (list (completing-read "Apply constraint bundle: "
+                          (mapcar #'car ai-code--constraint-bundles)
+                          nil t)))
+  (let ((bundle-data (assoc bundle-name ai-code--constraint-bundles)))
+    (unless bundle-data
+      (error "Unknown constraint bundle: %s" bundle-name))
+    (let* ((constraints (plist-get (cdr bundle-data) :constraints))
+           (existing-state (ai-code--behaviors-get-state))
+           (existing-mode (plist-get existing-state :mode))
+           (existing-modifiers (plist-get existing-state :modifiers))
+           (new-state (list :mode existing-mode
+:modifiers existing-modifiers
+                             :constraint-modifiers constraints)))
+      (ai-code--behaviors-set-state new-state)
+      (ai-code--behaviors-set-active-bundle bundle-name)
+      (ai-code--constraints-save-to-project constraints)
+      (ai-code--behaviors-update-mode-line)
+      (message "Applied constraint bundle: %s (%s)"
+               bundle-name
+               (mapconcat #'identity constraints ", ")))))
+
+(defun ai-code-constraints-auto-detect-and-apply ()
+  "Auto-detect constraints from project and apply to session.
+Useful after cloning a project or switching contexts."
+  (interactive)
+  (let ((detected (ai-code--constraints-auto-detect)))
+    (if detected
+        (let ((existing-state (ai-code--behaviors-get-state)))
+          (ai-code--behaviors-set-state
+           (list :mode (plist-get existing-state :mode)
+                 :modifiers (plist-get existing-state :modifiers)
+                 :constraint-modifiers detected))
+          (ai-code--constraints-save-to-project detected)
+          (ai-code--behaviors-update-mode-line)
+          (message "Auto-detected constraints: %s"
+                   (mapconcat #'identity detected ", ")))
+      (message "No constraints detected from project config"))))
+
+(defun ai-code-constraints-list ()
+  "List all available constraints with descriptions.
+Shows both individual constraints and bundles."
+  (interactive)
+  (let ((buf (get-buffer-create "*ai-code-constraints*")))
+    (with-current-buffer buf
+      (erase-buffer)
+      (insert "=== CONSTRAINT MODIFIERS ===\n\n")
+      (dolist (entry ai-code--constraint-modifiers)
+        (insert (format "#%-20s %s\n" (car entry) (cdr entry))))
+      (insert "\n=== CONSTRAINT BUNDLES ===\n\n")
+      (dolist (entry ai-code--constraint-bundles)
+        (let* ((name (car entry))
+               (data (cdr entry))
+               (constraints (plist-get data :constraints))
+               (desc (plist-get data :description)))
+          (insert (format "@%-20s %s\n" name desc))
+          (insert (format "  Constraints: %s\n\n"
+                          (mapconcat #'identity constraints ", ")))))
+      (goto-char (point-min)))
+    (pop-to-buffer buf)))
+
+(defun ai-code-constraints-clear ()
+  "Clear all constraints from current session."
+  (interactive)
+  (let ((existing-state (ai-code--behaviors-get-state)))
+    (ai-code--behaviors-set-state
+     (list :mode (plist-get existing-state :mode)
+           :modifiers (plist-get existing-state :modifiers)
+           :constraint-modifiers nil))
+    (ai-code--behaviors-clear-active-bundle)
+    (let ((path (ai-code--constraints-get-persistence-path)))
+      (when (and path (file-exists-p path))
+        (delete-file path)))
+    (ai-code--behaviors-update-mode-line)
+    (message "Cleared all constraints")))
+
+(defun ai-code--all-constraint-names ()
+  "Return all constraint names including bundles for completion."
+  (append (mapcar (lambda (c) (concat "#" (car c))) ai-code--constraint-modifiers)
+          (ai-code--constraint-bundle-names)))
 
 (provide 'ai-code-behaviors)
 
