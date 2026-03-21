@@ -1963,28 +1963,13 @@ Returns t if buffer was modified, nil otherwise."
 
 (defun ai-code--gptel-agent-setup-transform ()
   "Set up gptel-agent behavior integration.
-Adds transform, completion, and registers presets with gptel.
-Mode-line is enabled via `gptel-mode-hook' in `ai-code--behavior-setup-hashtag-completion'."
-  (when (boundp 'gptel--known-presets)
-    (dolist (preset ai-code--behavior-presets)
-      (let* ((name (car preset))
-             (data (cdr preset))
-             (desc (plist-get data :description))
-             (mode (plist-get data :mode))
-             (modifiers (plist-get data :modifiers))
-             (mode-str (when mode (substring mode 1)))
-             (mods-str (when modifiers (mapconcat #'identity modifiers ", ")))
-             (extra (if (and mode-str mods-str)
-                        (format " (%s, %s)" mode-str mods-str)
-                      (when mode-str (format " (%s)" mode-str))))
-             (full-desc (concat "   " (or desc "") (or extra ""))))
-        (setq gptel--known-presets
-              (assq-delete-all (intern name) gptel--known-presets))
-        (setq gptel--known-presets
-              (nconc gptel--known-presets
-                     (list (cons (intern name)
-                                 (list :description full-desc
-                                       :system ""))))))))
+Adds transform and completion to gptel buffers.
+Mode-line is enabled via `gptel-mode-hook' in `ai-code--behavior-setup-hashtag-completion'.
+
+NOTE: We do NOT register behavior presets with gptel--known-presets.
+If we did, gptel's gptel--transform-apply-preset would remove @preset
+from prompts before our transform could see it. We handle @preset
+in our own transform and provide completion via ai-code--behavior-preset-gptel-capf."
   (add-hook 'gptel-mode-hook #'ai-code--behavior-setup-hashtag-completion)
   (unless (memq 'ai-code--gptel-agent-transform-inject-behaviors
                 (default-value 'gptel-prompt-transform-functions))
