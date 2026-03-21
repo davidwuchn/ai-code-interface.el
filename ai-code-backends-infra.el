@@ -1,6 +1,6 @@
 ;;; ai-code-backends-infra.el --- Infrastructure for AI Code Terminals  -*- lexical-binding: t; -*-
 
-;; Author: Yoav Orot, Kang Tu, AI Agent, Steve Molitor
+;; Author: Yoav Orot, Kang Tu, Silex, Steve Molitor, AI Agent
 ;; SPDX-License-Identifier: Apache-2.0
 
 ;; Keywords: ai, terminal, vterm, eat
@@ -496,18 +496,20 @@ MULTILINE-INPUT-SEQUENCE configures `S-<return>' and `C-<return>' when non-nil."
         (puthash key session-buffer ai-code-backends-infra--file-session-map)
       (remhash key ai-code-backends-infra--file-session-map))))
 
-(defun ai-code-backends-infra--attached-file-session (prefix source-buffer working-dir)
-  "Return attached session state for PREFIX, SOURCE-BUFFER and WORKING-DIR.
+(defun ai-code-backends-infra--attached-file-session (prefix source-buffer _working-dir)
+  "Return attached session state for PREFIX and SOURCE-BUFFER.
+The working-directory argument is accepted for interface compatibility but
+ignored here because
+an explicit file attachment should win as long as the attached buffer is live.
 Return a cons of (BUFFER . MISSING-P)."
   (let ((key (ai-code-backends-infra--file-session-map-key prefix source-buffer)))
     (if (null key)
         (cons nil nil)
       (let* ((attached (gethash key ai-code-backends-infra--file-session-map))
              (valid (and (buffer-live-p attached)
-                         (memq attached
-                               (ai-code-backends-infra--find-session-buffers
-                                prefix
-                                working-dir)))))
+                         (ai-code-backends-infra--parse-session-buffer-name
+                          (buffer-name attached)
+                          prefix))))
         (cond
          (valid
           (cons attached nil))
@@ -523,25 +525,16 @@ Return a cons of (BUFFER . MISSING-P)."
 MISSING-MESSAGE is used when no target session exists.
 When PREFIX and WORKING-DIR are present, prefer the attached session for
 SOURCE-BUFFER unless FORCE-PROMPT is non-nil."
-  (let* ((file-key (and prefix
-                        source-buffer
-                        (ai-code-backends-infra--file-session-map-key
-                         prefix
-                         source-buffer)))
-         (attached-state (and prefix working-dir
+  (let* ((attached-state (and prefix working-dir
                               (ai-code-backends-infra--attached-file-session
                                prefix
                                source-buffer
                                working-dir)))
          (attached-buffer (car-safe attached-state))
          (attached-missing (cdr-safe attached-state))
-         (needs-initial-file-selection (and (null buffer-name)
-                                            file-key
-                                            (null attached-buffer)
-                                            (not attached-missing)))
-         (effective-force-prompt (or force-prompt
-                                     attached-missing
-                                     needs-initial-file-selection))
+         (effective-force-prompt
+          (or force-prompt
+              attached-missing))
          (buffer (or (and buffer-name (get-buffer buffer-name))
                      (and attached-buffer (not force-prompt) attached-buffer)
                      (and prefix working-dir

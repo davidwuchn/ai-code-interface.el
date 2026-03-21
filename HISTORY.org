@@ -11,6 +11,10 @@
 - Fix: Glob pattern matching for *.csproj and similar patterns in auto-detect
 - Fix: Bundle loading from persistence file with space handling
 - Fix: Mode-line update on bundle apply/clear
+
+** 1.62
+- Fix: Preserve AI session reuse for attached and newly opened files when lookup context changes
+- Feat: Support Dired-selected files/directories in refactoring suggestions
 - Feat: Add behavior injection system for AI prompts, by davidwuchn
 - Feat: Add ECA binary upgrade system with auto-update support, by davidwuchn
 - Feat: Add Prepare PR description tool
