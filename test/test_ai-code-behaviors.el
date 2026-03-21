@@ -111,6 +111,43 @@
     (should result)
     (should (equal (plist-get result :mode) "=test"))))
 
+;;; Preset Suggestion Tests
+
+(ert-deftest ai-code-test-suggest-preset-for-code-mode ()
+  "Test preset suggestion for code mode."
+  (should (equal (ai-code--suggest-preset-for-classification '(:mode "=code")) "quick-fix")))
+
+(ert-deftest ai-code-test-suggest-preset-for-code-with-tdd ()
+  "Test preset suggestion for code with tdd modifier."
+  (should (equal (ai-code--suggest-preset-for-classification '(:mode "=code" :modifiers ("tdd"))) "tdd-dev")))
+
+(ert-deftest ai-code-test-suggest-preset-for-code-with-concise ()
+  "Test preset suggestion for code with concise modifier."
+  (should (equal (ai-code--suggest-preset-for-classification '(:mode "=code" :modifiers ("concise"))) "quick-fix")))
+
+(ert-deftest ai-code-test-suggest-preset-for-debug-mode ()
+  "Test preset suggestion for debug mode."
+  (should (equal (ai-code--suggest-preset-for-classification '(:mode "=debug")) "thorough-debug"))
+  (should (equal (ai-code--suggest-preset-for-classification '(:mode "=debug" :modifiers ("deep"))) "thorough-debug")))
+
+(ert-deftest ai-code-test-suggest-preset-for-review-mode ()
+  "Test preset suggestion for review mode."
+  (should (equal (ai-code--suggest-preset-for-classification '(:mode "=review")) "quick-review"))
+  (should (equal (ai-code--suggest-preset-for-classification '(:mode "=review" :modifiers ("deep"))) "deep-review"))
+  (should (equal (ai-code--suggest-preset-for-classification '(:mode "=review" :modifiers ("concise"))) "quick-review")))
+
+(ert-deftest ai-code-test-suggest-preset-for-research-mode ()
+  "Test preset suggestion for research mode."
+  (should (equal (ai-code--suggest-preset-for-classification '(:mode "=research")) "research-deep")))
+
+(ert-deftest ai-code-test-suggest-preset-for-mentor-mode ()
+  "Test preset suggestion for mentor mode."
+  (should (equal (ai-code--suggest-preset-for-classification '(:mode "=mentor")) "mentor-learn")))
+
+(ert-deftest ai-code-test-suggest-preset-for-spec-mode ()
+  "Test preset suggestion for spec mode."
+  (should (equal (ai-code--suggest-preset-for-classification '(:mode "=spec")) "spec-planning")))
+
 (ert-deftest ai-code-test-classify-modifier-triggers ()
   "Test that modifier triggers are detected."
   (let ((result (ai-code--classify-prompt-intent-keywords
@@ -489,6 +526,257 @@
          (updated (plist-put (copy-sequence behaviors) :constraint-modifiers '("chinese"))))
     (should (equal (plist-get updated :constraint-modifiers) '("chinese")))
     (should (equal (plist-get updated :mode) "=code"))))
+
+;;; GPTel Integration Tests
+
+(ert-deftest ai-code-test-gptel-agent-transform-inject-behaviors-disabled ()
+  "Test that transform does nothing when behaviors disabled."
+  (skip-unless (require 'gptel-request nil t))
+  (let ((ai-code-behaviors-enabled nil))
+    (with-temp-buffer
+      (insert "Fix the bug")
+      (let* ((fsm (gptel-make-fsm :info (list :buffer (current-buffer))))
+             (called nil))
+        (ai-code--gptel-agent-transform-inject-behaviors
+         (lambda () (setq called t))
+         fsm)
+        (should called)
+        (should (string= (buffer-string) "Fix the bug"))))))
+
+(ert-deftest ai-code-test-gptel-agent-transform-inject-behaviors-empty-prompt ()
+  "Test that transform handles empty prompt."
+  (skip-unless (require 'gptel-request nil t))
+  (let ((ai-code-behaviors-enabled t))
+    (with-temp-buffer
+      (let* ((fsm (gptel-make-fsm :info (list :buffer (current-buffer))))
+             (called nil))
+        (ai-code--gptel-agent-transform-inject-behaviors
+         (lambda () (setq called t))
+         fsm)
+        (should called)))))
+
+(ert-deftest ai-code-test-gptel-agent-transform-skips-non-plan-preset ()
+  "Test that transform skips injection for non-plan/agent presets."
+  (skip-unless (require 'gptel-request nil t))
+  (let ((ai-code-behaviors-enabled t))
+    (with-temp-buffer
+      (insert "Implement feature #=code #deep")
+      (setq-local gptel--preset 'other-preset)
+      (let* ((fsm (gptel-make-fsm :info (list :buffer (current-buffer))))
+             (called nil))
+        (ai-code--gptel-agent-transform-inject-behaviors
+         (lambda () (setq called t))
+         fsm)
+        (should called)
+        (should-not (string-match-p "operating-mode" (buffer-string)))))))
+
+(ert-deftest ai-code-test-gptel-agent-transform-injects-for-plan-preset ()
+  "Test that transform injects behaviors for gptel-plan preset."
+  (skip-unless (require 'gptel-request nil t))
+  (ai-code-behaviors-clear-all)
+  (let ((ai-code-behaviors-enabled t))
+    (with-temp-buffer
+      (insert "Implement feature #=code #deep")
+      (setq-local gptel--preset 'gptel-plan)
+      (let ((fsm (gptel-make-fsm :info (list :buffer (current-buffer)))))
+        (ai-code--gptel-agent-transform-inject-behaviors
+         (lambda () nil)
+         fsm))
+      (should (string-match-p "operating-mode" (buffer-string)))
+      (should (string-match-p "<user-prompt>" (buffer-string)))
+      (should (string-match-p "Implement feature" (buffer-string))))))
+
+(ert-deftest ai-code-test-gptel-agent-transform-injects-for-agent-preset ()
+  "Test that transform injects behaviors for gptel-agent preset."
+  (skip-unless (require 'gptel-request nil t))
+  (ai-code-behaviors-clear-all)
+  (let ((ai-code-behaviors-enabled t))
+    (with-temp-buffer
+      (insert "Debug this #=debug")
+      (setq-local gptel--preset 'gptel-agent)
+      (let ((fsm (gptel-make-fsm :info (list :buffer (current-buffer)))))
+        (ai-code--gptel-agent-transform-inject-behaviors
+         (lambda () nil)
+         fsm))
+      (should (string-match-p "operating-mode" (buffer-string)))
+      (should (string-match-p "Debug this" (buffer-string))))))
+
+(ert-deftest ai-code-test-gptel-agent-transform-uses-session-state ()
+  "Test that transform uses session state for the correct project."
+  (skip-unless (require 'gptel-request nil t))
+  (ai-code-behaviors-clear-all)
+  (let* ((ai-code-behaviors-enabled t)
+         (test-root "/test/project/root")
+         (existing-state '(:mode "=code" :modifiers ("deep"))))
+    (ai-code--behaviors-set-state existing-state test-root)
+    (with-temp-buffer
+      (insert "Plain prompt without hashtags")
+      (setq-local gptel--preset 'gptel-plan)
+      (let ((fsm (gptel-make-fsm :info (list :buffer (current-buffer)))))
+        (cl-letf (((symbol-function 'ai-code--behaviors--root)
+                   (lambda (&optional _buffer-or-root) test-root)))
+          (ai-code--gptel-agent-transform-inject-behaviors
+           (lambda () nil)
+           fsm)))
+      (should (string-match-p "operating-mode" (buffer-string)))
+      (should (string-match-p "Plain prompt without hashtags" (buffer-string))))))
+
+(ert-deftest ai-code-test-gptel-agent-transform-when-preset-nil ()
+  "Test that transform skips injection when gptel--preset is nil.
+This happens when gptel-agent package is not loaded."
+  (skip-unless (require 'gptel-request nil t))
+  (ai-code-behaviors-clear-all)
+  (let ((ai-code-behaviors-enabled t))
+    (with-temp-buffer
+      (insert "Implement feature #=code #deep")
+      ;; gptel--preset is nil when gptel-agent package not loaded
+      (let ((fsm (gptel-make-fsm :info (list :buffer (current-buffer)))))
+        (ai-code--gptel-agent-transform-inject-behaviors
+         (lambda () nil)
+         fsm))
+      ;; Should NOT inject since preset is nil (not gptel-plan or gptel-agent)
+      (should-not (string-match-p "operating-mode" (buffer-string)))
+      (should (string= (buffer-string) "Implement feature #=code #deep")))))
+
+(ert-deftest ai-code-test-gptel-agent-preset-only-prompt ()
+  "Test that preset-only prompts apply state without sending."
+  (skip-unless (require 'gptel-request nil t))
+  (ai-code-behaviors-clear-all)
+  (let* ((ai-code-behaviors-enabled t)
+         (test-root "/test/project/root"))
+    (with-temp-buffer
+      (insert "@tdd-dev")
+      (setq-local gptel--preset 'gptel-plan)
+      (let ((fsm (gptel-make-fsm :info (list :buffer (current-buffer)))))
+        (cl-letf (((symbol-function 'ai-code--behaviors--root)
+                   (lambda (&optional _buffer-or-root) test-root)))
+          (ai-code--gptel-agent-transform-inject-behaviors
+           (lambda () nil)
+           fsm)))
+      ;; Buffer should be empty after preset-only prompt
+      (should (string-empty-p (buffer-string)))
+      ;; State should be set
+      (let ((state (ai-code--behaviors-get-state test-root)))
+        (should state)
+        (should (equal (plist-get state :mode) "=code")))
+      ;; Preset should be set
+      (should (equal (ai-code--behaviors-get-preset test-root) "tdd-dev")))))
+
+(ert-deftest ai-code-test-gptel-agent-auto-classify-enabled-by-default ()
+  "Test that auto-classify is enabled by default in gptel-agent."
+  (should ai-code-behaviors-gptel-agent-auto-classify))
+
+(ert-deftest ai-code-test-gptel-agent-process-behaviors-no-auto-classify ()
+  "Test that gptel-agent doesn't auto-classify when disabled."
+  (ai-code-behaviors-clear-all)
+  (let* ((test-root "/test/project/root")
+         (ai-code-behaviors-gptel-agent-auto-classify nil)
+         (result (ai-code--gptel-agent-process-behaviors "Implement a feature" test-root)))
+    ;; Without auto-classify and no session state, should not apply behaviors
+    (should-not (car result))
+    (should (string= (cdr result) "Implement a feature"))))
+
+(ert-deftest ai-code-test-gptel-agent-process-behaviors-with-auto-classify ()
+  "Test that gptel-agent auto-classifies when enabled."
+  (ai-code-behaviors-clear-all)
+  (let* ((test-root "/test/project/root")
+         (ai-code-behaviors-gptel-agent-auto-classify t)
+         (result (ai-code--gptel-agent-process-behaviors "Implement a feature" test-root)))
+    ;; With auto-classify, should apply behaviors
+    (should (car result))
+    (should (string-match-p "operating-mode" (cdr result)))))
+
+(ert-deftest ai-code-test-gptel-agent-setup-transform ()
+  "Test that setup adds transform to gptel-prompt-transform-functions."
+  (skip-unless (require 'gptel nil t))
+  ;; Remove if present
+  (remove-hook 'gptel-prompt-transform-functions
+               #'ai-code--gptel-agent-transform-inject-behaviors)
+  (should-not (memq 'ai-code--gptel-agent-transform-inject-behaviors
+                    (default-value 'gptel-prompt-transform-functions)))
+  ;; Setup should add it
+  (ai-code--gptel-agent-setup-transform)
+  (should (memq 'ai-code--gptel-agent-transform-inject-behaviors
+                (default-value 'gptel-prompt-transform-functions)))
+  ;; Cleanup
+  (remove-hook 'gptel-prompt-transform-functions
+               #'ai-code--gptel-agent-transform-inject-behaviors))
+
+(ert-deftest ai-code-test-process-behaviors-with-root ()
+  "Test that process-behaviors with root stores state for correct project."
+  (ai-code-behaviors-clear-all)
+  (let* ((test-root "/test/project/root")
+         (result (ai-code--process-behaviors "Do stuff #=code" test-root)))
+    (should (string-match-p "operating-mode" result))
+    (let ((state (ai-code--behaviors-get-state test-root)))
+      (should (equal (plist-get state :mode) "=code"))
+      (should (equal (plist-get state :modifiers) nil)))))
+
+(ert-deftest ai-code-test-behaviors-state-isolated-by-root ()
+  "Test that state for different project roots is isolated."
+  (ai-code-behaviors-clear-all)
+  (let ((root1 "/project/one")
+        (root2 "/project/two"))
+    (ai-code--behaviors-set-state '(:mode "=code") root1)
+    (ai-code--behaviors-set-state '(:mode "=debug") root2)
+    (should (equal (ai-code--behaviors-get-state root1) '(:mode "=code")))
+    (should (equal (ai-code--behaviors-get-state root2) '(:mode "=debug")))))
+
+;;; Sync Check Tests
+
+(ert-deftest ai-code-test-behaviors-sync-check-when-synced ()
+  "Test that sync check returns t when commit matches."
+  (should (eq (ai-code--behaviors-check-sync) t)))
+
+(ert-deftest ai-code-test-behaviors-get-repo-behavior-names ()
+  "Test that repo behavior names are retrieved correctly."
+  (let ((behaviors (ai-code--behaviors-get-repo-behavior-names)))
+    (should behaviors)
+    (should (consp behaviors))
+    (should (>= (length (car behaviors)) 10))
+    (should (>= (length (cdr behaviors)) 20))))
+
+(ert-deftest ai-code-test-behaviors-synced-commit-defined ()
+  "Test that synced commit constant is defined."
+  (should (stringp ai-code-behaviors--synced-commit))
+  (should (> (length ai-code-behaviors--synced-commit) 0)))
+
+;;; Hashtag Completion Tests
+
+(ert-deftest ai-code-test-behavior-hashtag-completion-table ()
+  "Test that hashtag completion table includes all behaviors."
+  (let ((table (ai-code--behavior-hashtag-completion-table)))
+    (should (member "code" table))
+    (should (member "debug" table))
+    (should (member "deep" table))
+    (should (member "tdd" table))
+    (should (member "chinese" table))))
+
+(ert-deftest ai-code-test-behavior-hashtag-annotation ()
+  "Test that hashtag annotation function works."
+  (let ((annotation (ai-code--behavior-hashtag-annotation "code")))
+    (should (stringp annotation)))
+  (let ((annotation (ai-code--behavior-hashtag-annotation "deep")))
+    (should (stringp annotation)))
+  (let ((annotation (ai-code--behavior-hashtag-annotation "chinese")))
+    (should (stringp annotation))
+    (should (string-match-p "Chinese" annotation))))
+
+;;; Preset Completion Tests
+
+(ert-deftest ai-code-test-behavior-preset-gptel-annotation ()
+  "Test that preset annotation shows description and mode."
+  (let ((annotation (ai-code--behavior-preset-gptel-annotation "tdd-dev")))
+    (should (stringp annotation))
+    (should (string-match-p "Test-driven" annotation))
+    (should (string-match-p "=code" annotation))))
+
+(ert-deftest ai-code-test-behavior-preset-names ()
+  "Test that preset names are returned with @ prefix."
+  (let ((names (ai-code--behavior-preset-names)))
+    (should (member "@tdd-dev" names))
+    (should (member "@quick-fix" names))
+    (should (member "@deep-review" names))))
 
 (provide 'test_ai-code-behaviors)
 

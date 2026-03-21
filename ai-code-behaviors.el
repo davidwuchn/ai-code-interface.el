@@ -116,6 +116,13 @@ Applies to git and project detection results."
   :type 'integer
   :group 'ai-code-behaviors)
 
+(defcustom ai-code-behaviors-reclassify-min-confidence 'medium
+  "Minimum confidence level required for auto-classify to override session state.
+In gptel-agent context, classifications below this threshold use session state.
+One of high, medium, or low."
+  :type '(choice (const high) (const medium) (const low))
+  :group 'ai-code-behaviors)
+
 (defvar ai-code--behaviors-cache (make-hash-table :test #'equal)
   "Cache for loaded behavior prompts.")
 
@@ -135,48 +142,79 @@ Value: (:result RESULT :timestamp TIME).")
 (defvar ai-code--behavior-annotation-cache (make-hash-table :test #'equal)
   "Cache for behavior annotation strings.")
 
+(defvar ai-code--behaviors-pending-presets (make-hash-table :test #'equal)
+  "Hash table of pending presets per project root.
+Key: project root, Value: preset name string or nil.
+Pending presets are shown in mode-line but not committed until first prompt.")
+
+(defvar ai-code--behaviors-last-prompts (make-hash-table :test #'equal)
+  "Hash table of last processed prompts per project root.
+Key: project root, Value: plist (:original ORIG :processed PROC :behaviors BEH).")
+
 (declare-function ai-code--git-root "ai-code-file" (&optional dir))
 
-(defun ai-code--behaviors-project-root ()
-  "Return git root for current project, or default-directory if not in a repo."
-  (or (and (fboundp 'ai-code--git-root) (ai-code--git-root))
-      default-directory))
+(defun ai-code--behaviors-project-root (&optional buffer)
+  "Return git root for BUFFER, or current buffer if nil.
+Returns default-directory if not in a repo."
+  (if (bufferp buffer)
+      (with-current-buffer buffer
+        (or (and (fboundp 'ai-code--git-root) (ai-code--git-root))
+            default-directory))
+    (or (and (fboundp 'ai-code--git-root) (ai-code--git-root))
+        default-directory)))
 
-(defun ai-code--behaviors--get (key)
-  "Get entry KEY from session states."
-  (plist-get (or (gethash (ai-code--behaviors-project-root) 
+(defun ai-code--behaviors--get (key &optional root)
+  "Get entry KEY from session states for ROOT.
+If ROOT is nil, use current project root."
+  (plist-get (or (gethash (or root (ai-code--behaviors-project-root)) 
                           ai-code--behaviors-session-states)
-                  '(:state nil :preset nil))
+                 '(:state nil :preset nil))
              key))
 
-(defun ai-code--behaviors--set (key value)
-  "Set entry KEY to VALUE in session states."
-  (let* ((root (ai-code--behaviors-project-root))
-         (entry (or (gethash root ai-code--behaviors-session-states)
+(defun ai-code--behaviors--set (key value &optional root)
+  "Set entry KEY to VALUE in session states for ROOT.
+If ROOT is nil, use current project root."
+  (let* ((r (or root (ai-code--behaviors-project-root)))
+         (entry (or (gethash r ai-code--behaviors-session-states)
                     '(:state nil :preset nil))))
-    (puthash root (plist-put (copy-tree entry) key value)
+    (puthash r (plist-put (copy-tree entry) key value)
              ai-code--behaviors-session-states)
     value))
 
-(defun ai-code--behaviors-get-state ()
-  "Get current behavior state for this project."
-  (ai-code--behaviors--get :state))
+(defun ai-code--behaviors-get-state (&optional root)
+  "Get behavior state for project ROOT, or current project if nil."
+  (ai-code--behaviors--get :state root))
 
-(defun ai-code--behaviors-set-state (state)
-  "Set behavior STATE for this project."
-  (ai-code--behaviors--set :state state))
+(defun ai-code--behaviors-set-state (state &optional root)
+  "Set behavior STATE for project ROOT, or current project if nil."
+  (ai-code--behaviors--set :state state root))
 
-(defun ai-code--behaviors-get-preset ()
-  "Get current preset name for this project."
-  (ai-code--behaviors--get :preset))
+(defun ai-code--behaviors-get-preset (&optional root)
+  "Get preset name for project ROOT, or current project if nil."
+  (ai-code--behaviors--get :preset root))
 
-(defun ai-code--behaviors-set-preset (preset)
-  "Set preset name to PRESET for this project."
-  (ai-code--behaviors--set :preset preset))
+(defun ai-code--behaviors-set-preset (preset &optional root)
+  "Set preset name to PRESET for project ROOT, or current project if nil."
+  (ai-code--behaviors--set :preset preset root))
 
-(defun ai-code--behaviors-clear-state ()
-  "Clear behavior state for current project."
-  (remhash (ai-code--behaviors-project-root) ai-code--behaviors-session-states))
+(defun ai-code--behaviors-clear-state (&optional root)
+  "Clear behavior state for project ROOT, or current project if nil."
+  (remhash (or root (ai-code--behaviors-project-root)) ai-code--behaviors-session-states))
+
+(defun ai-code--behaviors-set-pending-preset (preset &optional root)
+  "Set pending PRESET for project ROOT."
+  (puthash (or root (ai-code--behaviors-project-root)) preset
+           ai-code--behaviors-pending-presets))
+
+(defun ai-code--behaviors-get-pending-preset (&optional root)
+  "Get pending preset for project ROOT."
+  (gethash (or root (ai-code--behaviors-project-root))
+           ai-code--behaviors-pending-presets))
+
+(defun ai-code--behaviors-clear-pending-preset (&optional root)
+  "Clear pending preset for project ROOT."
+  (remhash (or root (ai-code--behaviors-project-root))
+           ai-code--behaviors-pending-presets))
 
 (defconst ai-code--behavior-operating-modes
   '("=code" "=debug" "=research" "=review" "=spec" "=test"
@@ -205,6 +243,54 @@ Value: (:result RESULT :timestamp TIME).")
     ("minimal" . "Write minimal code: prefer built-in functions, no over-engineering, keep it simple"))
   "Built-in constraint modifiers with their template instructions.
 These are lighter-weight than repo behaviors and cover common constraints.")
+
+(defconst ai-code-behaviors--synced-commit "8633aa9"
+  "The upstream ai-behaviors commit this source code is synced with.
+Update this when syncing with upstream behavior changes.")
+
+(defun ai-code--behaviors-get-repo-behavior-names ()
+  "Get list of behavior names from upstream repository.
+Returns (MODES . MODIFIERS) where MODES are operating modes and MODIFIERS are modifiers."
+  (when (ai-code--behaviors-repo-available-p)
+    (let* ((behaviors-dir (expand-file-name "behaviors" ai-code-behaviors-repo-path))
+           (entries (directory-files behaviors-dir nil "^[^.]"))
+           (modes nil)
+           (modifiers nil))
+      (dolist (entry entries)
+        (let ((prompt-file (expand-file-name (format "%s/prompt.md" entry) behaviors-dir)))
+          (when (file-exists-p prompt-file)
+            (if (string-match-p "^=" entry)
+                (push entry modes)
+              (push entry modifiers)))))
+      (cons (sort modes #'string<) (sort modifiers #'string<)))))
+
+(defun ai-code--behaviors-check-sync ()
+  "Check if source code is synced with upstream repository.
+Returns t if synced, nil if mismatch, 'no-repo if repo not available."
+  (let ((repo-commit (ai-code--behaviors-get-current-commit)))
+    (cond
+     ((not repo-commit) 'no-repo)
+     ((string= repo-commit ai-code-behaviors--synced-commit) t)
+     (t
+      (let ((repo-behaviors (ai-code--behaviors-get-repo-behavior-names)))
+        (if (not repo-behaviors)
+            'no-repo
+          (let ((repo-modes (car repo-behaviors))
+                (repo-modifiers (cdr repo-behaviors))
+                (source-modes (sort (copy-sequence ai-code--behavior-operating-modes) #'string<))
+                (source-modifiers (sort (copy-sequence ai-code--behavior-modifiers) #'string<)))
+            (and (equal repo-modes source-modes)
+                 (equal repo-modifiers source-modifiers)))))))))
+
+(defun ai-code--behaviors-get-current-commit ()
+  "Get current commit hash of ai-behaviors repository.
+Returns short commit hash or nil if repo not available."
+  (when (ai-code--behaviors-repo-available-p)
+    (let ((default-directory (expand-file-name ai-code-behaviors-repo-path)))
+      (condition-case nil
+          (string-trim 
+           (shell-command-to-string "git rev-parse --short HEAD 2>/dev/null"))
+        (error nil)))))
 
 (defconst ai-code--behavior-presets
   '(("tdd-dev" . (:mode "=code" :modifiers ("tdd" "deep") 
@@ -741,7 +827,8 @@ Returns parsed plist or nil if no valid JSON found."
 
 (defun ai-code--classify-prompt-intent-keywords (prompt-text)
   "Classify PROMPT-TEXT intent using keyword matching.
-Return list suitable for behavior injection."
+Return plist with :mode, :modifiers, and :confidence.
+Confidence is high (2+ matches), medium (1 match), or low."
   (let* ((lower-prompt (downcase prompt-text))
          (mode-order (mapcar #'car ai-code--intent-classification-keywords))
          (mode-scores
@@ -768,8 +855,10 @@ Return list suitable for behavior injection."
           (dolist (kw keywords)
             (when (string-match-p (regexp-quote kw) lower-prompt)
               (push (symbol-name mod) modifiers)))))
-      (list :mode (symbol-name (car best-entry))
-            :modifiers (delete-dups modifiers)))))
+      (let ((confidence (if (>= (cdr best-entry) 2) 'high 'medium)))
+        (list :mode (symbol-name (car best-entry))
+              :modifiers (delete-dups modifiers)
+              :confidence confidence)))))
 
 (defun ai-code--classify-prompt-intent (prompt-text)
   "Classify PROMPT-TEXT intent for behavior injection.
@@ -853,14 +942,16 @@ BEHAVIORS is (:mode MODE :modifiers MODIFIERS :constraint-modifiers CONSTRAINTS
       (concat (mapconcat #'identity (nreverse blocks) "\n\n")
               "\n\nThese behaviors apply until superseded by new hashtags. During compaction, preserve the most recent <operating-mode> and <behavior-modifiers> blocks."))))
 
-(defun ai-code--process-behaviors (prompt-text)
+(defun ai-code--process-behaviors (prompt-text &optional project-root)
   "Process behaviors for PROMPT-TEXT and return modified prompt.
 This is the main entry point for behavior injection.
-1. Extract explicit #hashtags and @preset from prompt
-2. If preset found, apply preset (merged with any additional modifiers)
-3. If no preset but hashtags, use explicit behaviors
-4. If no hashtags, check session state for persisted behaviors
-5. If no session state and auto-classify is enabled, classify intent
+PROJECT-ROOT specifies the project for state lookup/storage; uses current
+project if nil.
+Priority order (regular context):
+1. Explicit #hashtags/@preset - always wins, clears pending
+2. Pending preset - committed on first non-empty prompt
+3. Session state - reused if no pending
+4. Auto-classify - if enabled and no session state
 Returns the modified prompt with behaviors injected, or the original
 PROMPT-TEXT if no behaviors apply.
 Note: Preset-only prompts (empty after tag removal) are handled by
@@ -870,14 +961,28 @@ Note: Preset-only prompts (empty after tag removal) are handled by
     (let* ((extracted (ai-code--extract-and-remove-hashtags prompt-text))
            (explicit-behaviors (car extracted))
            (cleaned-prompt (cdr extracted))
-           (session-state (ai-code--behaviors-get-state)))
+           (session-state (ai-code--behaviors-get-state project-root))
+           (pending-preset (ai-code--behaviors-get-pending-preset project-root)))
       (cond
        (explicit-behaviors
+        (ai-code--behaviors-clear-pending-preset project-root)
         (let* ((preset-name (plist-get explicit-behaviors :preset))
                (final-behaviors (ai-code--merge-preset-with-modifiers preset-name explicit-behaviors)))
-          (ai-code--behaviors-set-preset preset-name)
-          (ai-code--behaviors-set-state final-behaviors)
-          (ai-code--behaviors-update-mode-line)
+          (ai-code--behaviors-set-preset preset-name project-root)
+          (ai-code--behaviors-set-state final-behaviors project-root)
+          (ai-code--behaviors-update-mode-line project-root)
+          (let ((instruction (ai-code--build-behavior-instruction final-behaviors)))
+            (if instruction
+                (format "%s\n\n<user-prompt>\n%s\n</user-prompt>"
+                        instruction cleaned-prompt)
+              cleaned-prompt))))
+       ((and pending-preset (not (string-empty-p (string-trim cleaned-prompt))))
+        (ai-code--behaviors-clear-pending-preset project-root)
+        (let* ((final-behaviors (ai-code--merge-preset-with-modifiers pending-preset nil)))
+          (ai-code--behaviors-set-preset pending-preset project-root)
+          (ai-code--behaviors-set-state final-behaviors project-root)
+          (ai-code--behaviors-update-mode-line project-root)
+          (message "Activated preset: @%s" pending-preset)
           (let ((instruction (ai-code--build-behavior-instruction final-behaviors)))
             (if instruction
                 (format "%s\n\n<user-prompt>\n%s\n</user-prompt>"
@@ -889,14 +994,19 @@ Note: Preset-only prompts (empty after tag removal) are handled by
               (format "%s\n\n<user-prompt>\n%s\n</user-prompt>"
                       instruction (string-trim prompt-text))
             prompt-text)))
-((when-let ((classified (and ai-code-behaviors-auto-classify
-                                    (ai-code--classify-prompt-intent prompt-text))))
-           (let ((final-behaviors (ai-code--merge-preset-with-modifiers nil classified)))
-             (ai-code--behaviors-set-preset nil)
-             (ai-code--behaviors-set-state final-behaviors)
-             (ai-code--behaviors-update-mode-line)
-             (message "Auto-classified: #%s" (or (plist-get final-behaviors :mode) "unknown"))
-             (let ((instruction (ai-code--build-behavior-instruction final-behaviors)))
+       ((when-let ((classified (and ai-code-behaviors-auto-classify
+                                      (ai-code--classify-prompt-intent prompt-text))))
+          (let* ((suggested-preset (ai-code--suggest-preset-for-classification classified))
+                 (final-behaviors (if suggested-preset
+                                       (ai-code--merge-preset-with-modifiers suggested-preset nil)
+                                     (ai-code--merge-preset-with-modifiers nil classified))))
+            (ai-code--behaviors-set-preset suggested-preset project-root)
+            (ai-code--behaviors-set-state final-behaviors project-root)
+            (ai-code--behaviors-update-mode-line project-root)
+            (message "Auto-classified: @%s (%s)"
+                     (or suggested-preset "custom")
+                     (or (plist-get final-behaviors :mode) "unknown"))
+            (let ((instruction (ai-code--build-behavior-instruction final-behaviors)))
               (if instruction
                   (format "%s\n\n<user-prompt>\n%s\n</user-prompt>"
                           instruction (string-trim prompt-text))
@@ -1315,9 +1425,18 @@ EVENT is the mouse event."
                     'help-echo tooltip
                     'local-map ai-code--behaviors-mode-line-map)))))
 
-(defun ai-code--behaviors-update-mode-line ()
-  "Update mode-line with current behavior indicator."
-  (force-mode-line-update t))
+(defun ai-code--behaviors-update-mode-line (&optional project-root)
+  "Update mode-line with current behavior indicator.
+If PROJECT-ROOT is specified, update all buffers for that project.
+Otherwise, update current buffer only."
+  (if project-root
+      (save-current-buffer
+        (dolist (buf (buffer-list))
+          (when (buffer-live-p buf)
+            (set-buffer buf)
+            (when (equal (ai-code--behaviors-project-root) project-root)
+              (force-mode-line-update t)))))
+    (force-mode-line-update t)))
 
 (defun ai-code-describe-behavior (behavior-name)
   "Display documentation for BEHAVIOR-NAME.
@@ -1635,6 +1754,402 @@ Returns t if enabled, nil if `ai-code--insert-prompt' is not defined."
       (ai-code-behaviors-enable-auto-presets)
     (eval-after-load 'ai-code
       #'ai-code-behaviors-enable-auto-presets)))
+
+;;; GPTel-Agent Integration
+
+(defvar gptel-prompt-transform-functions)
+(defvar gptel-fsm-info)
+(defvar gptel--preset)
+(declare-function gptel-fsm-info "gptel-request" (fsm))
+
+(defun ai-code--gptel-agent-process-behaviors (prompt-text project-root)
+  "Process behaviors for PROMPT-TEXT in gptel-agent context.
+PROJECT-ROOT specifies the project for state lookup.
+Respects `ai-code-behaviors-gptel-agent-auto-classify'.
+Returns cons cell (BEHAVIORS-APPLIED . RESULT-TEXT).
+BEHAVIORS-APPLIED is t if behaviors were applied (or preset-only).
+RESULT-TEXT is the processed text or nil for preset-only prompts.
+
+Priority order (gptel-agent context):
+1. Explicit #hashtags/@preset - always wins
+2. Auto-classify (if enabled and meets confidence threshold)
+3. Pending preset (committed on first prompt)
+4. Session state (fallback)
+5. No changes"
+  (let* ((extracted (ai-code--extract-and-remove-hashtags prompt-text))
+         (explicit-behaviors (car extracted))
+         (cleaned-prompt (cdr extracted))
+         (session-state (ai-code--behaviors-get-state project-root))
+         (pending-preset (ai-code--behaviors-get-pending-preset project-root)))
+    (cond
+     (explicit-behaviors
+      (ai-code--behaviors-clear-pending-preset project-root)
+      (let* ((preset-name (plist-get explicit-behaviors :preset))
+             (final-behaviors (ai-code--merge-preset-with-modifiers preset-name explicit-behaviors)))
+        (ai-code--behaviors-set-preset preset-name project-root)
+        (ai-code--behaviors-set-state final-behaviors project-root)
+        (ai-code--behaviors-update-mode-line project-root)
+        (if (string-empty-p (string-trim cleaned-prompt))
+            (progn
+              (message "Preset applied: %s%s"
+                       (if preset-name (concat "@" preset-name) "")
+                       (if-let ((mode (plist-get final-behaviors :mode)))
+                           (format " (%s)" mode) ""))
+              (cons t nil))
+          (let ((instruction (ai-code--build-behavior-instruction final-behaviors)))
+            (cons t
+                  (if instruction
+                      (format "%s\n\n<user-prompt>\n%s\n</user-prompt>"
+                              instruction cleaned-prompt)
+                    cleaned-prompt))))))
+     ((let ((classified (and ai-code-behaviors-gptel-agent-auto-classify
+                               ai-code-behaviors-auto-classify
+                               (ai-code--classify-prompt-intent prompt-text))))
+        (when classified
+          (let ((confidence (plist-get classified :confidence))
+                (min-level (cl-position ai-code-behaviors-reclassify-min-confidence '(high medium low))))
+            (and confidence
+                 (<= (or (cl-position confidence '(high medium low)) 0) (or min-level 1))))))
+      (ai-code--behaviors-clear-pending-preset project-root)
+      (let* ((classified (ai-code--classify-prompt-intent prompt-text))
+             (suggested-preset (ai-code--suggest-preset-for-classification classified))
+             (final-behaviors (if suggested-preset
+                                   (ai-code--merge-preset-with-modifiers suggested-preset nil)
+                                 (ai-code--merge-preset-with-modifiers nil classified))))
+        (ai-code--behaviors-set-preset suggested-preset project-root)
+        (ai-code--behaviors-set-state final-behaviors project-root)
+        (ai-code--behaviors-update-mode-line project-root)
+        (message "Auto-classified: @%s (%s)"
+                 (or suggested-preset "custom")
+                 (or (plist-get final-behaviors :mode) "unknown"))
+        (let ((instruction (ai-code--build-behavior-instruction final-behaviors)))
+          (cons t
+                (if instruction
+                    (format "%s\n\n<user-prompt>\n%s\n</user-prompt>"
+                            instruction (string-trim prompt-text))
+                  prompt-text)))))
+     ((and pending-preset (not (string-empty-p (string-trim cleaned-prompt))))
+      (ai-code--behaviors-clear-pending-preset project-root)
+      (let* ((final-behaviors (ai-code--merge-preset-with-modifiers pending-preset nil)))
+        (ai-code--behaviors-set-preset pending-preset project-root)
+        (ai-code--behaviors-set-state final-behaviors project-root)
+        (ai-code--behaviors-update-mode-line project-root)
+        (message "Activated preset: @%s" pending-preset)
+        (let ((instruction (ai-code--build-behavior-instruction final-behaviors)))
+          (cons t
+                (if instruction
+                    (format "%s\n\n<user-prompt>\n%s\n</user-prompt>"
+                            instruction cleaned-prompt)
+                  cleaned-prompt)))))
+     (session-state
+      (let ((instruction (ai-code--build-behavior-instruction session-state)))
+        (cons t
+              (if instruction
+                  (format "%s\n\n<user-prompt>\n%s\n</user-prompt>"
+                          instruction (string-trim prompt-text))
+                prompt-text))))
+     (t (cons nil prompt-text)))))
+
+(defun ai-code--gptel-agent-transform-inject-behaviors (callback fsm)
+  "Transform function for gptel-agent to inject behaviors.
+Only injects when `gptel--preset' is `gptel-plan' or `gptel-agent'.
+CALLBACK is called when transformation is complete.
+FSM is the gptel finite state machine.
+Handles preset-only prompts by applying state without sending."
+  (condition-case err
+      (let* ((info (and fsm (gptel-fsm-info fsm)))
+             (source-buffer (and info (plist-get info :buffer)))
+             (preset (when (buffer-live-p source-buffer)
+                       (buffer-local-value 'gptel--preset source-buffer)))
+             (prompt-text (save-excursion
+                            (goto-char (point-max))
+                            (let ((prop (text-property-search-backward 'gptel nil t)))
+                              (if prop
+                                  (string-trim
+                                   (buffer-substring-no-properties 
+                                    (prop-match-end prop) 
+                                    (point-max)))
+                                (buffer-string))))))
+        (if (or (not ai-code-behaviors-enabled)
+                (not (memq preset '(gptel-plan gptel-agent)))
+                (string-empty-p (string-trim prompt-text)))
+            (funcall callback)
+          (if (not (ai-code--behaviors-repo-available-p))
+              (progn
+                (message "ai-code-behaviors: Repository not available, skipping behavior injection")
+                (funcall callback))
+            (let* ((project-root (ai-code--behaviors-project-root source-buffer))
+                   (result (ai-code--gptel-agent-process-behaviors prompt-text project-root))
+                   (behaviors-applied (car result))
+                   (processed-text (cdr result))
+                   (behaviors-state (ai-code--behaviors-get-state project-root)))
+              (puthash project-root
+                       (list :original prompt-text
+                             :processed processed-text
+                             :behaviors behaviors-state)
+                       ai-code--behaviors-last-prompts)
+              (cond
+               ((and behaviors-applied (null processed-text))
+                (erase-buffer)
+                (funcall callback))
+               ((and behaviors-applied processed-text
+                     (not (string= processed-text prompt-text)))
+                (erase-buffer)
+                (insert processed-text)
+                (funcall callback))
+               (t (funcall callback)))))))
+    (error
+     (message "ai-code-behaviors transform error: %s" (error-message-string err))
+     (funcall callback))))
+
+(defun ai-code--gptel-agent-setup-transform ()
+  "Set up gptel-agent behavior integration.
+Adds transform, completion, mode-line, and registers presets with gptel."
+  (when (boundp 'gptel--known-presets)
+    (dolist (preset ai-code--behavior-presets)
+      (let* ((name (car preset))
+             (data (cdr preset))
+             (desc (plist-get data :description))
+             (mode (plist-get data :mode))
+             (modifiers (plist-get data :modifiers))
+             (mode-str (when mode (substring mode 1)))
+             (mods-str (when modifiers (mapconcat #'identity modifiers ", ")))
+             (extra (if (and mode-str mods-str)
+                        (format " (%s, %s)" mode-str mods-str)
+                      (when mode-str (format " (%s)" mode-str))))
+             (full-desc (concat "   " (or desc "") (or extra ""))))
+        (setq gptel--known-presets
+              (assq-delete-all (intern name) gptel--known-presets))
+        (setq gptel--known-presets
+              (nconc gptel--known-presets
+                     (list (cons (intern name)
+                                 (list :description full-desc
+                                       :system ""))))))))
+  (add-hook 'gptel-mode-hook #'ai-code--behavior-setup-hashtag-completion)
+  (unless (memq 'ai-code--gptel-agent-transform-inject-behaviors
+                (default-value 'gptel-prompt-transform-functions))
+    (add-hook 'gptel-prompt-transform-functions
+              #'ai-code--gptel-agent-transform-inject-behaviors))
+  (ai-code-behaviors-mode-line-enable)
+  (dolist (buf (buffer-list))
+    (when (buffer-live-p buf)
+      (with-current-buffer buf
+        (when (bound-and-true-p gptel-mode)
+          (ai-code--behavior-setup-hashtag-completion)))))
+  (message "ai-code-behaviors gptel-agent integration enabled"))
+
+(defun ai-code--behavior-setup-hashtag-completion ()
+  "Add behavior hashtag and preset completion to current buffer.
+Intended for `gptel-mode-hook'.
+Also adds font-lock for behavior hashtags and keybinding.
+Note: Transform is added to default value in `ai-code--gptel-agent-setup-transform'.
+We add `t' to local transform list so gptel merges with default value."
+  (add-hook 'completion-at-point-functions #'ai-code--behavior-hashtag-capf nil t)
+  (add-hook 'completion-at-point-functions #'ai-code--behavior-preset-gptel-capf nil t)
+  (local-set-key (kbd "C-c P") #'ai-code-behaviors-show-last-prompt)
+  (when (boundp 'gptel-prompt-transform-functions)
+    (make-local-variable 'gptel-prompt-transform-functions)
+    (unless (memq t gptel-prompt-transform-functions)
+      (setq gptel-prompt-transform-functions
+            (cons t gptel-prompt-transform-functions))))
+  (let ((keyword `((ai-code--fontify-behavior-keyword
+                    0 (when (member (match-string 1)
+                                    ',(append ai-code--behavior-operating-modes
+                                              ai-code--behavior-modifiers
+                                              (mapcar #'car ai-code--constraint-modifiers)))
+                       '(:box -1 :inherit font-lock-keyword-face))
+                    prepend))))
+    (font-lock-add-keywords nil keyword t)))
+
+(defun ai-code--fontify-behavior-keyword (end)
+  "Font-lock function for behavior hashtags in chat buffers.
+Return fontification info for text up to END."
+  (and (re-search-forward "#\\([=a-zA-Z0-9_-]+\\)\\_>" end t)
+       (or (= (match-beginning 0) (point-min))
+           (memq (char-syntax (char-before (match-beginning 0))) '(32 62)))
+       (member (match-string 1)
+               (append ai-code--behavior-operating-modes
+                       ai-code--behavior-modifiers
+                       (mapcar #'car ai-code--constraint-modifiers)))))
+
+(defun ai-code--behavior-hashtag-capf ()
+  "Completion-at-point function for #behavior hashtags.
+Works in gptel-agent buffers and ai-code-prompt-mode.
+Shows operating modes, modifiers, and constraints with annotations."
+  (when (and ai-code-behaviors-enabled
+             (or (bound-and-true-p gptel-mode)
+                 (and (boundp 'major-mode) (eq major-mode 'ai-code-prompt-mode))))
+    (let ((pos (save-excursion
+                 (skip-chars-backward "=a-zA-Z0-9_-")
+                 (point))))
+      (when (and (> pos (point-min))
+                 (eq (char-before pos) ?#)
+                 (or (= pos (1+ (point-min)))
+                     (memq (char-syntax (char-before (1- pos))) '(?\s ?\t ?\n))))
+        (list pos (point)
+              (ai-code--behavior-hashtag-completion-table)
+              :exclusive 'no
+              :annotation-function #'ai-code--behavior-hashtag-annotation
+              :exit-function
+              (lambda (_str _status)
+                (when (looking-at "\\>")
+                  (insert " "))))))))
+
+(defun ai-code--behavior-hashtag-completion-table ()
+  "Return completion table for behavior hashtags."
+  (append
+   (mapcar (lambda (m) (substring m 1)) ai-code--behavior-operating-modes)
+   (mapcar (lambda (m) m) ai-code--behavior-modifiers)
+   (mapcar (lambda (c) (car c)) ai-code--constraint-modifiers)))
+
+(defun ai-code--behavior-hashtag-annotation (name)
+  "Return annotation for behavior NAME."
+  (cond
+   ((member (concat "=" name) ai-code--behavior-operating-modes)
+    (let ((annotation (ai-code--extract-behavior-annotation (concat "=" name))))
+      (if annotation (format "  %s" annotation) "  (operating mode)")))
+   ((member name ai-code--behavior-modifiers)
+    (let ((annotation (ai-code--extract-behavior-annotation name)))
+      (if annotation (format "  %s" annotation) "  (modifier)")))
+   ((assoc name ai-code--constraint-modifiers)
+    (let ((desc (cdr (assoc name ai-code--constraint-modifiers))))
+      (format "  %s" (truncate-string-to-width desc 40 nil nil t))))
+   (t "")))
+
+(defun ai-code--behavior-preset-gptel-capf ()
+  "Completion at point for behavior presets in gptel-mode.
+Shows behavior presets like @tdd-dev with descriptions.
+Works alongside gptel's built-in preset completion."
+  (when (and ai-code-behaviors-enabled
+             (bound-and-true-p gptel-mode)
+             ai-code--behavior-presets)
+    (let ((pos (save-excursion
+                 (skip-chars-backward "a-zA-Z0-9_-")
+                 (point))))
+      (when (and (> pos (point-min))
+                 (eq (char-before pos) ?@)
+                 (or (= pos (1+ (point-min)))
+                     (memq (char-syntax (char-before (1- pos))) '(?\s ?\t ?\n))))
+        (list pos (point)
+              (mapcar #'car ai-code--behavior-presets)
+              :exclusive 'no
+              :annotation-function #'ai-code--behavior-preset-gptel-annotation
+              :exit-function
+              (lambda (_str _status)
+                (when (looking-at "\\>")
+                  (insert " "))))))))
+
+(defun ai-code--behavior-preset-gptel-annotation (name)
+  "Return annotation for preset NAME."
+  (let ((preset (assoc name ai-code--behavior-presets)))
+    (if preset
+        (let ((desc (plist-get (cdr preset) :description))
+              (mode (plist-get (cdr preset) :mode))
+              (modifiers (plist-get (cdr preset) :modifiers)))
+          (format "    %s [%s %s]"
+                  (or desc "")
+                  (or mode "")
+                  (mapconcat #'identity (or modifiers '()) " ")))
+      "")))
+
+(defun ai-code--suggest-preset-for-classification (classification)
+  "Suggest a preset name based on CLASSIFICATION.
+CLASSIFICATION is a plist like (:mode \"=code\" :modifiers (\"deep\" \"tdd\")).
+Returns preset name string or nil."
+  (when classification
+    (let ((mode (plist-get classification :mode))
+          (modifiers (or (plist-get classification :modifiers) '())))
+      (cond
+       ((and (equal mode "=code")
+             (member "tdd" modifiers))
+        "tdd-dev")
+       ((and (equal mode "=code")
+             (member "concise" modifiers))
+        "quick-fix")
+       ((equal mode "=code")
+        "quick-fix")
+       ((and (equal mode "=debug")
+             (or (member "deep" modifiers) (member "challenge" modifiers)))
+        "thorough-debug")
+       ((equal mode "=debug")
+        "thorough-debug")
+       ((and (equal mode "=review")
+             (member "concise" modifiers))
+        "quick-review")
+       ((and (equal mode "=review")
+             (or (member "deep" modifiers) (member "challenge" modifiers)))
+        "deep-review")
+       ((equal mode "=review")
+        "quick-review")
+       ((and (equal mode "=research")
+             (or (member "deep" modifiers) (member "wide" modifiers)))
+        "research-deep")
+       ((equal mode "=research")
+        "research-deep")
+       ((equal mode "=mentor")
+        "mentor-learn")
+       ((and (equal mode "=spec")
+             (or (member "decompose" modifiers) (member "wide" modifiers)))
+        "spec-planning")
+       ((equal mode "=spec")
+        "spec-planning")
+       ((equal mode "=test")
+        "tdd-dev")
+       (t nil)))))
+
+(defun ai-code-behaviors-show-last-prompt ()
+  "Show the last prompt processed by behavior injection.
+Displays the original prompt, processed prompt, and applied behaviors.
+Useful for debugging what was actually sent to the LLM."
+  (interactive)
+  (let* ((project-root (ai-code--behaviors-project-root))
+         (last-prompt (gethash project-root ai-code--behaviors-last-prompts)))
+    (if (not last-prompt)
+        (message "No prompt has been processed yet for this project")
+      (let* ((original (plist-get last-prompt :original))
+             (processed (plist-get last-prompt :processed))
+             (behaviors (plist-get last-prompt :behaviors))
+             (buf (get-buffer-create "*ai-code-behaviors-last-prompt*")))
+        (with-current-buffer buf
+          (erase-buffer)
+          (insert "=== ORIGINAL PROMPT ===\n\n")
+          (insert (or original "(none)"))
+          (insert "\n\n=== PROCESSED PROMPT (sent to LLM) ===\n\n")
+          (insert (or processed "(no changes)"))
+          (insert "\n\n=== APPLIED BEHAVIORS ===\n\n")
+          (if behaviors
+              (let ((mode (plist-get behaviors :mode))
+                    (modifiers (plist-get behaviors :modifiers))
+                    (constraints (plist-get behaviors :constraint-modifiers)))
+                (insert (format "Mode: %s\n" (or mode "none")))
+                (insert (format "Modifiers: %s\n" (if modifiers (mapconcat #'identity modifiers " ") "none")))
+                (insert (format "Constraints: %s\n" (if constraints (mapconcat #'identity constraints " ") "none"))))
+            (insert "No behaviors applied"))
+          (goto-char (point-min)))
+        (pop-to-buffer buf)))))
+
+(defcustom ai-code-behaviors-gptel-agent-integration t
+  "When non-nil, inject behaviors into gptel-agent prompts.
+Adds a transform function to `gptel-prompt-transform-functions' that
+processes behavior hashtags (#=code, @preset, etc.) and injects
+corresponding instructions into prompts sent via gptel-agent.
+Only injects when `gptel--preset' is `gptel-plan' or `gptel-agent'."
+  :type 'boolean
+  :group 'ai-code-behaviors)
+
+(defcustom ai-code-behaviors-gptel-agent-auto-classify t
+  "When non-nil, auto-classify prompts in gptel-agent buffers.
+When nil, gptel-agent prompts without explicit hashtags use existing
+session state instead of auto-classifying.
+Default is t to enable automatic behavior detection in agent workflows."
+  :type 'boolean
+  :group 'ai-code-behaviors)
+
+(when ai-code-behaviors-gptel-agent-integration
+  (if (featurep 'gptel)
+      (ai-code--gptel-agent-setup-transform)
+    (eval-after-load 'gptel
+      #'ai-code--gptel-agent-setup-transform)))
 
 (provide 'ai-code-behaviors)
 
