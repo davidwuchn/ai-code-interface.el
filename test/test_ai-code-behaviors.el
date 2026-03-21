@@ -265,7 +265,7 @@
   (ai-code-behaviors-clear)
   (should (null (ai-code--behaviors-get-preset)))
   (should (null (ai-code--behaviors-get-state)))
-  (should (null (ai-code--behaviors-mode-line-string))))
+  (should (string-match-p "\\[○\\]" (ai-code--behaviors-mode-line-string))))
 
 (ert-deftest ai-code-test-hashtag-clears-preset ()
   "Test that setting behaviors via hashtag clears preset name."

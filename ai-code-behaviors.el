@@ -1449,14 +1449,14 @@ EVENT is the mouse event."
                            (when modifiers (mapconcat #'identity modifiers " "))
                            (when (> constraint-count 0)
                              (format " +%d" constraint-count))
-                           "]"))))
+                           "]"))
+                  (t "[○]")))
            (tooltip (ai-code--behaviors-build-tooltip preset state)))
-      (when text
-        (propertize text
-                    'face face
-                    'mouse-face 'mode-line-highlight
-                    'help-echo tooltip
-                    'local-map ai-code--behaviors-mode-line-map)))))
+      (propertize text
+                  'face face
+                  'mouse-face 'mode-line-highlight
+                  'help-echo tooltip
+                  'local-map ai-code--behaviors-mode-line-map))))
 
 (defun ai-code--behaviors-update-mode-line (&optional project-root)
   "Update mode-line with current behavior indicator.
@@ -1818,7 +1818,13 @@ Priority order (gptel-agent context):
          (explicit-behaviors (car extracted))
          (cleaned-prompt (cdr extracted))
          (session-state (ai-code--behaviors-get-state project-root))
-         (pending-preset (ai-code--behaviors-get-pending-preset project-root)))
+         (pending-preset (ai-code--behaviors-get-pending-preset project-root))
+         (classified (and ai-code-behaviors-gptel-agent-auto-classify
+                          ai-code-behaviors-auto-classify
+                          (ai-code--classify-prompt-intent prompt-text)))
+         (meets-threshold (and classified
+                               (ai-code--behaviors-meets-confidence-threshold-p
+                                (plist-get classified :confidence)))))
     (cond
      (explicit-behaviors
       (ai-code--behaviors-clear-pending-preset project-root)
@@ -1833,18 +1839,12 @@ Priority order (gptel-agent context):
                            (format " (%s)" mode) ""))
               (cons t nil))
           (cons t (ai-code--behaviors-wrap-with-instruction final-behaviors cleaned-prompt)))))
-     ((let ((classified (and ai-code-behaviors-gptel-agent-auto-classify
-                               ai-code-behaviors-auto-classify
-                               (ai-code--classify-prompt-intent prompt-text))))
-        (when (and classified
-                   (ai-code--behaviors-meets-confidence-threshold-p
-                    (plist-get classified :confidence)))
-          classified))
+     (meets-threshold
       (ai-code--behaviors-clear-pending-preset project-root)
-      (let* ((suggested-preset (ai-code--suggest-preset-for-classification it))
+      (let* ((suggested-preset (ai-code--suggest-preset-for-classification classified))
              (final-behaviors (if suggested-preset
                                    (ai-code--merge-preset-with-modifiers suggested-preset nil)
-                                 (ai-code--merge-preset-with-modifiers nil it))))
+                                 (ai-code--merge-preset-with-modifiers nil classified))))
         (ai-code--behaviors-apply-and-format suggested-preset final-behaviors project-root
                                               (format "Auto-classified: @%s (%s)"
                                                       (or suggested-preset "custom")
