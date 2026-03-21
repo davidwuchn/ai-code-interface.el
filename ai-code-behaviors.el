@@ -1985,10 +1985,13 @@ Return fontification info for text up to END."
   (and (re-search-forward "#\\([=a-zA-Z0-9_-]+\\)\\_>" end t)
        (or (= (match-beginning 0) (point-min))
            (memq (char-syntax (char-before (match-beginning 0))) '(32 62)))
-       (member (match-string 1)
-               (append ai-code--behavior-operating-modes
-                       ai-code--behavior-modifiers
-                       (mapcar #'car ai-code--constraint-modifiers)))))
+       (let* ((matched (match-string 1))
+              (with-eq (if (string-prefix-p "=" matched)
+                           matched
+                         (concat "=" matched))))
+         (or (member matched ai-code--behavior-modifiers)
+             (member matched (mapcar #'car ai-code--constraint-modifiers))
+             (member with-eq ai-code--behavior-operating-modes)))))
 
 (defun ai-code--behavior-hashtag-capf ()
   "Completion-at-point function for #behavior hashtags.
