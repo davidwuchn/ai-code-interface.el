@@ -1001,11 +1001,17 @@ BEHAVIORS is (:mode MODE :modifiers MODIFIERS :constraint-modifiers CONSTRAINTS
 
 (defun ai-code--behaviors-wrap-with-instruction (behaviors prompt-text)
   "Wrap PROMPT-TEXT with instruction from BEHAVIORS.
-Returns formatted string with instruction block, or PROMPT-TEXT if no instruction."
+Returns formatted string with instruction block, or PROMPT-TEXT if no instruction.
+If PROMPT-TEXT already contains <user-prompt> tags, extracts content first."
   (let ((instruction (ai-code--build-behavior-instruction behaviors)))
     (if instruction
-        (format "%s\n\n<user-prompt>\n%s\n</user-prompt>"
-                instruction (string-trim prompt-text))
+        (let* ((clean-text (string-trim prompt-text))
+               ;; Extract content if already wrapped
+               (content (if (string-match "<user-prompt>\\s-*\\(\\(?:.\\|\n\\)*?\\)\\s-*</user-prompt>" clean-text)
+                            (match-string 1 clean-text)
+                          clean-text)))
+          (format "%s\n\n<user-prompt>\n%s\n</user-prompt>"
+                  instruction (string-trim content)))
       prompt-text)))
 
 (defun ai-code--behaviors-meets-confidence-threshold-p (confidence)
@@ -1923,7 +1929,9 @@ Returns t if buffer was modified, nil otherwise."
                                      (buffer-substring-no-properties 
                                       (prop-match-beginning prop)
                                       (point-max)))
-                                  (string-trim (buffer-string))))))))
+                                  (string-trim (buffer-string)))))))
+             ;; Store original BEFORE processing (includes @preset)
+             (original-prompt prompt-text))
         (if (or (not ai-code-behaviors-enabled)
                 (not (memq preset '(gptel-plan gptel-agent)))
                 (string-empty-p (string-trim prompt-text)))
@@ -1943,7 +1951,7 @@ Returns t if buffer was modified, nil otherwise."
                   (gptel--apply-preset 'gptel-agent
                     (lambda (sym val) (set (make-local-variable sym) val)))))
               (puthash project-root
-                       (list :original prompt-text
+                       (list :original original-prompt
                              :processed processed-text
                              :behaviors behaviors-state)
                        ai-code--behaviors-last-prompts)
