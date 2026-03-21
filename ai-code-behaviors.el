@@ -1997,9 +1997,13 @@ Also adds font-lock for behavior hashtags, keybinding, and mode-line."
   (add-hook 'completion-at-point-functions #'ai-code--behavior-hashtag-capf nil t)
   (add-hook 'completion-at-point-functions #'ai-code--behavior-preset-gptel-capf nil t)
   (local-set-key (kbd "C-c P") #'ai-code-behaviors-show-last-prompt)
+  ;; Set up local transform list if needed
+  ;; Don't add 't' if our transform is already in the default - avoids double execution
   (when (boundp 'gptel-prompt-transform-functions)
     (make-local-variable 'gptel-prompt-transform-functions)
-    (unless (memq t gptel-prompt-transform-functions)
+    (unless (or (memq t gptel-prompt-transform-functions)
+                (memq 'ai-code--gptel-agent-transform-inject-behaviors
+                      (default-value 'gptel-prompt-transform-functions)))
       (setq gptel-prompt-transform-functions
             (cons t gptel-prompt-transform-functions))))
   (font-lock-add-keywords
