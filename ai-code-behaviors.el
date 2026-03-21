@@ -1907,15 +1907,21 @@ Returns t if buffer was modified, nil otherwise."
              (source-buffer (and info (plist-get info :buffer)))
              (preset (when (buffer-live-p source-buffer)
                        (buffer-local-value 'gptel--preset source-buffer)))
+             ;; Find the last user prompt - marked by "### " at line start
+             ;; This works in both gptel chat buffers and prompt-copy buffers
              (prompt-text (save-excursion
                             (goto-char (point-max))
-                            (let ((prop (text-property-search-backward 'gptel nil t)))
-                              (if prop
-                                  (string-trim
-                                   (buffer-substring-no-properties 
-                                    (prop-match-end prop) 
-                                    (point-max)))
-                                (buffer-string))))))
+                            ;; Search for user prompt marker "### " 
+                            (if (re-search-backward "^### \\(.*\\)" nil t)
+                                (string-trim (match-string 0))
+                              ;; Fallback: try extracting after last gptel property
+                              (let ((prop (text-property-search-backward 'gptel nil t)))
+                                (if prop
+                                    (string-trim
+                                     (buffer-substring-no-properties 
+                                      (prop-match-beginning prop)
+                                      (point-max)))
+                                  (string-trim (buffer-string))))))))
         (if (or (not ai-code-behaviors-enabled)
                 (not (memq preset '(gptel-plan gptel-agent)))
                 (string-empty-p (string-trim prompt-text)))
