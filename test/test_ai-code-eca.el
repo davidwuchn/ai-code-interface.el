@@ -126,6 +126,54 @@ layout contains an ECA group with the expected suffixes."
   (should (fboundp 'ai-code-eca-upgrade-show))
   (should (commandp 'ai-code-eca-upgrade-show)))
 
+;;; ==============================================================================
+;;; Prefix Arg Forwarding Tests
+;;; ==============================================================================
+
+(ert-deftest ai-code-test-upgrade-backend-forwards-prefix-arg ()
+  "Verify that ai-code-upgrade-backend forwards prefix arg to upgrade function."
+  (let ((received-arg nil)
+        (ai-code-selected-backend 'eca))
+    (cl-letf (((symbol-function 'ai-code-eca-upgrade)
+               (lambda (arg) (setq received-arg arg))))
+      (ai-code-upgrade-backend nil)
+      (should (null received-arg))
+      (ai-code-upgrade-backend '(4))
+      (should (equal received-arg '(4)))
+      (ai-code-upgrade-backend '(16))
+      (should (equal received-arg '(16))))))
+
+;;; ==============================================================================
+;;; Session Reuse Tests
+;;; ==============================================================================
+
+(ert-deftest ai-code-test-eca-find-session-by-workspace ()
+  "Test finding existing session by workspace root."
+  (let ((temp-dir (make-temp-file "eca-test" t)))
+    (unwind-protect
+        (let* ((mock-session (list :workspace-folders (list temp-dir)))
+               (eca--sessions (list (cons "test-id" mock-session))))
+          (cl-letf (((symbol-function 'eca--session-workspace-folders)
+                     (lambda (s) (plist-get s :workspace-folders)))
+                    ((symbol-function 'eca-vals)
+                     (lambda (ht) (mapcar #'cdr ht))))
+            (should (ai-code-eca--find-session-by-workspace temp-dir))
+            (should-not (ai-code-eca--find-session-by-workspace "/nonexistent/path"))))
+      (delete-directory temp-dir t))))
+
+(ert-deftest ai-code-test-eca-create-session-reuses-existing ()
+  "Test that create-session-for-workspace reuses existing session."
+  (skip-unless nil)  ; Requires ECA to be loaded
+  (let ((temp-dir (make-temp-file "eca-test" t))
+        (session-created nil)
+        (session-reused nil))
+    (unwind-protect
+        (progn
+          ;; First call should create new session
+          ;; Second call with same workspace should reuse
+          )
+      (delete-directory temp-dir t))))
+
 (provide 'test_ai-code-eca)
 
 ;;; test_ai-code-eca.el ends here

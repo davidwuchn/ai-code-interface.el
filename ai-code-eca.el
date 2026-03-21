@@ -262,26 +262,55 @@ Auto-apply shared context if any."
       (pop-to-buffer (eca-chat--get-last-buffer session))
       session)))
 
+(defun ai-code-eca--find-session-by-workspace (workspace-root)
+  "Find an existing session that has WORKSPACE-ROOT in its workspace folders.
+Returns the session if found, nil otherwise."
+  (when (boundp 'eca--sessions)
+    (let ((target (expand-file-name workspace-root)))
+      (cl-find-if
+       (lambda (session)
+         (member target (mapcar #'expand-file-name
+                                (eca--session-workspace-folders session))))
+       (eca-vals eca--sessions)))))
+
 (defun ai-code-eca-create-session-for-workspace (&optional _arg)
   "Start ECA session for a selected workspace.
-Prompt for workspace root, then create or reuse session for that workspace."
+Prompt for workspace root, then create or reuse session for that workspace.
+If a session already exists with this workspace, reuse it instead of creating new."
   (interactive "P")
   (let* ((proj (project-current nil default-directory))
          (default-dir (if proj (project-root proj) default-directory))
          (workspace-root (read-directory-name "Workspace root: " default-dir))
-         (session (eca-create-session (list workspace-root))))
-    (when session
-      (pcase (eca--session-status session)
-        ('stopped
-         (eca-process-start session
-                            (lambda ()
-                              (eca--initialize session))
-                            (-partial #'eca--handle-message session)))
-        ('started
-         (eca-chat-open session))
-        ('starting
-         (eca-info "ECA server is already starting")))
-      session)))
+         (existing-session (ai-code-eca--find-session-by-workspace workspace-root)))
+    (if existing-session
+        (progn
+          (message "Reusing existing ECA session for %s" workspace-root)
+          (pcase (eca--session-status existing-session)
+            ('stopped
+             (eca-process-start existing-session
+                                (lambda ()
+                                  (eca--initialize existing-session))
+                                (-partial #'eca--handle-message existing-session)))
+            ('started
+             (eca-chat-open existing-session))
+            ('starting
+             (eca-info "ECA server is already starting")))
+          (pop-to-buffer (eca-chat--get-last-buffer existing-session))
+          existing-session)
+      (let ((session (eca-create-session (list workspace-root))))
+        (when session
+          (pcase (eca--session-status session)
+            ('stopped
+             (eca-process-start session
+                                (lambda ()
+                                  (eca--initialize session))
+                                (-partial #'eca--handle-message session)))
+            ('started
+             (eca-chat-open session))
+            ('starting
+             (eca-info "ECA server is already starting")))
+          (pop-to-buffer (eca-chat--get-last-buffer session))
+          session)))))
 
 ;;; Workspace Management
 
