@@ -1912,8 +1912,10 @@ Returns t if buffer was modified, nil otherwise."
              (prompt-text (save-excursion
                             (goto-char (point-max))
                             ;; Search for user prompt marker "### " 
-                            (if (re-search-backward "^### \\(.*\\)" nil t)
-                                (string-trim (match-string 0))
+                            ;; Capture from "### " to end of buffer for multi-line prompts
+                            (if (re-search-backward "^### " nil t)
+                                (string-trim 
+                                 (buffer-substring-no-properties (point) (point-max)))
                               ;; Fallback: try extracting after last gptel property
                               (let ((prop (text-property-search-backward 'gptel nil t)))
                                 (if prop
