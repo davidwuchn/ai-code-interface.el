@@ -1760,6 +1760,7 @@ Returns t if enabled, nil if `ai-code--insert-prompt' is not defined."
 (defvar gptel-prompt-transform-functions)
 (defvar gptel-fsm-info)
 (defvar gptel--preset)
+(defvar gptel--fsm-last)
 (declare-function gptel-fsm-info "gptel-request" (fsm))
 
 (defun ai-code--gptel-agent-process-behaviors (prompt-text project-root)
@@ -2100,18 +2101,26 @@ Returns preset name string or nil."
 (defun ai-code-behaviors-show-last-prompt ()
   "Show the last prompt processed by behavior injection.
 Displays the original prompt, processed prompt, and applied behaviors.
-Useful for debugging what was actually sent to the LLM."
+Useful for debugging what was actually sent to the LLM.
+In gptel-agent buffers, uses the source buffer's project root."
   (interactive)
-  (let* ((project-root (ai-code--behaviors-project-root))
+  (let* ((source-buffer (when (bound-and-true-p gptel-mode)
+                          (when-let* ((fsm (bound-and-true-p gptel--fsm-last))
+                                      (info (and fsm (gptel-fsm-info fsm))))
+                            (plist-get info :buffer))))
+         (project-root (if (buffer-live-p source-buffer)
+                           (ai-code--behaviors-project-root source-buffer)
+                         (ai-code--behaviors-project-root)))
          (last-prompt (gethash project-root ai-code--behaviors-last-prompts)))
     (if (not last-prompt)
-        (message "No prompt has been processed yet for this project")
+        (message "No prompt has been processed yet for this project (root: %s)" project-root)
       (let* ((original (plist-get last-prompt :original))
              (processed (plist-get last-prompt :processed))
              (behaviors (plist-get last-prompt :behaviors))
              (buf (get-buffer-create "*ai-code-behaviors-last-prompt*")))
         (with-current-buffer buf
           (erase-buffer)
+          (insert (format "Project Root: %s\n\n" project-root))
           (insert "=== ORIGINAL PROMPT ===\n\n")
           (insert (or original "(none)"))
           (insert "\n\n=== PROCESSED PROMPT (sent to LLM) ===\n\n")
