@@ -961,10 +961,14 @@ Returns list of constraint names from the bundle."
 (defun ai-code--extract-and-remove-hashtags (prompt-text &optional context-preset)
   "Extract behaviors and remove hashtags from PROMPT-TEXT in single pass.
 CONTEXT-PRESET is 'gptel-plan or 'gptel-agent for context-aware validation.
-Return list (BEHAVIORS CLEANED-PROMPT SWITCH-NEEDED) where BEHAVIORS is plist
-(:mode MODE :modifiers MODS :constraint-modifiers CONSTRAINTS :preset PRESET) or nil.
-PRESET is the name of a preset detected via @preset-name syntax.
-SWITCH-NEEDED is t when in gptel-plan and a modify mode/preset is used."
+Return list (BEHAVIORS CLEANED-PROMPT SWITCH-NEEDED BUNDLE-NAME) where:
+  BEHAVIORS is plist (:mode MODE :modifiers MODS :constraint-modifiers CONSTRAINTS :preset PRESET) or nil
+  CLEANED-PROMPT is the prompt with tags removed
+  SWITCH-NEEDED is t when in gptel-plan and a modify mode/preset is used
+  BUNDLE-NAME is the detected constraint bundle name, or nil.
+
+Callers should set the bundle using the correct project root via
+`ai-code--behaviors-set-active-bundle'."
   (let ((mode nil)
         (modifiers nil)
         (constraints nil)
@@ -1022,8 +1026,6 @@ SWITCH-NEEDED is t when in gptel-plan and a modify mode/preset is used."
           (when (and preset (not (ai-code--behaviors-preset-readonly-p preset)))
             (message "Switching to agent mode for @%s..." preset)
             (setq switch-needed t)))
-        (when constraint-bundle
-          (ai-code--behaviors-set-active-bundle constraint-bundle))
         (goto-char (point-min))
         (while (re-search-forward "@\\([a-zA-Z0-9_-]+\\)\\s-*" nil t)
           (let ((name (match-string 1)))
@@ -1042,7 +1044,8 @@ SWITCH-NEEDED is t when in gptel-plan and a modify mode/preset is used."
                   :constraint-modifiers (nreverse constraints)
                   :preset preset))
           result
-          switch-needed)))
+          switch-needed
+          constraint-bundle)))
 
 (defun ai-code--classify-prompt-intent-gptel (prompt-text)
   "Classify PROMPT-TEXT intent using GPTel.
@@ -1324,8 +1327,11 @@ Note: Preset-only prompts (empty after tag removal) are handled by
     (let* ((extracted (ai-code--extract-and-remove-hashtags prompt-text))
            (explicit-behaviors (nth 0 extracted))
            (cleaned-prompt (nth 1 extracted))
+           (bundle-name (nth 3 extracted))
            (session-state (ai-code--behaviors-get-state project-root))
            (pending-preset (ai-code--behaviors-get-pending-preset project-root)))
+      (when bundle-name
+        (ai-code--behaviors-set-active-bundle bundle-name project-root))
       (cond
        (explicit-behaviors
         (ai-code--behaviors-clear-pending-preset project-root)
@@ -2085,13 +2091,16 @@ Otherwise return nil to continue normal processing."
              (stringp prompt-text))
     (let* ((extracted (ai-code--extract-and-remove-hashtags prompt-text))
            (explicit-behaviors (nth 0 extracted))
-           (cleaned-prompt (nth 1 extracted)))
+           (cleaned-prompt (nth 1 extracted))
+           (bundle-name (nth 3 extracted)))
       (when (and explicit-behaviors
                  (string-empty-p (string-trim cleaned-prompt)))
         (let* ((preset-name (plist-get explicit-behaviors :preset))
                (final-behaviors (ai-code--merge-preset-with-modifiers preset-name explicit-behaviors)))
           (ai-code--behaviors-set-preset preset-name)
           (ai-code--behaviors-set-state final-behaviors)
+          (when bundle-name
+            (ai-code--behaviors-set-active-bundle bundle-name))
           (ai-code--behaviors-update-mode-line)
           (message "Preset applied: %s%s"
                    (if preset-name (concat "@" preset-name) "")
@@ -2201,14 +2210,19 @@ Priority order (gptel-agent context):
          (explicit-behaviors (nth 0 extracted))
          (cleaned-prompt (nth 1 extracted))
          (switch-needed (nth 2 extracted))
+         (bundle-name (nth 3 extracted))
          (session-state (ai-code--behaviors-get-state project-root))
          (pending-preset (ai-code--behaviors-get-pending-preset project-root))
          (classified (and ai-code-behaviors-gptel-agent-auto-classify
                           ai-code-behaviors-auto-classify
                           (ai-code--classify-prompt-intent prompt-text)))
-         (meets-threshold (and classified
-                               (ai-code--behaviors-meets-confidence-threshold-p
-                                (plist-get classified :confidence)))))
+         (confidence (and classified
+                          (or (plist-get classified :confidence)
+                              'high)))
+         (meets-threshold (and confidence
+                               (ai-code--behaviors-meets-confidence-threshold-p confidence))))
+    (when bundle-name
+      (ai-code--behaviors-set-active-bundle bundle-name project-root))
     (cond
      (explicit-behaviors
       (ai-code--behaviors-clear-pending-preset project-root)
@@ -2722,14 +2736,20 @@ Handles * (matches anything) and ? (matches single char)."
       (setq i (1+ i)))
     result))
 
-(defun ai-code--constraints-detect-from-file (file-path)
+(defun ai-code--constraints-detect-from-file (file-path &optional project-root)
   "Detect constraints from a single project config FILE-PATH.
+PROJECT-ROOT is used to compute relative paths for directory patterns.
 Returns list of detected constraint names."
   (let* ((file-name (file-name-nondirectory file-path))
+         (relative-path (when project-root
+                          (file-relative-name file-path project-root)))
          (entry (cl-find-if (lambda (e)
                               (let ((pattern (car e)))
                                 (or (string= pattern file-name)
-                                    (string-match-p (concat (ai-code--glob-to-regexp pattern) "$") file-name))))
+                                    (and relative-path (string= pattern relative-path))
+                                    (string-match-p (concat (ai-code--glob-to-regexp pattern) "$") file-name)
+                                    (and relative-path
+                                         (string-match-p (concat (ai-code--glob-to-regexp pattern) "$") relative-path)))))
                            ai-code--project-config-constraint-map)))
     (when entry
       (let ((base-constraints (plist-get (cdr entry) :constraints))
@@ -2782,7 +2802,7 @@ Returns list of detected constraint names."
                             (file-directory-p full-path))
                     (setq matched-files (list full-path)))))
               (dolist (file-path matched-files)
-                (let ((detected (ai-code--constraints-detect-from-file file-path)))
+                (let ((detected (ai-code--constraints-detect-from-file file-path root)))
                   (setq all-constraints (append all-constraints detected))))))
           (setq all-constraints (delete-dups all-constraints))
           (puthash root (list :constraints all-constraints
@@ -2793,7 +2813,7 @@ Returns list of detected constraint names."
 (defun ai-code-constraints-apply-bundle (bundle-name)
   "Apply constraint bundle BUNDLE-NAME to current session.
 Fetches constraints from `ai-code--constraint-bundles' and merges
-with existing session state."
+with existing session state, preserving other keys like :custom-suffix."
   (interactive
    (list (completing-read "Apply constraint bundle: "
                           (mapcar #'car ai-code--constraint-bundles)
@@ -2803,11 +2823,8 @@ with existing session state."
       (error "Unknown constraint bundle: %s" bundle-name))
     (let* ((constraints (plist-get (cdr bundle-data) :constraints))
            (existing-state (ai-code--behaviors-get-state))
-           (existing-mode (plist-get existing-state :mode))
-           (existing-modifiers (plist-get existing-state :modifiers))
-           (new-state (list :mode existing-mode
-:modifiers existing-modifiers
-                             :constraint-modifiers constraints)))
+           (new-state (plist-put (copy-sequence existing-state)
+                                  :constraint-modifiers constraints)))
       (ai-code--behaviors-set-state new-state)
       (ai-code--behaviors-set-active-bundle bundle-name)
       (ai-code--constraints-save-to-project constraints)
@@ -2818,15 +2835,15 @@ with existing session state."
 
 (defun ai-code-constraints-auto-detect-and-apply ()
   "Auto-detect constraints from project and apply to session.
-Useful after cloning a project or switching contexts."
+Useful after cloning a project or switching contexts.
+Preserves other session state like :custom-suffix."
   (interactive)
   (let ((detected (ai-code--constraints-auto-detect)))
     (if detected
-        (let ((existing-state (ai-code--behaviors-get-state)))
-          (ai-code--behaviors-set-state
-           (list :mode (plist-get existing-state :mode)
-                 :modifiers (plist-get existing-state :modifiers)
-                 :constraint-modifiers detected))
+        (let* ((existing-state (ai-code--behaviors-get-state))
+               (new-state (plist-put (copy-sequence existing-state)
+                                      :constraint-modifiers detected)))
+          (ai-code--behaviors-set-state new-state)
           (ai-code--constraints-save-to-project detected)
           (ai-code--behaviors-update-mode-line)
           (message "Auto-detected constraints: %s"
@@ -2856,13 +2873,13 @@ Shows both individual constraints and bundles."
     (pop-to-buffer buf)))
 
 (defun ai-code-constraints-clear ()
-  "Clear all constraints from current session."
+  "Clear all constraints from current session.
+Preserves other session state like :mode, :modifiers, and :custom-suffix."
   (interactive)
-  (let ((existing-state (ai-code--behaviors-get-state)))
-    (ai-code--behaviors-set-state
-     (list :mode (plist-get existing-state :mode)
-           :modifiers (plist-get existing-state :modifiers)
-           :constraint-modifiers nil))
+  (let* ((existing-state (ai-code--behaviors-get-state))
+         (new-state (plist-put (copy-sequence existing-state)
+                               :constraint-modifiers nil)))
+    (ai-code--behaviors-set-state new-state)
     (ai-code--behaviors-clear-active-bundle)
     (let ((path (ai-code--constraints-get-persistence-path)))
       (when (and path (file-exists-p path))
