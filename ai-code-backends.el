@@ -537,12 +537,13 @@ invoke `ai-code-cli-resume'; otherwise call `ai-code-cli-start'."
             (message "Opened %s agent file: %s" label file)))))))
 
 ;;;###autoload
-(defun ai-code-upgrade-backend ()
+(defun ai-code-upgrade-backend (&optional arg)
   "Run the upgrade command for the currently selected backend.
 If the backend defines an :upgrade property, use it:
   - string: run as a shell command via `compile'.
-  - symbol: call the function."
-  (interactive)
+  - symbol: call the function with prefix arg forwarded.
+ARG is the prefix argument to pass to the upgrade function."
+  (interactive "P")
   (let* ((spec (ai-code--backend-spec ai-code-selected-backend)))
     (if (not spec)
         (user-error "No backend is currently selected")
@@ -554,7 +555,8 @@ If the backend defines an :upgrade property, use it:
           (compile upgrade)
           (message "Running upgrade command for %s" label))
          ((and upgrade (symbolp upgrade) (fboundp upgrade))
-          (funcall upgrade)
+          (let ((current-prefix-arg arg))
+            (call-interactively upgrade))
           (message "Running upgrade for %s" label))
          ((and upgrade (symbolp upgrade) (not (fboundp upgrade)))
           (user-error "Backend '%s' declares :upgrade function '%s' but it is not callable"

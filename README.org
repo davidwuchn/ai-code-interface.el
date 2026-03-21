@@ -269,6 +269,7 @@ Instead of manually telling the AI what to do after every edit, you can make tes
 - `ai-code-tdd-cycle`: run a guided TDD flow from the menu, including separate Red, Green, Blue stages or the combined one-prompt flows.
 - `ai-code-build-or-test-project`: run build/test explicitly from `C-c a b` when you want a direct verification step in the middle of the loop.
 - `ai-code-prompt-suffix`: add persistent project rules when needed, so repeated instructions such as response language, coding constraints, or test expectations do not have to be retyped in every prompt.
+- [[https://github.com/obra/superpowers][obra/superpowers]] pair well with these features.
 
 The benefit is practical:
 
@@ -317,7 +318,7 @@ When working with multiple AI sessions, it can be useful to receive desktop noti
      - If a backend does not define its own installer, `S` falls back to prompting the active AI CLI to read a skills repository README and perform setup.
      - The default suggested repository is [[https://github.com/obra/superpowers][obra/superpowers]], which is a very useful starting point for adding reusable coding skills to supported CLIs.
      - A practical workflow is: press `C-c a`, then `S`, keep the default URL, and let the backend read the repository README and install the skills it describes.
-     - Those skills pair well with this package's existing harness-oriented workflows, especially the `ai-code-auto-test-type` feedback loop, `ai-code-tdd-cycle`, and `ai-code-pull-or-review-diff-file` code review flow.
+     - [[https://github.com/obra/superpowers][obra/superpowers]] pair well with this package's existing harness-oriented workflows, especially the `ai-code-auto-test-type` feedback loop, `ai-code-tdd-cycle`, and `ai-code-pull-or-review-diff-file` code review flow.
 
    Natively supported options:
    - [[https://github.com/anthropics/claude-code][Claude Code]] (`[[./ai-code-claude-code.el][ai-code-claude-code.el]]`)
