@@ -2,6 +2,9 @@
 * Release history
 
 ** Main branch change
+
+** 1.62
+- Fix: Preserve AI session reuse for attached and newly opened files when lookup context changes
 - Feat: Support Dired-selected files/directories in refactoring suggestions
 - Feat: Add behavior injection system for AI prompts, by davidwuchn
 - Feat: Add ECA binary upgrade system with auto-update support, by davidwuchn
