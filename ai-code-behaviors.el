@@ -2258,73 +2258,75 @@ Priority order (gptel-agent context):
       (list t (ai-code--behaviors-wrap-with-instruction session-state prompt-text) nil))
      (t (list nil prompt-text nil)))))
 
-(defun ai-code--gptel-agent-transform-inject-behaviors (fsm)
+(defun ai-code--gptel-agent-transform-inject-behaviors (next-or-fsm &optional fsm)
   "Transform function for gptel-agent to inject behaviors.
 Only injects when `gptel--preset' is `gptel-plan' or `gptel-agent'.
-FSM is the gptel finite state machine.
 Handles preset-only prompts by applying state without sending.
 Operates on current buffer (gptel request buffer).
-Returns t if buffer was modified, nil otherwise."
-  (condition-case err
-      (let* ((info (and fsm (gptel-fsm-info fsm)))
-             (source-buffer (and info (plist-get info :buffer)))
-             (preset (when (buffer-live-p source-buffer)
-                       (buffer-local-value 'gptel--preset source-buffer)))
-             ;; Find the last user prompt - marked by "### " at line start
-             ;; This works in both gptel chat buffers and prompt-copy buffers
-             (prompt-text (save-excursion
-                            (goto-char (point-max))
-                            ;; Search for user prompt marker "### " 
-                            ;; Capture from "### " to end of buffer for multi-line prompts
-                            (if (re-search-backward "^### " nil t)
-                                (string-trim 
-                                 (buffer-substring-no-properties (point) (point-max)))
-                              ;; Fallback: try extracting after last gptel property
-                              (let ((prop (text-property-search-backward 'gptel nil t)))
-                                (if prop
-                                    (string-trim
-                                     (buffer-substring-no-properties 
-                                      (prop-match-beginning prop)
-                                      (point-max)))
-                                  (string-trim (buffer-string)))))))
-             ;; Store original BEFORE processing (includes @preset)
-             (original-prompt prompt-text))
-        (if (or (not ai-code-behaviors-enabled)
-                (not (memq preset '(gptel-plan gptel-agent)))
-                (string-empty-p (string-trim prompt-text)))
-            nil
-          (if (not (ai-code--behaviors-repo-available-p))
-              (progn
-                (message "ai-code-behaviors: Repository not available, skipping behavior injection")
-                nil)
-            (let* ((project-root (ai-code--behaviors-project-root source-buffer))
-                   (result (ai-code--gptel-agent-process-behaviors prompt-text project-root preset))
-                   (behaviors-applied (nth 0 result))
-                   (processed-text (nth 1 result))
-                   (switch-needed (nth 2 result))
-                   (behaviors-state (ai-code--behaviors-get-state project-root)))
-              (when (and switch-needed (buffer-live-p source-buffer))
-                (with-current-buffer source-buffer
-                  (gptel--apply-preset 'gptel-agent
-                    (lambda (sym val) (set (make-local-variable sym) val)))))
-              (puthash project-root
-                       (list :original original-prompt
-                             :processed processed-text
-                             :behaviors behaviors-state)
-                       ai-code--behaviors-last-prompts)
-              (cond
-               ((and behaviors-applied (null processed-text))
-                (erase-buffer)
-                t)
-               ((and behaviors-applied processed-text
-                     (not (string= processed-text prompt-text)))
-                (erase-buffer)
-                (insert processed-text)
-                t)
-               (t nil))))))
-    (error
-     (message "ai-code-behaviors transform error: %s" (error-message-string err))
-     nil)))
+
+Supports both calling conventions:
+- (fsm) - legacy single-arg, returns t if modified
+- (callback fsm) - gptel chained transform, calls callback when done"
+  (let* ((next (and fsm next-or-fsm))
+         (fsm (or fsm next-or-fsm))
+         modified)
+    (condition-case err
+        (let* ((info (and fsm (gptel-fsm-info fsm)))
+               (source-buffer (and info (plist-get info :buffer)))
+               (preset (when (buffer-live-p source-buffer)
+                         (buffer-local-value 'gptel--preset source-buffer)))
+               (prompt-text (save-excursion
+                              (goto-char (point-max))
+                              (if (re-search-backward "^### " nil t)
+                                  (string-trim 
+                                   (buffer-substring-no-properties (point) (point-max)))
+                                (let ((prop (text-property-search-backward 'gptel nil t)))
+                                  (if prop
+                                      (string-trim
+                                       (buffer-substring-no-properties 
+                                        (prop-match-beginning prop)
+                                        (point-max)))
+                                    (string-trim (buffer-string)))))))
+               (original-prompt prompt-text))
+          (if (or (not ai-code-behaviors-enabled)
+                  (not (memq preset '(gptel-plan gptel-agent)))
+                  (string-empty-p (string-trim prompt-text)))
+              nil
+            (if (not (ai-code--behaviors-repo-available-p))
+                (progn
+                  (message "ai-code-behaviors: Repository not available, skipping behavior injection")
+                  nil)
+              (let* ((project-root (ai-code--behaviors-project-root source-buffer))
+                     (result (ai-code--gptel-agent-process-behaviors prompt-text project-root preset))
+                     (behaviors-applied (nth 0 result))
+                     (processed-text (nth 1 result))
+                     (switch-needed (nth 2 result))
+                     (behaviors-state (ai-code--behaviors-get-state project-root)))
+                (when (and switch-needed (buffer-live-p source-buffer))
+                  (with-current-buffer source-buffer
+                    (gptel--apply-preset 'gptel-agent
+                      (lambda (sym val) (set (make-local-variable sym) val)))))
+                (puthash project-root
+                         (list :original original-prompt
+                               :processed processed-text
+                               :behaviors behaviors-state)
+                         ai-code--behaviors-last-prompts)
+                (cond
+                 ((and behaviors-applied (null processed-text))
+                  (erase-buffer)
+                  (setq modified t))
+                 ((and behaviors-applied processed-text
+                       (not (string= processed-text prompt-text)))
+                  (erase-buffer)
+                  (insert processed-text)
+                  (setq modified t))
+                 (t nil))))))
+      (error
+       (message "ai-code-behaviors transform error: %s" (error-message-string err))
+       (setq modified nil)))
+    (if next
+        (or modified (funcall next fsm))
+      modified)))
 
 (defun ai-code--gptel-agent-setup-transform ()
   "Set up gptel-agent behavior integration.
