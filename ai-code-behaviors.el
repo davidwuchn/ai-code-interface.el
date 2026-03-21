@@ -1895,12 +1895,13 @@ Priority order (gptel-agent context):
       (list t (ai-code--behaviors-wrap-with-instruction session-state prompt-text) nil))
      (t (list nil prompt-text nil)))))
 
-(defun ai-code--gptel-agent-transform-inject-behaviors (callback fsm)
+(defun ai-code--gptel-agent-transform-inject-behaviors (fsm)
   "Transform function for gptel-agent to inject behaviors.
 Only injects when `gptel--preset' is `gptel-plan' or `gptel-agent'.
-CALLBACK is called when transformation is complete.
 FSM is the gptel finite state machine.
-Handles preset-only prompts by applying state without sending."
+Handles preset-only prompts by applying state without sending.
+Operates on current buffer (gptel request buffer).
+Returns t if buffer was modified, nil otherwise."
   (condition-case err
       (let* ((info (and fsm (gptel-fsm-info fsm)))
              (source-buffer (and info (plist-get info :buffer)))
@@ -1918,11 +1919,11 @@ Handles preset-only prompts by applying state without sending."
         (if (or (not ai-code-behaviors-enabled)
                 (not (memq preset '(gptel-plan gptel-agent)))
                 (string-empty-p (string-trim prompt-text)))
-            (funcall callback)
+            nil
           (if (not (ai-code--behaviors-repo-available-p))
               (progn
                 (message "ai-code-behaviors: Repository not available, skipping behavior injection")
-                (funcall callback))
+                nil)
             (let* ((project-root (ai-code--behaviors-project-root source-buffer))
                    (result (ai-code--gptel-agent-process-behaviors prompt-text project-root preset))
                    (behaviors-applied (nth 0 result))
@@ -1941,16 +1942,16 @@ Handles preset-only prompts by applying state without sending."
               (cond
                ((and behaviors-applied (null processed-text))
                 (erase-buffer)
-                (funcall callback))
+                t)
                ((and behaviors-applied processed-text
                      (not (string= processed-text prompt-text)))
                 (erase-buffer)
                 (insert processed-text)
-                (funcall callback))
-               (t (funcall callback)))))))
+                t)
+               (t nil))))))
     (error
      (message "ai-code-behaviors transform error: %s" (error-message-string err))
-     (funcall callback))))
+     nil)))
 
 (defun ai-code--gptel-agent-setup-transform ()
   "Set up gptel-agent behavior integration.
