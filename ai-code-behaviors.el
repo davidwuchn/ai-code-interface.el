@@ -152,15 +152,22 @@ Pending presets are shown in mode-line but not committed until first prompt.")
 Key: project root, Value: plist (:original ORIG :processed PROC :behaviors BEH).")
 
 (declare-function ai-code--git-root "ai-code-file" (&optional dir))
+(declare-function ai-code--behaviors-extract-project-from-buffer-name
+                  "ai-code-behaviors" ())
 
 (defun ai-code--behaviors-project-root (&optional buffer)
   "Return git root for BUFFER, or current buffer if nil.
+For gptel-agent buffers, falls back to extracting project from buffer name.
 Returns default-directory if not in a repo."
   (if (bufferp buffer)
       (with-current-buffer buffer
         (or (and (fboundp 'ai-code--git-root) (ai-code--git-root))
+            (and (fboundp 'ai-code--behaviors-extract-project-from-buffer-name)
+                 (ai-code--behaviors-extract-project-from-buffer-name))
             default-directory))
     (or (and (fboundp 'ai-code--git-root) (ai-code--git-root))
+        (and (fboundp 'ai-code--behaviors-extract-project-from-buffer-name)
+             (ai-code--behaviors-extract-project-from-buffer-name))
         default-directory)))
 
 (defun ai-code--behaviors--get (key &optional root)
@@ -569,8 +576,9 @@ Add to `completion-at-point-functions' in prompt buffers."
       (list start end (ai-code--behavior-preset-names) :exclusive 'no))))
 
 (defun ai-code--behavior-setup-preset-completion ()
-  "Add preset completion to prompt mode buffers."
-  (add-hook 'completion-at-point-functions #'ai-code--behavior-preset-capf nil t))
+  "Add preset completion and mode-line to prompt mode buffers."
+  (add-hook 'completion-at-point-functions #'ai-code--behavior-preset-capf nil t)
+  (ai-code-behaviors-mode-line-enable))
 
 (defun ai-code--behavior-teardown-preset-completion ()
   "Remove preset completion from prompt mode buffers."
@@ -1584,20 +1592,26 @@ Sets session state based on selection."
             (_ nil)))))))
 
 (defun ai-code-behaviors-mode-line-enable ()
-  "Enable mode-line display of active behaviors."
+  "Enable mode-line display of active behaviors for current buffer.
+Only shows in gptel-mode or ai-code-prompt-mode buffers.
+For gptel-agent buffers, extracts project from buffer name."
   (interactive)
-  (unless (member '(:eval (ai-code--behaviors-mode-line-string)) mode-line-misc-info)
-    (setq mode-line-misc-info
-          (append mode-line-misc-info
-                  (list '(:eval (ai-code--behaviors-mode-line-string))))))
-  (ai-code--behaviors-update-mode-line))
+  (when (or (bound-and-true-p gptel-mode)
+             (eq major-mode 'ai-code-prompt-mode))
+    (make-local-variable 'mode-line-misc-info)
+    (unless (member '(:eval (ai-code--behaviors-mode-line-string)) mode-line-misc-info)
+      (setq mode-line-misc-info
+            (append mode-line-misc-info
+                    (list '(:eval (ai-code--behaviors-mode-line-string))))))
+    (ai-code--behaviors-update-mode-line)))
 
 (defun ai-code-behaviors-mode-line-disable ()
-  "Disable mode-line display of active behaviors."
+  "Disable mode-line display of active behaviors for current buffer."
   (interactive)
-  (setq mode-line-misc-info
-        (delete '(:eval (ai-code--behaviors-mode-line-string)) mode-line-misc-info))
-  (force-mode-line-update t))
+  (when (local-variable-p 'mode-line-misc-info)
+    (setq mode-line-misc-info
+          (delete '(:eval (ai-code--behaviors-mode-line-string)) mode-line-misc-info))
+    (force-mode-line-update t)))
 
 (defconst ai-code--backend-session-prefixes
   '((opencode . "opencode")
@@ -1734,7 +1748,6 @@ Returns t if enabled, nil if `ai-code--insert-prompt' is not defined."
   (advice-remove 'ai-code--insert-prompt #'ai-code--insert-prompt-behaviors-advice)
   (advice-add 'ai-code--insert-prompt :around 
               #'ai-code--insert-prompt-behaviors-advice)
-  (ai-code-behaviors-mode-line-enable)
   (add-hook 'ai-code-prompt-mode-hook #'ai-code--behavior-setup-preset-completion)
   (ai-code--behavior-enable-preset-in-file-completion)
   (advice-add 'ai-code-plain-read-string :around
@@ -1753,7 +1766,6 @@ Returns t if enabled, nil if `ai-code--insert-prompt' is not defined."
   (interactive)
   (advice-remove 'ai-code--insert-prompt 
                  #'ai-code--insert-prompt-behaviors-advice)
-  (ai-code-behaviors-mode-line-disable)
   (remove-hook 'ai-code-prompt-mode-hook #'ai-code--behavior-setup-preset-completion)
   (ai-code--behavior-disable-preset-in-file-completion)
   (advice-remove 'ai-code-plain-read-string
@@ -1922,7 +1934,8 @@ Handles preset-only prompts by applying state without sending."
 
 (defun ai-code--gptel-agent-setup-transform ()
   "Set up gptel-agent behavior integration.
-Adds transform, completion, mode-line, and registers presets with gptel."
+Adds transform, completion, and registers presets with gptel.
+Mode-line is enabled via `gptel-mode-hook' in `ai-code--behavior-setup-hashtag-completion'."
   (when (boundp 'gptel--known-presets)
     (dolist (preset ai-code--behavior-presets)
       (let* ((name (car preset))
@@ -1948,7 +1961,6 @@ Adds transform, completion, mode-line, and registers presets with gptel."
                 (default-value 'gptel-prompt-transform-functions))
     (add-hook 'gptel-prompt-transform-functions
               #'ai-code--gptel-agent-transform-inject-behaviors))
-  (ai-code-behaviors-mode-line-enable)
   (dolist (buf (buffer-list))
     (when (buffer-live-p buf)
       (with-current-buffer buf
@@ -1959,9 +1971,7 @@ Adds transform, completion, mode-line, and registers presets with gptel."
 (defun ai-code--behavior-setup-hashtag-completion ()
   "Add behavior hashtag and preset completion to current buffer.
 Intended for `gptel-mode-hook'.
-Also adds font-lock for behavior hashtags and keybinding.
-Note: Transform is added to default value in `ai-code--gptel-agent-setup-transform'.
-We add `t' to local transform list so gptel merges with default value."
+Also adds font-lock for behavior hashtags, keybinding, and mode-line."
   (add-hook 'completion-at-point-functions #'ai-code--behavior-hashtag-capf nil t)
   (add-hook 'completion-at-point-functions #'ai-code--behavior-preset-gptel-capf nil t)
   (local-set-key (kbd "C-c P") #'ai-code-behaviors-show-last-prompt)
@@ -1975,7 +1985,8 @@ We add `t' to local transform list so gptel merges with default value."
    `((ai-code--fontify-behavior-keyword
       0 ',(list :box -1 :inherit 'font-lock-keyword-face)
       prepend))
-   t))
+   t)
+  (ai-code-behaviors-mode-line-enable))
 
 (defun ai-code--fontify-behavior-keyword (end)
   "Font-lock function for behavior hashtags in chat buffers.
