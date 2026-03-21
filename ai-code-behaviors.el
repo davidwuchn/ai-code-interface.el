@@ -2193,13 +2193,10 @@ Returns preset name string or nil."
 
 (defun ai-code--behaviors-extract-project-from-buffer-name ()
   "Extract project path from gptel-agent buffer name.
-Returns nil if not a gptel-agent buffer or can't extract."
+For gptel-agent buffers, returns default-directory which is set correctly.
+Returns nil if not a gptel-agent buffer."
   (when (string-match "\\*gptel-agent:\\([^*]+\\)\\*" (buffer-name))
-    (let ((project-name (match-string 1 (buffer-name))))
-      (when (and project-name (not (string-empty-p project-name)))
-        (if (file-name-absolute-p project-name)
-            project-name
-          (expand-file-name project-name))))))
+    default-directory))
 
 (defun ai-code-behaviors-show-last-prompt ()
   "Show the last prompt processed by behavior injection.
