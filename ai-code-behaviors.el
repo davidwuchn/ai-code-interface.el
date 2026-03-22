@@ -173,9 +173,9 @@ Returns default-directory if not in a repo."
 (defun ai-code--behaviors--get (key &optional root)
   "Get entry KEY from session states for ROOT.
 If ROOT is nil, use current project root."
-  (plist-get (or (gethash (or root (ai-code--behaviors-project-root)) 
-                          ai-code--behaviors-session-states)
-                 '(:state nil :preset nil))
+(plist-get (or (gethash (or root (ai-code--behaviors-project-root))
+                           ai-code--behaviors-session-states)
+                  '(:state nil :preset nil))
              key))
 
 (defun ai-code--behaviors--set (key value &optional root)
@@ -265,70 +265,70 @@ These modes analyze, plan, or guide without modifying files.")
     ("english" . "∀ response: English.    -- HARD CONSTRAINT")
     ("japanese" . "∀ response: 日本語. code ∪ comments = English.    -- HARD CONSTRAINT")
     ("korean" . "∀ response: 한국어. code ∪ comments = English.    -- HARD CONSTRAINT")
-    
+
     ;; Testing
     ("test-after" . "code → test → verify. No untested code ships.    -- HARD CONSTRAINT")
     ("test-unit" . "Unit tests for every function. Isolated, fast, deterministic.    -- HARD CONSTRAINT")
     ("test-integration" . "Integration tests for component boundaries.    -- HARD CONSTRAINT")
     ("test-e2e" . "End-to-end tests for critical user flows.    -- HARD CONSTRAINT")
     ("test-coverage" . "Coverage ≥ 80%. Track and report gaps.    -- HARD CONSTRAINT")
-    
+
     ;; Code Style
     ("strict-lint" . "lint ∩ errors = ∅. Fix before commit.    -- HARD CONSTRAINT")
     ("strict-types" . "∀ params/returns: explicit types. 'any' ⊆ forbidden.    -- HARD CONSTRAINT")
     ("no-comments" . "code = documentation. Comments only when code cannot speak.    -- HARD CONSTRAINT")
     ("doc-comments" . "∀ public: docstring. Parameters, returns, throws, examples.    -- HARD CONSTRAINT")
     ("no-todos" . "No TODO/FIXME in committed code. Resolve or create issue.    -- HARD CONSTRAINT")
-    
+
     ;; Paradigm
     ("functional" . "state ∩ mutation = ∅. Pure functions. Immutable data.    -- HARD CONSTRAINT")
     ("immutable" . "∀ data: const/final. No in-place mutation.    -- HARD CONSTRAINT")
     ("oop" . "Encapsulate state. Message passing. Single responsibility.    -- HARD CONSTRAINT")
     ("procedural" . "Step-by-step functions. Explicit state. Clear flow.    -- HARD CONSTRAINT")
-    
+
     ;; Safety
     ("defensive" . "∀ public input: validate. Fail fast, fail explicitly.    -- HARD CONSTRAINT")
     ("secure" . "∀ input: untrusted. OWASP Top 10 ⊆ review.    -- HARD CONSTRAINT")
     ("no-unsafe" . "unsafe/raw pointers ⊆ forbidden. Bounds checked.    -- HARD CONSTRAINT")
     ("memory-safe" . "No memory leaks. Ownership clear. Resources freed.    -- HARD CONSTRAINT")
-    
+
     ;; Error Handling
     ("errors-raise" . "Error → throw/raise. Let caller handle.    -- HARD CONSTRAINT")
     ("errors-result" . "Error → Result/Either type. Explicit handling.    -- HARD CONSTRAINT")
     ("errors-checked" . "∀ errors: declared and handled. No silent failures.    -- HARD CONSTRAINT")
     ("errors-typed" . "Typed exceptions. Specific error types per domain.    -- HARD CONSTRAINT")
-    
+
     ;; Performance
     ("performant" . "O(n) preferred. Allocations minimized. Hot paths identified.    -- HARD CONSTRAINT")
     ("minimal" . "Least code. Built-ins preferred. No over-engineering.    -- HARD CONSTRAINT")
     ("lazy" . "Compute on demand. Defer until needed. Cache results.    -- HARD CONSTRAINT")
     ("batch" . "Batch operations. Minimize round-trips. Chunk large datasets.    -- HARD CONSTRAINT")
-    
+
     ;; Async
     ("async-await" . "async/await preferred. No callback hell.    -- HARD CONSTRAINT")
     ("sync-only" . "No async. Blocking calls acceptable.    -- HARD CONSTRAINT")
     ("reactive" . "Streams and observables. Push-based data flow.    -- HARD CONSTRAINT")
-    
+
     ;; API Design
     ("api-rest" . "REST conventions. Resources, verbs, status codes.    -- HARD CONSTRAINT")
     ("api-graphql" . "GraphQL conventions. Schema-first.    -- HARD CONSTRAINT")
     ("api-rpc" . "RPC style. Procedure calls. Named operations.    -- HARD CONSTRAINT")
     ("api-versioned" . "Version all endpoints. Backwards compatible.    -- HARD CONSTRAINT")
-    
+
     ;; Logging
     ("logging-verbose" . "Log entry/exit, params, timing. Debug-friendly.    -- HARD CONSTRAINT")
     ("logging-minimal" . "Errors only. Production-ready.    -- HARD CONSTRAINT")
     ("no-logging" . "No log statements. Pure functions.    -- HARD CONSTRAINT")
     ("structured-logging" . "JSON logs. Correlation IDs. Searchable.    -- HARD CONSTRAINT")
-    
+
     ;; State
     ("stateless" . "No internal state. Pure functions. Idempotent.    -- HARD CONSTRAINT")
     ("state-explicit" . "State changes logged. Transitions named.    -- HARD CONSTRAINT")
-    
+
     ;; Naming
     ("naming-verbose" . "Descriptive names. No abbreviations. Self-documenting.    -- HARD CONSTRAINT")
     ("naming-short" . "Concise names. Common abbreviations OK.    -- HARD CONSTRAINT")
-    
+
     ;; Dependencies
     ("no-deps" . "No new dependencies. Use built-ins.    -- HARD CONSTRAINT")
     ("minimal-deps" . "Minimize dependencies. Audit each addition.    -- HARD CONSTRAINT"))
@@ -393,7 +393,7 @@ Each bundle is (NAME . (:constraints (C1 C2 ...) :description DESC)).")
     ("eslint.config.js" . (:constraints ("strict-lint")))
     (".prettierrc" . (:constraints ("strict-lint")))
     (".prettierrc.json" . (:constraints ("strict-lint")))
-    
+
     ;; Python
     ("pyproject.toml" . (:patterns (("\\[tool.mypy\\]" . "strict-types")
                                     ("\\[tool.pytest\\]" . "test-after")
@@ -406,45 +406,45 @@ Each bundle is (NAME . (:constraints (C1 C2 ...) :description DESC)).")
     ("tox.ini" . (:constraints ("test-after")))
     ("ruff.toml" . (:constraints ("strict-lint")))
     (".ruff.toml" . (:constraints ("strict-lint")))
-    
+
     ;; Rust
     ("Cargo.toml" . (:constraints ("strict-types")
                       :patterns (("\\[dev-dependencies\\]" . "test-unit"))))
-    
+
     ;; Go
     ("go.mod" . (:constraints ("errors-checked" "minimal")))
-    
+
     ;; Java/Kotlin
     ("pom.xml" . (:constraints ("doc-comments" "defensive")))
     ("build.gradle" . (:constraints ("doc-comments" "defensive")))
     ("build.gradle.kts" . (:constraints ("doc-comments" "defensive")))
-    
+
     ;; Clojure
     ("project.clj" . (:constraints ("functional" "immutable")))
     ("deps.edn" . (:constraints ("functional" "immutable")))
     ("shadow-cljs.edn" . (:constraints ("functional" "immutable")))
-    
+
     ;; Ruby
     ("Gemfile" . (:constraints ("test-after")))
     (".rubocop.yml" . (:constraints ("strict-lint")))
-    
+
     ;; Elixir
     ("mix.exs" . (:constraints ("functional" "immutable" "test-unit")))
-    
+
     ;; Swift
     ("Package.swift" . (:constraints ("memory-safe" "async-await")))
     (".swiftlint.yml" . (:constraints ("strict-lint")))
-    
+
     ;; .NET
     ("*.csproj" . (:constraints ("strict-types" "async-await")))
     ("Directory.Build.props" . (:constraints ("strict-types")))
-    
+
     ;; CI/CD - implies security focus
     (".github/workflows" . (:constraints ("secure")))
     (".gitlab-ci.yml" . (:constraints ("secure")))
     ("azure-pipelines.yml" . (:constraints ("secure")))
     ("Jenkinsfile" . (:constraints ("secure")))
-    
+
     ;; Testing frameworks
     ("jest.config.js" . (:constraints ("test-unit")))
     ("jest.config.ts" . (:constraints ("test-unit")))
@@ -452,25 +452,25 @@ Each bundle is (NAME . (:constraints (C1 C2 ...) :description DESC)).")
     ("karma.conf.js" . (:constraints ("test-unit")))
     ("mocha.opts" . (:constraints ("test-unit")))
     (".mocharc.json" . (:constraints ("test-unit")))
-    
+
     ;; API definitions
     ("openapi.yaml" . (:constraints ("api-rest")))
     ("openapi.json" . (:constraints ("api-rest")))
     ("swagger.yaml" . (:constraints ("api-rest")))
     ("schema.graphql" . (:constraints ("api-graphql")))
     ("schema.gql" . (:constraints ("api-graphql")))
-    
+
     ;; Docker/Container
     ("Dockerfile" . (:constraints ("minimal" "secure")))
     ("docker-compose.yml" . (:constraints ("secure")))
     ("docker-compose.yaml" . (:constraints ("secure")))
-    
+
     ;; Kubernetes
     ("k8s" . (:constraints ("secure" "stateless")))
     ("kubernetes" . (:constraints ("secure" "stateless")))
     ("helm" . (:constraints ("secure")))
     ("Chart.yaml" . (:constraints ("secure")))
-    
+
     ;; Config management
     ("terraform" . (:constraints ("immutable" "state-explicit")))
     ("ansible" . (:constraints ("defensive" "state-explicit")))
@@ -554,12 +554,12 @@ Returns short commit hash or nil if repo not available."
   (when (ai-code--behaviors-repo-available-p)
     (let ((default-directory (expand-file-name ai-code-behaviors-repo-path)))
       (condition-case nil
-          (string-trim 
+          (string-trim
            (shell-command-to-string "git rev-parse --short HEAD 2>/dev/null"))
         (error nil)))))
 
 (defconst ai-code--behavior-presets
-  '(("tdd-dev" . (:mode "=code" :modifiers ("tdd" "deep") 
+  '(("tdd-dev" . (:mode "=code" :modifiers ("tdd" "deep")
                    :description "Test-driven development"))
      ("thorough-debug" . (:mode "=debug" :modifiers ("deep" "challenge")
                          :description "Deep debugging with critical analysis"))
@@ -757,11 +757,11 @@ Note: This performs network I/O; use sparingly."
       (condition-case nil
           (progn
             (call-process "git" nil nil nil "fetch" "--quiet")
-            (let* ((remote-head (string-trim 
-                                 (shell-command-to-string 
+            (let* ((remote-head (string-trim
+                                 (shell-command-to-string
                                   "git rev-parse '@{u}' 2>/dev/null")))
-                   (local-head (string-trim 
-                                (shell-command-to-string 
+                   (local-head (string-trim
+                                (shell-command-to-string
                                  "git rev-parse HEAD 2>/dev/null"))))
               (cond
                ((string-empty-p remote-head) 'no-remote)
@@ -782,9 +782,9 @@ Returns nil if repo not available."
   (when (ai-code--behaviors-repo-available-p)
     (let ((default-directory (expand-file-name ai-code-behaviors-repo-path)))
       (condition-case nil
-          (list :commit (string-trim 
+          (list :commit (string-trim
                          (shell-command-to-string "git rev-parse --short HEAD 2>/dev/null"))
-                :date (string-trim 
+                :date (string-trim
                        (shell-command-to-string "git log -1 --format=%ci HEAD 2>/dev/null")))
         (error nil)))))
 
@@ -1182,7 +1182,7 @@ Returns TEXT unchanged if no special structure found."
       (when (string-match "<user-prompt>\\s-*\\(\\(?:.\\|\n\\)*?\\)\\s-*</user-prompt>" result)
         (setq result (match-string 1 result)))
       (when (string-match "^AdditionalContext:" result)
-        (setq result (replace-regexp-in-string 
+        (setq result (replace-regexp-in-string
                       "^AdditionalContext:\\(?:.\\|\n\\)*?\\(<user-prompt>\\|\\'\\)"
                       "" result)))
       (setq result (string-trim result)))
@@ -1383,9 +1383,13 @@ Note: Preset-only prompts (empty after tag removal) are handled by
   (message "Behaviors cleared for current project"))
 
 (defun ai-code-behaviors-clear-all ()
-  "Clear behaviors for all projects."
+  "Clear behaviors for all projects.
+Clears session states, active bundles, pending presets, and last prompts."
   (interactive)
   (clrhash ai-code--behaviors-session-states)
+  (clrhash ai-code--active-constraint-bundles)
+  (clrhash ai-code--behaviors-pending-presets)
+  (clrhash ai-code--behaviors-last-prompts)
   (ai-code--behaviors-update-mode-line)
   (message "All behaviors cleared"))
 
@@ -1417,7 +1421,7 @@ Returns t on success, nil on failure."
                 (progn
                   (ai-code--behaviors-clear-all-caches)
                   (let ((after-info (ai-code--behaviors-commit-info)))
-                    (message "ai-behaviors updated to commit %s" 
+                    (message "ai-behaviors updated to commit %s"
                              (plist-get after-info :commit)))
                   t)
               (message "Failed to update ai-behaviors (git pull exited %s)" result)
@@ -1527,8 +1531,8 @@ Return short description string or nil if not found."
            (constraints (plist-get state :constraint-modifiers))
            (custom-suffix (plist-get state :custom-suffix))
            (active-bundle (ai-code--behaviors-get-active-bundle))
-           (preset-desc (when preset 
-                          (plist-get (cdr (assoc preset ai-code--behavior-presets)) 
+           (preset-desc (when preset
+                          (plist-get (cdr (assoc preset ai-code--behavior-presets))
                                      :description)))
            (bundle-desc (when active-bundle
                           (plist-get (cdr (assoc active-bundle ai-code--constraint-bundles))
@@ -1540,11 +1544,11 @@ Return short description string or nil if not found."
       (when custom-suffix
         (push "+custom-suffix" lines))
       (when (and constraints (not active-bundle))
-        (push (format "Constraints: %s" 
+        (push (format "Constraints: %s"
                       (mapconcat (lambda (c) (concat "#" c)) constraints " "))
               lines))
       (when modifiers
-        (push (format "Modifiers: %s" 
+        (push (format "Modifiers: %s"
                       (mapconcat (lambda (m) (concat "#" m)) modifiers " "))
               lines))
       (when mode
@@ -1694,13 +1698,13 @@ Returns preset name string, or `ai-code-behaviors-default-preset' if no signals 
 
 (defvar ai-code--behaviors-mode-line-map
   (let ((map (make-sparse-keymap)))
-    (define-key map [mode-line mouse-1] 
+    (define-key map [mode-line mouse-1]
       'ai-code-behaviors-mode-line-select-preset)
-    (define-key map [mode-line mouse-3] 
+    (define-key map [mode-line mouse-3]
       'ai-code-behaviors-mode-line-actions)
-    (define-key map [header-line mouse-1] 
+    (define-key map [header-line mouse-1]
       'ai-code-behaviors-mode-line-select-preset)
-    (define-key map [header-line mouse-3] 
+    (define-key map [header-line mouse-3]
       'ai-code-behaviors-mode-line-actions)
     map)
   "Keymap for behavior mode-line indicator.")
@@ -1754,7 +1758,7 @@ EVENT is the mouse event."
         (preset (ai-code--behaviors-get-preset))
         (active-bundle (ai-code--behaviors-get-active-bundle)))
     (define-key menu [disable]
-      '(menu-item "Disable mode-line indicator" 
+      '(menu-item "Disable mode-line indicator"
                   ai-code-behaviors-mode-line-disable))
     (define-key menu [sep2] '(menu-item "--"))
     (define-key menu [clear-all]
@@ -1888,13 +1892,13 @@ Includes presets, operating modes, modifiers, and constraint modifiers."
       (dolist (mode ai-code--behavior-operating-modes)
         (let* ((name (concat "#" mode))
                (annotation (ai-code--extract-behavior-annotation mode)))
-          (push (cons (if annotation (format "%-15s %s" name annotation) name) 
+          (push (cons (if annotation (format "%-15s %s" name annotation) name)
                       (cons 'behavior name)) candidates)))
       (push (cons "─── Modifiers ───" "") candidates)
       (dolist (mod ai-code--behavior-modifiers)
         (let* ((name (concat "#" mod))
                (annotation (ai-code--extract-behavior-annotation mod)))
-          (push (cons (if annotation (format "%-15s %s" name annotation) name) 
+          (push (cons (if annotation (format "%-15s %s" name annotation) name)
                       (cons 'behavior name)) candidates))))
     (when ai-code--constraint-modifiers
       (push (cons "─── Constraints ───" "") candidates)
@@ -1920,11 +1924,11 @@ Preserves existing constraint-modifiers from current state."
                :custom-suffix (ai-code--get-effective-custom-suffix)))
         (ai-code--behaviors-set-preset preset-name)
         (ai-code--behaviors-update-mode-line)
-        (message "Preset applied: %s (%s %s)%s" 
+        (message "Preset applied: %s (%s %s)%s"
                  preset-name
                  (plist-get data :mode)
                  (mapconcat #'identity (plist-get data :modifiers) " ")
-                 (if existing-constraints 
+                 (if existing-constraints
                      (format " +%d constraint(s)" (length existing-constraints))
                    ""))))))
 
@@ -1940,9 +1944,9 @@ In gptel-plan mode, only shows readonly-compatible presets."
                (lambda (p) (ai-code--behaviors-preset-readonly-p (car p)))
                ai-code--behavior-presets)
             ai-code--behavior-presets))
-         (presets (mapcar (lambda (p) 
-                            (cons (format "%-15s %s" 
-                                         (car p) 
+         (presets (mapcar (lambda (p)
+                            (cons (format "%-15s %s"
+                                         (car p)
                                          (plist-get (cdr p) :description))
                                   (car p)))
                           available-presets))
@@ -2022,16 +2026,16 @@ For gptel-agent buffers, extracts project from buffer name."
   "Map CLI backend names to their session buffer prefixes.
 Only includes terminal-based backends. ECA and agent-shell use different detection.")
 
-(declare-function ai-code-backends-infra--session-working-directory 
+(declare-function ai-code-backends-infra--session-working-directory
                   "ai-code-backends-infra" ())
-(declare-function ai-code-backends-infra--find-session-buffers 
+(declare-function ai-code-backends-infra--find-session-buffers
                   "ai-code-backends-infra" (prefix directory))
 
 (defun ai-code--get-session-prefix ()
   "Get session prefix for current CLI backend.
 Returns nil for non-CLI backends (ECA, agent-shell)."
   (and (boundp 'ai-code-selected-backend)
-       (alist-get ai-code-selected-backend 
+       (alist-get ai-code-selected-backend
                   ai-code--backend-session-prefixes)))
 
 (defun ai-code--session-exists-p ()
@@ -2042,13 +2046,13 @@ Returns nil for non-CLI backends (ECA, agent-shell)."
          (eq ai-code-selected-backend 'eca))
     (and (fboundp 'eca-session)
          (eca-session)))
-   
+
    ;; agent-shell backend - use agent-shell--shell-buffer
    ((and (boundp 'ai-code-selected-backend)
          (eq ai-code-selected-backend 'agent-shell))
     (and (fboundp 'agent-shell--shell-buffer)
          (agent-shell--shell-buffer :no-create t :no-error t)))
-   
+
 ;; CLI backends - use terminal buffer detection
     ((ai-code--get-session-prefix)
      (when-let* ((prefix (ai-code--get-session-prefix))
@@ -2057,7 +2061,7 @@ Returns nil for non-CLI backends (ECA, agent-shell)."
        (and (fboundp 'ai-code-backends-infra--find-session-buffers)
             (ai-code-backends-infra--find-session-buffers prefix working-dir)
             t)))
-    
+
     ;; Unknown backend - require explicit session start
     (t nil)))
 
@@ -2144,7 +2148,7 @@ Returns t if enabled, nil if `ai-code--insert-prompt' is not defined."
     (cl-return-from ai-code-behaviors-enable-auto-presets nil))
   (ai-code--behaviors-clear-detection-cache)
   (advice-remove 'ai-code--insert-prompt #'ai-code--insert-prompt-behaviors-advice)
-  (advice-add 'ai-code--insert-prompt :around 
+  (advice-add 'ai-code--insert-prompt :around
               #'ai-code--insert-prompt-behaviors-advice)
   (add-hook 'ai-code-prompt-mode-hook #'ai-code--behavior-setup-preset-completion)
   (ai-code--behavior-enable-preset-in-file-completion)
@@ -2162,7 +2166,7 @@ Returns t if enabled, nil if `ai-code--insert-prompt' is not defined."
 (defun ai-code-behaviors-disable-auto-presets ()
   "Disable automatic preset application."
   (interactive)
-  (advice-remove 'ai-code--insert-prompt 
+  (advice-remove 'ai-code--insert-prompt
                  #'ai-code--insert-prompt-behaviors-advice)
   (remove-hook 'ai-code-prompt-mode-hook #'ai-code--behavior-setup-preset-completion)
   (ai-code--behavior-disable-preset-in-file-completion)
@@ -2278,12 +2282,12 @@ Supports both calling conventions:
                (prompt-text (save-excursion
                               (goto-char (point-max))
                               (if (re-search-backward "^### " nil t)
-                                  (string-trim 
+                                  (string-trim
                                    (buffer-substring-no-properties (point) (point-max)))
                                 (let ((prop (text-property-search-backward 'gptel nil t)))
                                   (if prop
                                       (string-trim
-                                       (buffer-substring-no-properties 
+                                       (buffer-substring-no-properties
                                         (prop-match-beginning prop)
                                         (point-max)))
                                     (string-trim (buffer-string)))))))
@@ -2618,7 +2622,7 @@ In gptel-agent buffers, tries multiple sources to find the project root."
         (let (all-roots)
           (maphash (lambda (k _v) (push k all-roots)) ai-code--behaviors-last-prompts)
           (if all-roots
-              (message "No prompt for %s. Available: %s" 
+              (message "No prompt for %s. Available: %s"
                        (or (car candidate-roots) "unknown")
                        (mapconcat #'identity all-roots ", "))
             (message "No prompts processed yet")))
@@ -2838,13 +2842,15 @@ with existing session state, preserving other keys like :custom-suffix."
 (defun ai-code-constraints-auto-detect-and-apply ()
   "Auto-detect constraints from project and apply to session.
 Useful after cloning a project or switching contexts.
-Preserves other session state like :custom-suffix."
+Preserves other session state like :custom-suffix.
+Clears any active constraint bundle since auto-detect takes precedence."
   (interactive)
   (let ((detected (ai-code--constraints-auto-detect)))
     (if detected
         (let* ((existing-state (ai-code--behaviors-get-state))
                (new-state (plist-put (copy-sequence existing-state)
                                       :constraint-modifiers detected)))
+          (ai-code--behaviors-clear-active-bundle)
           (ai-code--behaviors-set-state new-state)
           (ai-code--constraints-save-to-project detected)
           (ai-code--behaviors-update-mode-line)
