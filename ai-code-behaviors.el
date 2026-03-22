@@ -1,6 +1,6 @@
 ;;; ai-code-behaviors.el --- Behavior injection system for AI prompts -*- lexical-binding: t; -*-
 
-;; Author: Kang Tu <tninja@gmail.com>
+;; Author: davidwuchn
 ;; SPDX-License-Identifier: Apache-2.0
 
 ;;; Commentary:

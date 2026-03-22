@@ -34,7 +34,61 @@
         (should-not (ai-code-backends-infra--buffer-user-visible-p buf)))
       (cl-letf (((symbol-function 'get-buffer-window-list)
                  (lambda (&rest _args) (list (selected-window)))))
-        (should (ai-code-backends-infra--buffer-user-visible-p buf))))))
+         (should (ai-code-backends-infra--buffer-user-visible-p buf))))))
+
+(ert-deftest test-ai-code-backends-infra-vterm-notification-tracker-relinks-after-redraw ()
+  "Re-linkify vterm output when a later redraw strips custom properties."
+  (let* ((root (make-temp-file "ai-code-vterm-redraw-links-" t))
+         (src-dir (expand-file-name "src" root))
+         (file (expand-file-name "FileABC.java" src-dir))
+         (buffer (generate-new-buffer "*codex[session-links]*"))
+         (process 'fake-process)
+         (output "src/FileABC.java:42\nhttps://example.com/path\n"))
+    (unwind-protect
+        (progn
+          (make-directory src-dir t)
+          (with-temp-file file
+            (insert "class FileABC {}\n"))
+          (with-current-buffer buffer
+            (setq-local ai-code-backends-infra--session-directory root)
+            (cl-letf (((symbol-function 'process-buffer)
+                       (lambda (_process) buffer)))
+              (ai-code-backends-infra--vterm-notification-tracker
+               (lambda (_process _input)
+                 (let ((inhibit-read-only t))
+                   (erase-buffer)
+                   (insert output)
+                   ;; Simulate a later vterm redraw that rewrites the rendered text.
+                   (run-at-time
+                    0 nil
+                    (lambda (buf text)
+                      (when (buffer-live-p buf)
+                        (with-current-buffer buf
+                          (let ((inhibit-read-only t))
+                            (erase-buffer)
+                            (insert text)))))
+                    buffer output)))
+               process
+               output))
+            (sleep-for 0.02)
+            (goto-char (point-min))
+            (search-forward-regexp "src/FileABC\\.java:42")
+            (should (equal (get-text-property (match-beginning 0) 'ai-code-session-link)
+                           "src/FileABC.java:42"))
+            (should-not (get-text-property (match-beginning 0) 'ai-code-session-link-type))
+            (should-not (get-text-property (match-beginning 0) 'ai-code-session-link-data))
+            (should (eq (get-text-property (match-beginning 0) 'face) 'link))
+            (goto-char (point-min))
+            (search-forward-regexp "https://example\\.com/path")
+            (should (equal (get-text-property (match-beginning 0) 'ai-code-session-link)
+                           "https://example.com/path"))
+            (should-not (get-text-property (match-beginning 0) 'ai-code-session-link-type))
+            (should-not (get-text-property (match-beginning 0) 'ai-code-session-link-data))
+            (should (eq (get-text-property (match-beginning 0) 'face) 'link))))
+      (when (buffer-live-p buffer)
+        (kill-buffer buffer))
+      (when (file-directory-p root)
+        (delete-directory root t)))))
 
 (ert-deftest test-ai-code-backends-infra-response-seen-visible ()
   "Mark responses as seen without notifying when visible."
@@ -856,6 +910,18 @@
              (setq called (list created-buffer created-process created-instance))))
           (should (equal (list buffer process "default")
                          called)))
+      (when (buffer-live-p buffer)
+        (kill-buffer buffer)))))
+
+(ert-deftest test-ai-code-backends-infra-configure-session-buffer-does-not-bind-manual-navigation ()
+  "Configuring a session buffer should not add a manual `C-c g' navigation feature."
+  (let ((buffer (generate-new-buffer "*ai-code-session-config*")))
+    (unwind-protect
+        (cl-letf (((symbol-function 'ai-code-session-link--linkify-session-region)
+                   (lambda (&rest _args) nil)))
+          (ai-code-backends-infra--configure-session-buffer buffer)
+          (with-current-buffer buffer
+            (should-not (key-binding (kbd "C-c g")))))
       (when (buffer-live-p buffer)
         (kill-buffer buffer)))))
 

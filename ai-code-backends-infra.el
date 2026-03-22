@@ -17,8 +17,10 @@
 
 (require 'cl-lib)
 (require 'project)
+(require 'ai-code-session-link)
 
 ;; Silence native-compiler warnings.
+(declare-function browse-url "browse-url" (url &optional new-window))
 (declare-function vterm "vterm" (&optional buffer-name))
 (declare-function vterm-send-string "vterm" (&rest args))
 (declare-function vterm-send-escape "vterm" ())
@@ -30,7 +32,6 @@
 (declare-function eat-mode "eat" ())
 (declare-function eat-exec "eat" (&rest args))
 (declare-function ai-code--session-handle-at-input "ai-code-input" ())
-
 ;; Declare vterm dynamic variables for let-binding to work with lexical-binding
 (defvar vterm-shell)
 (defvar vterm-environment)
@@ -235,7 +236,12 @@ The timer is reset only after meaningful output is observed."
     (with-current-buffer (process-buffer process)
       (when (ai-code-backends-infra--output-meaningful-p input)
         (ai-code-backends-infra--note-meaningful-output))))
-  (funcall orig-fun process input))
+  (prog1
+      (funcall orig-fun process input)
+    (when (ai-code-backends-infra--session-buffer-p (process-buffer process))
+      (ai-code-session-link--schedule-linkify-recent-output
+       (process-buffer process)
+       input))))
 
 (defun ai-code-backends-infra--vterm-smart-renderer (orig-fun process input)
   "Smart rendering filter for optimized vterm display updates.
@@ -388,7 +394,8 @@ MULTILINE-INPUT-SEQUENCE configures `S-<return>' and `C-<return>' when non-nil."
     (when escape-fn
       (local-set-key (kbd "C-<escape>") escape-fn))
     (ai-code-backends-infra--configure-multiline-input
-     multiline-input-sequence)))
+     multiline-input-sequence)
+    (ai-code-session-link--linkify-session-region (point-min) (point-max))))
 
 ;;; Reflow and Window Management
 
@@ -928,12 +935,13 @@ ENV-VARS is a list of environment variables."
                (lambda (process output)
                  ;; Call original filter first
                  (when orig-filter
-                   (funcall orig-filter process output))
-                 ;; Then track activity for notifications
-                 (with-current-buffer (process-buffer process)
-                   (when (ai-code-backends-infra--output-meaningful-p output)
-                     (ai-code-backends-infra--note-meaningful-output)))))))
-          (cons buffer (get-buffer-process buffer)))))
+                    (funcall orig-filter process output))
+                  ;; Then track activity for notifications
+                   (with-current-buffer (process-buffer process)
+                     (when (ai-code-backends-infra--output-meaningful-p output)
+                       (ai-code-backends-infra--note-meaningful-output))
+                    (ai-code-session-link--linkify-recent-output output))))))
+           (cons buffer (get-buffer-process buffer)))))
      (t (error "Unknown backend")))))
 
 (defun ai-code-backends-infra--cleanup-dead-processes (table)

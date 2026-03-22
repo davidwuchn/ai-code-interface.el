@@ -8,6 +8,7 @@
 - Feat: Add project-scoped constraint persistence (.ai-behaviors/constraints)
 - Feat: Mode-line integration for constraint bundles with gptel-plan filtering
 - Feat: Completion support for @bundle-name in prompts
+- Feat: Add clickable in-repo file and URL links in AI session buffers
 - Fix: Glob pattern matching for *.csproj and similar patterns in auto-detect
 - Fix: Bundle loading from persistence file with space handling
 - Fix: Mode-line update on bundle apply/clear
