@@ -173,7 +173,7 @@ Returns default-directory if not in a repo."
 (defun ai-code--behaviors--get (key &optional root)
   "Get entry KEY from session states for ROOT.
 If ROOT is nil, use current project root."
-(plist-get (or (gethash (or root (ai-code--behaviors-project-root))
+  (plist-get (or (gethash (or root (ai-code--behaviors-project-root))
                            ai-code--behaviors-session-states)
                   '(:state nil :preset nil))
              key))
