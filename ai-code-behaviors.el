@@ -1152,8 +1152,8 @@ Callers should set the bundle using the correct project root via
         (setq result (string-trim (buffer-string)))))
     (list (when (or mode modifiers constraints preset)
             (list :mode mode
-                  :modifiers (nreverse modifiers)
-                  :constraint-modifiers (nreverse constraints)
+                  :modifiers (reverse modifiers)
+                  :constraint-modifiers (reverse constraints)
                   :preset preset))
           result
           switch-needed
@@ -1403,7 +1403,7 @@ BEHAVIORS is (:mode MODE :modifiers MODIFIERS :constraint-modifiers CONSTRAINTS
     (when (and custom-suffix (not (string-empty-p custom-suffix)))
       (push (format "AdditionalContext: <custom-constraints>\n%s\n</custom-constraints>" custom-suffix) blocks))
     (when blocks
-      (concat (mapconcat #'identity (nreverse blocks) "\n\n")
+      (concat (mapconcat #'identity (reverse blocks) "\n\n")
               "\n\nThese behaviors apply until superseded by new hashtags. During compaction, preserve the most recent <operating-mode> and <behavior-modifiers> blocks."))))
 
 (defun ai-code--behaviors-wrap-with-instruction (behaviors prompt-text)
@@ -1697,7 +1697,7 @@ Return short description string or nil if not found."
         (when preset-desc
           (push preset-desc lines))
         (push (format "@%s" preset) lines))
-      (mapconcat #'identity (nreverse lines) "\n"))))
+      (mapconcat #'identity (reverse lines) "\n"))))
 
 ;;; Multi-signal preset detection
 
@@ -2058,7 +2058,7 @@ Includes presets, constraint bundles, and behaviors."
                (annotation (ai-code--extract-behavior-annotation mode)))
           (push (cons (if annotation (format "%-15s %s" name annotation) name)
                       (cons 'behavior name)) candidates))))
-    (nreverse candidates)))
+    (reverse candidates)))
 
 (defun ai-code-behaviors-apply-preset (preset-name)
   "Apply preset named PRESET-NAME.
@@ -2945,7 +2945,7 @@ Returns list of constraint names, or nil if no file exists."
             (forward-line 1))
           (when bundle
             (ai-code--behaviors-set-active-bundle bundle))
-          (nreverse constraints))))))
+          (reverse constraints))))))
 
 (defun ai-code--constraints-save-to-project (constraints)
   "Save CONSTRAINTS to project persistence file.
@@ -3153,7 +3153,7 @@ Shows only constraints and bundles, not presets or behaviors."
              (desc (cdr constraint))
              (display (format "%-15s %s" name (truncate-string-to-width desc 40 nil nil t))))
         (push (cons display (cons 'constraint (car constraint))) candidates)))
-    (setq candidates (nreverse candidates))
+    (setq candidates (reverse candidates))
     (let ((selection (completing-read "Add constraint: " candidates nil t)))
       (when (and selection (not (string-empty-p selection)))
         (let ((value (cdr (assoc selection candidates))))
