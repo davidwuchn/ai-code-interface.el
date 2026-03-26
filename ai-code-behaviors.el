@@ -1237,14 +1237,14 @@ Returns parsed plist or nil if no valid JSON code block found."
         (json-read-from-string (match-string 1 text))
       (error nil))))
 
-(defun ai-code--extract-json-balanced (text)
-  "Extract JSON using balanced brace detection from TEXT.
-Returns parsed plist or nil if no valid JSON found or depth limit exceeded.
 ;; ASSUMPTION: JSON object starts with { and ends with matching }
 ;; BEHAVIOR: Counts braces while tracking string/escape state
 ;; EDGE CASE: Exits early if depth goes negative (unmatched closing brace)
 ;; EDGE CASE: Exits early if depth exceeds max (prevents CPU exhaustion)
-;; TEST: Verify with valid JSON, malformed JSON, deeply nested JSON"
+;; TEST: Verify with valid JSON, malformed JSON, deeply nested JSON
+(defun ai-code--extract-json-balanced (text)
+  "Extract JSON using balanced brace detection from TEXT.
+Returns parsed plist or nil if no valid JSON found or depth limit exceeded."
   (cond
    ((string-match-p "\\`[[:space:]]*{" text)
     (condition-case nil
@@ -1257,9 +1257,8 @@ Returns parsed plist or nil if no valid JSON found or depth limit exceeded.
           (i (match-beginning 0))
           (len (length text))
           (in-string nil)
-          (escape-next nil)
-          (valid t))
-      (while (and valid (< i len) (>= depth 0) (<= depth max-depth))
+          (escape-next nil))
+      (while (and (< i len) (>= depth 0) (<= depth max-depth))
         (let ((ch (aref text i)))
           (cond
            (escape-next (setq escape-next nil))
@@ -1270,7 +1269,7 @@ Returns parsed plist or nil if no valid JSON found or depth limit exceeded.
             (cond ((eq ch ?{) (setq depth (1+ depth)))
                   ((eq ch ?}) (setq depth (1- depth)))))))
         (setq i (1+ i)))
-      (when (and valid (= depth 0) (<= depth max-depth))
+      (when (and (= depth 0) (<= depth max-depth))
         (condition-case nil
             (json-read-from-string (substring text start i))
           (error nil)))))
