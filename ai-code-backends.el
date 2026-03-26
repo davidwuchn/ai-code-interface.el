@@ -330,30 +330,30 @@ so the CLI itself handles the installation details."
      :install-skills ai-code-eca-install-skills
      :cli     nil)
     (agent-shell      ; external backend, requires agent-shell package
-      :label "agent-shell"
-      :require ai-code-agent-shell
-      :start   ai-code-agent-shell
-      :switch  ai-code-agent-shell-switch-to-buffer
-      :send    ai-code-agent-shell-send-command
-      :resume  ai-code-agent-shell-resume
-      :config  nil
-      :agent-file nil
-      :upgrade nil
-      :install-skills nil
-      :cli     "agent-shell")
-     (gptel-agent      ; external backend, requires gptel-agent package
-      :label "GPTel Agent"
-      :require ai-code-gptel-agent
-      :start   ai-code-gptel-agent
-      :switch  ai-code-gptel-agent-switch-to-buffer
-      :send    ai-code-gptel-agent-send-command
-      :resume  nil
-      :config  nil
-      :agent-file nil
-      :upgrade nil
-      :install-skills nil
-      :cli     nil)
-     (claude-code-ide ; external backend, requires claude-code-ide.el package
+     :label "agent-shell"
+     :require ai-code-agent-shell
+     :start   ai-code-agent-shell
+     :switch  ai-code-agent-shell-switch-to-buffer
+     :send    ai-code-agent-shell-send-command
+     :resume  ai-code-agent-shell-resume
+     :config  nil
+     :agent-file nil
+     :upgrade nil
+     :install-skills nil
+     :cli     "agent-shell")
+    (gptel-agent      ; external backend, requires gptel-agent package
+     :label "GPTel Agent"
+     :require ai-code-gptel-agent
+     :start   ai-code-gptel-agent
+     :switch  ai-code-gptel-agent-switch-to-buffer
+     :send    ai-code-gptel-agent-send-command
+     :resume  nil
+     :config  nil
+     :agent-file nil
+     :upgrade nil
+     :install-skills nil
+     :cli     nil)
+    (claude-code-ide ; external backend, requires claude-code-ide.el package
      :label "claude-code-ide.el"
      :require claude-code-ide
      :start   claude-code-ide--start-if-no-session
@@ -468,11 +468,11 @@ Sets backend dispatch functions and updates `ai-code-cli'."
             ai-code--cli-switch-fn switch
             ai-code--cli-send-fn send
             ai-code--cli-resume-fn (if resume
-                                      (lambda (&optional arg)
-                                        (interactive "P")
-                                        (let ((current-prefix-arg (or arg current-prefix-arg)))
-                                          (call-interactively resume)))
-                                    #'ai-code--unsupported-resume))
+                                       (lambda (&optional arg)
+                                         (interactive "P")
+                                         (let ((current-prefix-arg (or arg current-prefix-arg)))
+                                           (call-interactively resume)))
+                                     #'ai-code--unsupported-resume))
       (setq ai-code-cli cli
             ai-code-selected-backend key)
       (message "AI Code backend switched to: %s" (plist-get plist :label)))))
@@ -509,7 +509,7 @@ invoke `ai-code-cli-resume'; otherwise call `ai-code-cli-start'."
                             choices))
          (choice (completing-read "Select backend: "
                                   (mapcar #'car ordered-choices)
-                                 nil t nil nil current-label))
+                                  nil t nil nil current-label))
          (key (cdr (assoc choice ordered-choices))))
     (ai-code-set-backend key)))
 

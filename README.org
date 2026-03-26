@@ -101,7 +101,7 @@ Enable installation of packages from MELPA by adding an entry to package-archive
 ** Dependencies
 
 *** Required Dependencies
-- Emacs 28.1 or later
+- Emacs 29.1 or later
 - `org`: Org-mode support
 - `magit`: Git integration
 - `transient`: For the menu system

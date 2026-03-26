@@ -3,7 +3,7 @@
 ;; Copyright (C) 2026
 ;; Author: davidwuchn
 ;; Version: 0.2
-;; Package-Requires: ((emacs "28.1"))
+;; Package-Requires: ((emacs "29.1"))
 ;; Keywords: ai, code, assistant, eca
 ;; SPDX-License-Identifier: Apache-2.0
 

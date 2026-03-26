@@ -54,10 +54,10 @@ terminal output redraw."
   "\\(https?://[^][(){}<>\"' \t\n]+\\)"
   "Regexp matching http/https URLs in session buffers.")
 
-(defconst ai-code-session-link--symbol-neighborhood-max-width 512
+(defconst ai-code-session-link--symbol-neighborhood-max-width 168
   "Maximum number of characters to scan for symbols near a file link.")
 
-(defconst ai-code-session-link--symbol-neighborhood-max-lines 8
+(defconst ai-code-session-link--symbol-neighborhood-max-lines 3
   "Maximum number of lines to scan for symbols near a file link.")
 
 (defconst ai-code-session-link--symbol-neighborhood-max-candidates 24

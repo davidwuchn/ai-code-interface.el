@@ -215,6 +215,75 @@
           (advice-remove handler #'ai-code-backends-infra--terminal-reflow-filter))
         (fmakunbound handler)))))
 
+(ert-deftest test-ai-code-backends-infra-sync-terminal-cursor-vterm-copy-mode ()
+  "Show an Emacs cursor in vterm copy mode and restore terminal cursor on exit."
+  (with-temp-buffer
+    (setq-local ai-code-backends-infra--session-terminal-backend 'vterm)
+    (setq-local cursor-type nil)
+    (setq-local vterm-copy-mode t)
+    (ai-code-backends-infra--sync-terminal-cursor)
+    (should (eq cursor-type t))
+    (should ai-code-backends-infra--navigation-cursor-active)
+    (should (null ai-code-backends-infra--terminal-active-cursor-type))
+    (setq-local vterm-copy-mode nil)
+    (ai-code-backends-infra--sync-terminal-cursor)
+    (should-not ai-code-backends-infra--navigation-cursor-active)
+    (should (null cursor-type))))
+
+(ert-deftest test-ai-code-backends-infra-sync-terminal-cursor-eat-emacs-mode ()
+  "Show an Emacs cursor in Eat navigation mode and restore terminal cursor on exit."
+  (with-temp-buffer
+    (setq-local ai-code-backends-infra--session-terminal-backend 'eat)
+    (setq-local eat-terminal t)
+    (setq-local eat--semi-char-mode t)
+    (setq-local buffer-read-only nil)
+    (setq-local cursor-type 'bar)
+    (setq-local buffer-read-only t)
+    (setq-local eat--semi-char-mode nil)
+    (ai-code-backends-infra--sync-terminal-cursor)
+    (should (eq cursor-type t))
+    (should ai-code-backends-infra--navigation-cursor-active)
+    (should (eq ai-code-backends-infra--terminal-active-cursor-type 'bar))
+    (setq-local buffer-read-only nil)
+    (setq-local eat--semi-char-mode t)
+    (ai-code-backends-infra--sync-terminal-cursor)
+    (should-not ai-code-backends-infra--navigation-cursor-active)
+    (should (eq cursor-type 'bar))))
+
+(ert-deftest test-ai-code-backends-infra-configure-vterm-buffer-installs-cursor-sync-hook ()
+  "Configuring a vterm buffer should install copy-mode cursor synchronization."
+  (with-temp-buffer
+    (setq-local ai-code-backends-infra--session-terminal-backend 'vterm)
+    (let ((ai-code-backends-infra--vterm-advices-installed t))
+      (ai-code-backends-infra--configure-vterm-buffer))
+    (should (memq #'ai-code-backends-infra--sync-terminal-cursor
+                  vterm-copy-mode-hook))))
+
+(ert-deftest test-ai-code-backends-infra-create-terminal-session-adds-eat-cursor-sync-hook ()
+  "Eat sessions should track navigation-mode cursor handoff locally."
+  (let* ((buffer-name "*test-ai-code-eat-cursor-sync*")
+         (buffer (get-buffer-create buffer-name))
+         (ai-code-backends-infra-terminal-backend 'eat))
+    (unwind-protect
+        (cl-letf (((symbol-function 'ai-code-backends-infra--terminal-ensure-backend)
+                   (lambda () nil))
+                  ((symbol-function 'eat-mode)
+                   (lambda () nil))
+                  ((symbol-function 'eat-exec)
+                   (lambda (&rest _args) nil))
+                  ((symbol-function 'get-buffer-process)
+                   (lambda (_buffer) nil)))
+          (ai-code-backends-infra--create-terminal-session
+           buffer-name
+           default-directory
+           "echo hi"
+           nil)
+          (with-current-buffer buffer
+            (should (memq #'ai-code-backends-infra--sync-terminal-cursor
+                          post-command-hook))))
+      (when (buffer-live-p buffer)
+        (kill-buffer buffer)))))
+
 (ert-deftest test-ai-code-backends-infra-terminal-send-string-prefers-session-backend ()
   "Send should use session-local backend even after global backend changes."
   (let ((ai-code-backends-infra-terminal-backend 'eat)
@@ -999,6 +1068,92 @@
                          called)))
       (when (buffer-live-p buffer)
         (kill-buffer buffer)))))
+
+(ert-deftest test-ai-code-backends-infra-vterm-smart-renderer-queues-in-copy-mode ()
+  "Incoming vterm data is queued (not rendered) while vterm-copy-mode is active."
+  (with-temp-buffer
+    (rename-buffer "*testclaude[test-dir]*" t)
+    (setq-local ai-code-backends-infra--vterm-render-queue nil)
+    (setq-local ai-code-backends-infra--vterm-render-timer nil)
+    ;; Simulate vterm-copy-mode being active.
+    (setq-local vterm-copy-mode t)
+    (let* ((rendered nil)
+           (orig-fun (lambda (_process input) (push input rendered)))
+           (mock-process 'mock-proc))
+      (cl-letf (((symbol-function 'process-buffer)
+                 (lambda (_proc) (current-buffer)))
+                ((symbol-function 'run-at-time)
+                 (lambda (&rest _args) 'mock-timer))
+                ((symbol-function 'cancel-timer)
+                 (lambda (&rest _args) nil)))
+        ;; Send simple input while in copy mode; should be queued.
+        (ai-code-backends-infra--vterm-smart-renderer
+         orig-fun mock-process "hello")
+        ;; Nothing rendered immediately.
+        (should (null rendered))
+        ;; Data is in the queue.
+        (should (equal ai-code-backends-infra--vterm-render-queue "hello"))))))
+
+(ert-deftest test-ai-code-backends-infra-vterm-smart-renderer-timer-skips-in-copy-mode ()
+  "Render timer does not flush the queue while vterm-copy-mode is active."
+  (with-temp-buffer
+    (rename-buffer "*testclaude[test-dir2]*" t)
+    (setq-local ai-code-backends-infra--vterm-render-queue "pending-data")
+    (setq-local ai-code-backends-infra--vterm-render-timer nil)
+    (setq-local vterm-copy-mode t)
+    (let* ((rendered nil)
+           (orig-fun (lambda (_process input) (push input rendered)))
+           (mock-process 'mock-proc)
+           (captured-timer-fn nil))
+      (cl-letf (((symbol-function 'process-buffer)
+                 (lambda (_proc) (current-buffer)))
+                ((symbol-function 'run-at-time)
+                 (lambda (_delay _repeat fn buf)
+                   (setq captured-timer-fn (cons fn buf))
+                   'mock-timer))
+                ((symbol-function 'cancel-timer)
+                 (lambda (&rest _args) nil)))
+        (ai-code-backends-infra--vterm-smart-renderer
+         orig-fun mock-process "extra")
+        ;; Simulate the timer firing by calling the captured timer function.
+        (when captured-timer-fn
+          (funcall (car captured-timer-fn) (cdr captured-timer-fn)))
+        ;; Still in copy mode: nothing should have been rendered.
+        (should (null rendered))
+        ;; Timer reference cleared after firing.
+        (should (null ai-code-backends-infra--vterm-render-timer))
+        ;; Queue is preserved so it can be flushed when copy mode ends.
+        (should ai-code-backends-infra--vterm-render-queue)))))
+
+(ert-deftest test-ai-code-backends-infra-vterm-flush-on-copy-mode-exit ()
+  "Pending render queue is flushed when exiting vterm-copy-mode."
+  (with-temp-buffer
+    (rename-buffer "*testclaude[test-dir3]*" t)
+    (setq-local ai-code-backends-infra--vterm-render-queue "queued-output")
+    (setq-local vterm-copy-mode nil)   ; copy mode is now OFF (just exited)
+    (let* ((flushed-data nil)
+           (mock-process 'mock-proc))
+      (cl-letf (((symbol-function 'get-buffer-process)
+                 (lambda (_buf) mock-process))
+                ((symbol-function 'vterm--filter)
+                 (lambda (_proc data) (setq flushed-data data))))
+        (ai-code-backends-infra--vterm-flush-on-copy-mode-exit)
+        ;; Queue should have been flushed.
+        (should (equal flushed-data "queued-output"))
+        (should (null ai-code-backends-infra--vterm-render-queue))))))
+
+(ert-deftest test-ai-code-backends-infra-vterm-flush-on-copy-mode-exit-noop-when-active ()
+  "Flush function does nothing when vterm-copy-mode is still active."
+  (with-temp-buffer
+    (setq-local ai-code-backends-infra--vterm-render-queue "queued-output")
+    (setq-local vterm-copy-mode t)   ; copy mode is still ON
+    (let* ((flush-called nil))
+      (cl-letf (((symbol-function 'vterm--filter)
+                 (lambda (&rest _args) (setq flush-called t))))
+        (ai-code-backends-infra--vterm-flush-on-copy-mode-exit)
+        ;; Still in copy mode: flush should be a no-op.
+        (should-not flush-called)
+        (should (equal ai-code-backends-infra--vterm-render-queue "queued-output"))))))
 
 (ert-deftest test-ai-code-backends-infra-finalize-started-session-configures-and-displays ()
   "Successful startup finalization should wire buffer state and UI updates."
