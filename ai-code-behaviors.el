@@ -1369,8 +1369,8 @@ PRESET-NAME and EXPLICIT-BEHAVIORS are nil."
                         (append (plist-get preset-data :modifiers)
                                 (plist-get explicit-behaviors :modifiers)))
             :constraint-modifiers (delete-dups
-                                   (append (plist-get preset-data :constraint-modifiers)
-                                           (plist-get explicit-behaviors :constraint-modifiers)))
+                                    (append (plist-get preset-data :constraint-modifiers)
+                                            (plist-get explicit-behaviors :constraint-modifiers)))
             :custom-suffix custom-suffix))
      (explicit-behaviors
       (plist-put (copy-tree explicit-behaviors) :custom-suffix custom-suffix))
