@@ -1232,7 +1232,7 @@ Returns parsed plist or nil if no valid JSON found or response exceeds size limi
 (defun ai-code--extract-json-from-code-block (text)
   "Extract JSON from markdown code block in TEXT.
 Returns parsed plist or nil if no valid JSON code block found."
-  (when (string-match "```\\(?:json\\)?[[:space:]]*\n\\([[:s:][:print:]]*?\\)[[:space:]]*```" text)
+  (when (string-match "```\\(?:json\\)?[[:space:]]*\n\\([[:space:][:print:]]*?\\)[[:space:]]*```" text)
     (condition-case nil
         (json-read-from-string (match-string 1 text))
       (error nil))))
