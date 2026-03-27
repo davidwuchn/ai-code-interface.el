@@ -126,7 +126,7 @@ Only works when gptel package is installed, otherwise shows error message."
                                      (setq done t)))
           ;; Block until 'done' is true or timeout is reached
           (while (not done)
-            (when (or (input-pending-p) quit-flag)
+            (when quit-flag
               (keyboard-quit))
             (when (> (- (float-time) start-time) 30) ;; timeout after 30 seconds
               ;; Try to abort any running processes
