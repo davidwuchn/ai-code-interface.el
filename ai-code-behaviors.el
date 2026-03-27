@@ -2878,24 +2878,30 @@ Returns nil if not a recognized buffer type."
   "Show the last prompt processed by behavior injection.
 Displays the original prompt, processed prompt, and applied behaviors.
 Useful for debugging what was actually sent to the LLM.
-In gptel-agent buffers, tries multiple sources to find the project root."
+Works in gptel-agent and agent-shell buffers."
   (interactive)
-  (let* ((source-buffer (when (bound-and-true-p gptel-mode)
-                          (when-let* ((fsm (bound-and-true-p gptel--fsm-last))
-                                      (info (and fsm (gptel-fsm-info fsm))))
-                            (plist-get info :buffer))))
-         (candidate-roots (delq nil
-                                (list (when (buffer-live-p source-buffer)
-                                        (ai-code--behaviors-project-root source-buffer))
-                                      (ai-code--behaviors-extract-project-from-buffer-name)
-                                      (ai-code--behaviors-project-root))))
+  (let* ((candidate-roots
+          (delq nil
+                (list
+                 ;; For agent-shell
+                 (when (eq major-mode 'agent-shell-mode)
+                   (ai-code--behaviors-project-root))
+                 ;; For gptel-agent
+                 (when (bound-and-true-p gptel-mode)
+                   (when-let* ((fsm (bound-and-true-p gptel--fsm-last))
+                               (info (and fsm (gptel-fsm-info fsm))))
+                     (plist-get info :buffer)))
+                 (ai-code--behaviors-extract-project-from-buffer-name)
+                 (ai-code--behaviors-project-root))))
          (last-prompt nil)
          (found-root nil))
+    ;; Try each candidate root
     (dolist (root candidate-roots)
       (when (and root (not last-prompt))
         (when-let ((data (gethash root ai-code--behaviors-last-prompts)))
           (setq last-prompt data)
           (setq found-root root))))
+    ;; If still no match, try single entry in hash
     (unless last-prompt
       (let (all-roots)
         (maphash (lambda (k _v) (push k all-roots)) ai-code--behaviors-last-prompts)
@@ -2903,13 +2909,7 @@ In gptel-agent buffers, tries multiple sources to find the project root."
           (setq found-root (car all-roots))
           (setq last-prompt (gethash found-root ai-code--behaviors-last-prompts)))))
     (if (not last-prompt)
-        (let (all-roots)
-          (maphash (lambda (k _v) (push k all-roots)) ai-code--behaviors-last-prompts)
-          (if all-roots
-              (message "No prompt for %s. Available: %s"
-                       (or (car candidate-roots) "unknown")
-                       (mapconcat #'identity all-roots ", "))
-            (message "No prompts processed yet")))
+        (message "No behaviors injected yet. Send a prompt first.")
       (let* ((original (plist-get last-prompt :original))
              (processed (plist-get last-prompt :processed))
              (behaviors (plist-get last-prompt :behaviors))
@@ -3303,7 +3303,15 @@ Also handles auto-switching from plan to build mode for modify operations."
                                    default-directory))
                  (result (ai-code--agent-shell-process-behaviors prompt-text project-root))
                  (processed-text (nth 0 result))
-                 (mode-switch-needed (nth 1 result)))
+                 (mode-switch-needed (nth 1 result))
+                 (current-state (ai-code--behaviors-get-state project-root)))
+            ;; Store last prompt for inspection (C-c P)
+            (when project-root
+              (puthash project-root
+                       (list :original prompt-text
+                             :processed (or processed-text prompt-text)
+                             :behaviors current-state)
+                       ai-code--behaviors-last-prompts))
             (when (and processed-text (not (equal processed-text prompt-text)))
               (setf (map-elt params 'prompt)
                     (if (vectorp prompt-vec)
