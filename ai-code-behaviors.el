@@ -3564,16 +3564,16 @@ Merges file completion and preset completion.
       (when all-candidates
         (list start end all-candidates
               :annotation-function
-              (lambda (cand)
-                (case (get-text-property 0 'ai-code--type cand)
-                  ('file " [file]")
-                  ('preset 
-                   (let ((name (string-trim (substring cand 1))))
-                     (cond
-                      ((assoc name ai-code--constraint-bundles) " [bundle]")
-                      ((assoc name ai-code--behavior-presets) " [preset]")
-                      (t " [preset]"))))
-                  (t "")))
+               (lambda (cand)
+                 (pcase (get-text-property 0 'ai-code--type cand)
+                   ('file " [file]")
+                   ('preset 
+                    (let ((name (string-trim (substring cand 1))))
+                      (cond
+                       ((assoc name ai-code--constraint-bundles) " [bundle]")
+                       ((assoc name ai-code--behavior-presets) " [preset]")
+                       (t " [preset]"))))
+                   (_ "")))
               :exclusive 'no)))))
 
 ;;;###autoload
