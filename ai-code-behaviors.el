@@ -3250,7 +3250,7 @@ MODE-SWITCH-NEEDED is t when session should switch from plan to build mode."
                                (ai-code--behaviors-meets-confidence-threshold-p confidence))))
     (when bundle-name
       (ai-code--behaviors-set-active-bundle bundle-name project-root))
-(cond
+    (cond
       (explicit-behaviors
        (ai-code--behaviors-clear-pending-preset project-root)
        (let* ((preset-name (plist-get explicit-behaviors :preset))
@@ -3364,21 +3364,21 @@ Also handles auto-switching from plan to build mode for modify operations."
                                     (or (assoc 'text elem) (assoc "text" elem)))))
                          prompt-vec)))
                    ;; Append any non-text blocks (images, files, etc.)
-                   (when non-text-blocks
+                    (when non-text-blocks
                      (setq new-vec (vconcat new-vec (vconcat non-text-blocks))))
-                   (setf (map-elt params 'prompt) new-vec)))
+                    (setf (map-elt params 'prompt) new-vec)))
                 ;; String format: replace params prompt
                 ((stringp prompt-vec)
                  (setf (map-elt params 'prompt) processed-text))
                 ;; Alist format: update the text field
                 ((and (consp prompt-vec) (or (assoc 'text prompt-vec) (assoc "text" prompt-vec)))
                  (let ((entry (or (assoc 'text prompt-vec) (assoc "text" prompt-vec))))
-                   (setcdr entry processed-text)))))
-            ;; Update mode-line in agent-shell buffer
-            (when project-root
-              (ai-code--behaviors-update-mode-line project-root))
+                   (setcdr entry processed-text))))
+            ;; DISABLED: Mode-line update causes deadlock during request processing
+            ;; (when project-root
+            ;;   (ai-code--behaviors-update-mode-line project-root))
             (when mode-switch-needed
-              (ai-code--agent-shell-maybe-switch-mode))))
+              (ai-code--agent-shell-maybe-switch-mode)))))
       request)
     (error
      (message "DECORATOR ERROR: %s" err)
