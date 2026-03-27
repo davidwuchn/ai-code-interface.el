@@ -3279,10 +3279,10 @@ MODE-SWITCH-NEEDED is t when session should switch from plan to build mode."
                                              (format "Auto-classified: @%s" (or suggested-preset "custom")))
         (list (ai-code--behaviors-wrap-with-instruction final-behaviors prompt-text)
               mode-switch)))
-     (session-state
-      (let ((mode (plist-get session-state :mode))
-            (mode-switch (and ai-code-behaviors-agent-shell-auto-switch-mode
-                              (eq mode 'modify))))
+(session-state
+       (let* ((mode (plist-get session-state :mode))
+              (mode-switch (and ai-code-behaviors-agent-shell-auto-switch-mode
+                                (eq mode 'modify))))
         (list (ai-code--behaviors-wrap-with-instruction session-state prompt-text)
               mode-switch)))
      (t (list prompt-text nil)))))
@@ -3292,7 +3292,7 @@ MODE-SWITCH-NEEDED is t when session should switch from plan to build mode."
 Intercepts session/prompt requests and injects behaviors based on
 prompt classification or explicit hashtags.
 Also handles auto-switching from plan to build mode for modify operations."
-(condition-case err
+  (condition-case err
       (progn
         (when (and (string= (map-elt request :method) "session/prompt")
                    ai-code-behaviors-enabled)
@@ -3349,8 +3349,8 @@ Also handles auto-switching from plan to build mode for modify operations."
                              :processed (or processed-text prompt-text)
                              :behaviors current-state)
                        ai-code--behaviors-last-prompts))
-;; Always inject processed text when available (even if prompt was just @preset)
-             (when processed-text
+            ;; Always inject processed text when available (even if prompt was just @preset)
+            (when processed-text
                (cond
                 ;; Vector format: element 0 may be string or alist
                 ((and (vectorp prompt-vec) (> (length prompt-vec) 0))
