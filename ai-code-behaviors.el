@@ -3544,12 +3544,12 @@ Safe to call multiple times - guards prevent duplicate advice/hooks."
     ;; Set global default for new sessions (idempotent)
     (setq agent-shell-outgoing-request-decorator
           #'ai-code-agent-shell-request-decorator)
-    ;; Smart @ completion: @ alone triggers agent-shell files, @text shows presets
-    ;; Add our CAPF with high priority (t) so it runs before agent-shell's
-    (add-hook 'agent-shell-mode-hook
-              (lambda ()
-                (add-hook 'completion-at-point-functions
-                          #'ai-code--agent-shell-smart-at-capf t t)))
+    ;; NOTE: All custom @ completion disabled for testing
+    ;; Using default agent-shell completion only
+    ;; (add-hook 'agent-shell-mode-hook
+    ;;           (lambda ()
+    ;;             (add-hook 'completion-at-point-functions
+    ;;                       #'ai-code--agent-shell-smart-at-capf t t)))
     ;; Enable mode-line after shell is ready (avoids deadlock with transient)
     ;; The event subscription is per-buffer, so duplicates are naturally avoided
     (add-hook 'agent-shell-mode-hook
