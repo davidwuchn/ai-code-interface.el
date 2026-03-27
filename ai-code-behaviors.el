@@ -3314,20 +3314,104 @@ Also handles auto-switching from plan to build mode for modify operations."
         (agent-shell-cycle-session-mode)))))
 
 (defun ai-code--agent-shell-file-completion-advice (orig-fn &rest args)
-  "Advice to skip file completion when @word matches a preset name.
+  "Advice to merge preset names with file completion for agent-shell.
 ORIG-FN is the original `agent-shell--file-completion-at-point'.
-ARGS are passed through."
-  (let* ((result (apply orig-fn args))
-         (word (when result
-                 (buffer-substring-no-properties (nth 0 result) (nth 1 result)))))
-    (if (and word
-             (string-match "^@" word)
-             (let ((preset-name (substring word 1)))
-               (or (assoc preset-name ai-code--behavior-presets)
-                   (cl-find-if (lambda (p) (string= preset-name (car p)))
-                               ai-code--behavior-presets))))
-        nil
+ARGS are passed through.
+Returns completion with file paths, @presets, AND #hashtags merged.
+- #= prefix: only shows operating modes (#=code, #=debug)
+- # prefix: shows modifiers (#deep) and constraints (#chinese)"
+  (let* ((result (apply orig-fn args)))
+    (if result
+        ;; Merge preset and hashtag candidates into file completion
+        (let* ((start (nth 0 result))
+               (end (nth 1 result))
+               (file-candidates (nth 2 result))
+               ;; Check what prefix user typed
+               (prefix (buffer-substring-no-properties start end))
+               (preset-candidates (ai-code--behavior-preset-and-bundle-names))
+               ;; Determine hashtag candidates based on prefix
+               (hashtag-candidates
+                (cond
+                 ;; #= prefix: only show operating modes
+                 ((string-prefix-p "#=" prefix)
+                  (ai-code--behavior-mode-hashtag-names))
+                 ;; # prefix (without =): show modifiers and constraints
+                 ((string-prefix-p "#" prefix)
+                  (ai-code--behavior-all-hashtag-names))
+                 (t nil))))
+          (list start end (append file-candidates preset-candidates hashtag-candidates)
+                :annotation-function
+                (lambda (cand)
+                  (cond
+                   ;; @preset or @bundle
+                   ((string-prefix-p "@" cand)
+                    (let ((name (string-trim (substring cand 1))))
+                      (or (and (assoc name ai-code--constraint-bundles)
+                               (format " [bundle] %s" (plist-get (cdr (assoc name ai-code--constraint-bundles)) :description)))
+                          (and (assoc name ai-code--behavior-presets)
+                               (format " [preset] %s" (plist-get (cdr (assoc name ai-code--behavior-presets)) :description)))
+                          "")))
+                   ;; #hashtag
+                   ((string-prefix-p "#" cand)
+                    (let ((name (string-trim (substring cand 1))))
+                      (cond
+                       ((string-prefix-p "=" name)
+                        " [mode] Operating mode")
+                       ((member name ai-code--behavior-modifiers)
+                        " [modifier]")
+                       ((assoc name ai-code--constraint-modifiers)
+                        " [constraint]")
+                       (t ""))))
+                   (t "")))
+                :exclusive 'no))
       result)))
+
+(defun ai-code--behavior-all-hashtag-names ()
+  "Return all hashtag completion candidates.
+Includes modifiers (deep, concise) and constraints.
+Excludes operating modes (=code, =debug) - use #= for those."
+  (append
+   ;; Modifiers
+   (mapcar (lambda (m) (concat "#" m)) ai-code--behavior-modifiers)
+   ;; Constraints
+   (mapcar (lambda (c) (concat "#" c)) (mapcar #'car ai-code--constraint-modifiers))))
+
+(defun ai-code--behavior-mode-hashtag-names ()
+  "Return operating mode hashtag candidates (#=code, #=debug, etc.)."
+  (mapcar (lambda (m) (concat "#" m)) ai-code--behavior-operating-modes))
+
+(defun ai-code--agent-shell-hashtag-capf ()
+  "Completion-at-point function for #hashtags in agent-shell.
+- #= prefix: only shows operating modes (#=code, #=debug)
+- # prefix: shows modifiers (#deep) and constraints (#chinese)"
+  (when (and (boundp 'major-mode)
+             (eq major-mode 'agent-shell-mode)
+             (save-excursion
+               (skip-chars-backward "a-zA-Z0-9_=-")
+               (eq (char-before) ?#)))
+    (let* ((start (save-excursion
+                    (skip-chars-backward "a-zA-Z0-9_=-")
+                    (1- (point))))
+           (end (point))
+           (after-hash (buffer-substring-no-properties start end))
+           (has-equals (string-match "^#=" after-hash))
+           (candidates
+            (if has-equals
+                (ai-code--behavior-mode-hashtag-names)
+              (ai-code--behavior-all-hashtag-names))))
+      (list start end candidates
+            :annotation-function
+            (lambda (cand)
+              (let ((name (string-trim (substring cand 1))))
+                (cond
+                 ((string-prefix-p "=" name)
+                  " [mode]")
+                 ((member name ai-code--behavior-modifiers)
+                  " [modifier]")
+                 ((assoc name ai-code--constraint-modifiers)
+                  " [constraint]")
+                 (t ""))))
+            :exclusive 'no))))
 
 (defun ai-code--agent-shell-preset-capf ()
   "Completion-at-point function for @preset names in agent-shell."
@@ -3358,29 +3442,32 @@ ARGS are passed through."
 (defun ai-code-behaviors-agent-shell-setup ()
   "Set up ai-code-behaviors integration with agent-shell.
 Adds the request decorator to inject behaviors into agent-shell prompts.
-Also advises file completion to skip when @preset is typed.
-Adds preset completion and mode-line to agent-shell buffers."
+Merges preset names with file completion (both show in same popup).
+Adds hashtag completion (triggers on #).
+Adds mode-line indicator to agent-shell buffers."
   (interactive)
   (require 'agent-shell nil t)
   (when (boundp 'agent-shell-outgoing-request-decorator)
     (setq agent-shell-outgoing-request-decorator
           #'ai-code-agent-shell-request-decorator)
+    ;; Merge preset names with file completion (@ triggers both files and presets)
     (when (fboundp 'agent-shell--file-completion-at-point)
       (advice-add 'agent-shell--file-completion-at-point :around
                   #'ai-code--agent-shell-file-completion-advice))
-    ;; Add preset completion and mode-line to agent-shell-mode buffers
+    ;; Add hashtag completion (triggers on #)
     (add-hook 'agent-shell-mode-hook
               (lambda ()
                 (add-hook 'completion-at-point-functions
-                          #'ai-code--agent-shell-preset-capf nil t)
-                (ai-code-behaviors-mode-line-enable)))
+                          #'ai-code--agent-shell-hashtag-capf nil t)))
+    ;; Add mode-line to agent-shell-mode buffers
+    (add-hook 'agent-shell-mode-hook #'ai-code-behaviors-mode-line-enable)
     ;; Also add to existing buffers
     (dolist (buf (buffer-list))
       (when (buffer-live-p buf)
         (with-current-buffer buf
           (when (eq major-mode 'agent-shell-mode)
             (add-hook 'completion-at-point-functions
-                      #'ai-code--agent-shell-preset-capf nil t)
+                      #'ai-code--agent-shell-hashtag-capf nil t)
             (ai-code-behaviors-mode-line-enable)))))
     (message "ai-code-behaviors: agent-shell integration enabled")))
 
