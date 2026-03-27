@@ -3516,13 +3516,12 @@ Safe to call multiple times - guards prevent duplicate advice/hooks."
     ;; Set global default for new sessions (idempotent)
     (setq agent-shell-outgoing-request-decorator
           #'ai-code-agent-shell-request-decorator)
-    ;; NOTE: File completion advice disabled to use original agent-shell file completion
-    ;; Preset completion available via C-c p instead of @ trigger
-    ;; (when (and (fboundp 'agent-shell--file-completion-at-point)
-    ;;            (not (advice-member-p #'ai-code--agent-shell-file-completion-advice
-    ;;                                  'agent-shell--file-completion-at-point)))
-    ;;   (advice-add 'agent-shell--file-completion-at-point :around
-    ;;               #'ai-code--agent-shell-file-completion-advice))
+    ;; Hybrid completion: @ alone shows files, @text shows presets
+    (when (and (fboundp 'agent-shell--file-completion-at-point)
+               (not (advice-member-p #'ai-code--agent-shell-file-completion-advice
+                                     'agent-shell--file-completion-at-point)))
+      (advice-add 'agent-shell--file-completion-at-point :around
+                  #'ai-code--agent-shell-file-completion-advice))
     ;; Add hashtag completion (triggers on #)
     ;; Guard: check if hook already present to avoid duplicates
     (add-hook 'agent-shell-mode-hook
