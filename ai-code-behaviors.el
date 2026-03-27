@@ -3319,27 +3319,38 @@ ORIG-FN is the original `agent-shell--file-completion-at-point'.
 ARGS are passed through.
 Returns completion with file paths, @presets, AND #hashtags merged.
 - #= prefix: only shows operating modes (#=code, #=debug)
-- # prefix: shows modifiers (#deep) and constraints (#chinese)"
+- # prefix: shows modifiers (#deep) and constraints (#chinese)
+
+Note: Adjusts bounds to include @ or # prefix for preset/hashtag candidates
+to avoid duplication when completion inserts."
   (let* ((result (apply orig-fn args)))
     (if result
         ;; Merge preset and hashtag candidates into file completion
-        (let* ((start (nth 0 result))
+        (let* ((orig-start (nth 0 result))
                (end (nth 1 result))
                (file-candidates (nth 2 result))
-               ;; Check what prefix user typed
-               (prefix (buffer-substring-no-properties start end))
+               ;; Check if there's @ or # before the bounds
+               (char-before-start (char-before orig-start))
+               (has-at-prefix (eq char-before-start ?@))
+               (has-hash-prefix (eq char-before-start ?#))
+               ;; Adjust start to include @ or # for preset/hashtag candidates
+               (adjusted-start (if (or has-at-prefix has-hash-prefix)
+                                   (1- orig-start)
+                                 orig-start))
+               ;; Check what prefix user typed (after @ or #)
+               (prefix (buffer-substring-no-properties orig-start end))
                (preset-candidates (ai-code--behavior-preset-and-bundle-names))
                ;; Determine hashtag candidates based on prefix
                (hashtag-candidates
                 (cond
                  ;; #= prefix: only show operating modes
-                 ((string-prefix-p "#=" prefix)
+                 ((and has-hash-prefix (string-prefix-p "=" prefix))
                   (ai-code--behavior-mode-hashtag-names))
                  ;; # prefix (without =): show modifiers and constraints
-                 ((string-prefix-p "#" prefix)
+                 (has-hash-prefix
                   (ai-code--behavior-all-hashtag-names))
                  (t nil))))
-          (list start end (append file-candidates preset-candidates hashtag-candidates)
+          (list adjusted-start end (append file-candidates preset-candidates hashtag-candidates)
                 :annotation-function
                 (lambda (cand)
                   (cond
