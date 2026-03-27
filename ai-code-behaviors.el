@@ -3530,6 +3530,31 @@ Excludes operating modes (=code, =debug) - use #= for those."
                       (t ""))))
                  :exclusive 'no))))))
 
+(defun ai-code--agent-shell-preset-capf ()
+  "Completion-at-point function for !presets in agent-shell.
+- ! alone: shows all preset candidates
+- !text: shows matching presets"
+  (when (and (boundp 'major-mode)
+             (eq major-mode 'agent-shell-mode)
+             (save-excursion
+               (skip-chars-backward "a-zA-Z0-9_-")
+               (eq (char-before) ?!)))
+    (let* ((start (save-excursion
+                    (skip-chars-backward "a-zA-Z0-9_-")
+                    (1- (point))))
+           (end (point))
+           (candidates (ai-code--behavior-preset-and-bundle-names)))
+      (list start end candidates
+            :annotation-function
+            (lambda (cand)
+              (let ((name (string-trim (substring cand 1))))
+                (or (and (assoc name ai-code--constraint-bundles)
+                         (format " [bundle] %s" (plist-get (cdr (assoc name ai-code--constraint-bundles)) :description)))
+                    (and (assoc name ai-code--behavior-presets)
+                         (format " [preset] %s" (plist-get (cdr (assoc name ai-code--behavior-presets)) :description)))
+                    "")))
+            :exclusive 'yes))))
+
 ;;;###autoload
 (defun ai-code-behaviors-agent-shell-setup ()
   "Set up ai-code-behaviors integration with agent-shell.
@@ -3544,12 +3569,11 @@ Safe to call multiple times - guards prevent duplicate advice/hooks."
     ;; Set global default for new sessions (idempotent)
     (setq agent-shell-outgoing-request-decorator
           #'ai-code-agent-shell-request-decorator)
-    ;; Smart @ completion: @ alone shows files (nil to fallback), @text shows presets
-    ;; Uses high priority (t) to run before agent-shell's native CAPF
+    ;; ! completion for presets: ! shows preset candidates
     (add-hook 'agent-shell-mode-hook
               (lambda ()
                 (add-hook 'completion-at-point-functions
-                          #'ai-code--agent-shell-smart-at-capf t t)))
+                          #'ai-code--agent-shell-preset-capf nil t)))
     ;; # completion: # alone waits, #=text shows modes, #text shows modifiers/constraints
     (add-hook 'agent-shell-mode-hook
               (lambda ()
