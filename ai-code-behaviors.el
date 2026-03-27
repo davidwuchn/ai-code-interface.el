@@ -838,13 +838,14 @@ Returns nil if repo not available."
   "Get cached value for KEY with TTL check.
 Returns content string or nil if expired/missing."
   (when-let ((entry (gethash key ai-code--behaviors-cache)))
-    (let ((content (car entry))
-          (timestamp (cdr entry)))
-      (if (or (<= ai-code-behaviors-cache-ttl 0)
-              (< (- (float-time) timestamp) ai-code-behaviors-cache-ttl))
-          content
-        (remhash key ai-code--behaviors-cache)
-        nil))))
+    (when (consp entry)
+      (let ((content (car entry))
+            (timestamp (cdr entry)))
+        (if (or (<= ai-code-behaviors-cache-ttl 0)
+                (< (- (float-time) timestamp) ai-code-behaviors-cache-ttl))
+            content
+          (remhash key ai-code--behaviors-cache)
+          nil)))))
 
 (defun ai-code--behaviors-cache-put (key value)
   "Cache VALUE for KEY with current timestamp."
