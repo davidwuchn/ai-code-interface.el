@@ -3355,67 +3355,42 @@ Also handles auto-switching from plan to build mode for modify operations."
         (agent-shell-cycle-session-mode)))))
 
 (defun ai-code--agent-shell-file-completion-advice (orig-fn &rest args)
-  "Advice to merge preset names with file completion for agent-shell.
+  "Advice for @ completion in agent-shell.
 ORIG-FN is the original `agent-shell--file-completion-at-point'.
 ARGS are passed through.
-Returns completion with file paths, @presets, AND #hashtags merged.
-- #= prefix: only shows operating modes (#=code, #=debug)
-- # prefix: shows modifiers (#deep) and constraints (#chinese)
+- @ alone: shows files only (original behavior)
+- @text: shows matching presets only (no files)
 
-Note: Adjusts bounds to include @ or # prefix for preset/hashtag candidates
-to avoid duplication when completion inserts."
+Note: # completions are handled by ai-code--agent-shell-hashtag-capf."
   (let* ((result (apply orig-fn args)))
     (if result
-        ;; Merge preset and hashtag candidates into file completion
-        (let* ((orig-start (nth 0 result))
+        (let* ((start (nth 0 result))
                (end (nth 1 result))
                (file-candidates (nth 2 result))
-               ;; Check if there's @ or # before the bounds
-               (char-before-start (char-before orig-start))
+               ;; Check char before bounds for @
+               (char-before-start (when (> start 1) (char-before start)))
                (has-at-prefix (eq char-before-start ?@))
-               (has-hash-prefix (eq char-before-start ?#))
-               ;; Adjust start to include @ or # for preset/hashtag candidates
-               (adjusted-start (if (or has-at-prefix has-hash-prefix)
-                                   (1- orig-start)
-                                 orig-start))
-               ;; Check what prefix user typed (after @ or #)
-               (prefix (buffer-substring-no-properties orig-start end))
-               (preset-candidates (ai-code--behavior-preset-and-bundle-names))
-               ;; Determine hashtag candidates based on prefix
-               (hashtag-candidates
-                (cond
-                 ;; #= prefix: only show operating modes
-                 ((and has-hash-prefix (string-prefix-p "=" prefix))
-                  (ai-code--behavior-mode-hashtag-names))
-                 ;; # prefix (without =): show modifiers and constraints
-                 (has-hash-prefix
-                  (ai-code--behavior-all-hashtag-names))
-                 (t nil))))
-          (list adjusted-start end (append file-candidates preset-candidates hashtag-candidates)
-                :annotation-function
-                (lambda (cand)
-                  (cond
-                   ;; @preset or @bundle
-                   ((string-prefix-p "@" cand)
-                    (let ((name (string-trim (substring cand 1))))
-                      (or (and (assoc name ai-code--constraint-bundles)
-                               (format " [bundle] %s" (plist-get (cdr (assoc name ai-code--constraint-bundles)) :description)))
-                          (and (assoc name ai-code--behavior-presets)
-                               (format " [preset] %s" (plist-get (cdr (assoc name ai-code--behavior-presets)) :description)))
-                          "")))
-                   ;; #hashtag
-                   ((string-prefix-p "#" cand)
-                    (let ((name (string-trim (substring cand 1))))
-                      (cond
-                       ((string-prefix-p "=" name)
-                        " [mode] Operating mode")
-                       ((member name ai-code--behavior-modifiers)
-                        " [modifier]")
-                       ((assoc name ai-code--constraint-modifiers)
-                        " [constraint]")
-                       (t ""))))
-                   (t "")))
-                :exclusive 'no))
+               ;; Text after @
+               (text-after-at (buffer-substring-no-properties start end))
+               (at-with-text (and has-at-prefix (> (length text-after-at) 0)))
+               ;; Adjust bounds to include @ for preset completion
+               (adjusted-start (if has-at-prefix (1- start) start)))
+          (cond
+           ;; @ with text after: show only matching presets (no files)
+           (at-with-text
+            (let ((preset-candidates (ai-code--behavior-preset-and-bundle-names)))
+              (list adjusted-start end preset-candidates
+                    :annotation-function
+                    (lambda (cand)
+                      (let ((name (string-trim (substring cand 1))))
+                        (or (and (assoc name ai-code--constraint-bundles)
+                                 (format " [bundle] %s" (plist-get (cdr (assoc name ai-code--constraint-bundles)) :description)))
+                            (and (assoc name ai-code--behavior-presets)
+                                 (format " [preset] %s" (plist-get (cdr (assoc name ai-code--behavior-presets)) :description)))
+                            "")))
+                    :exclusive 'no)))
+           ;; @ alone or no prefix: show files only (original behavior)
+           (t result)))
       result)))
 
 (defun ai-code--behavior-all-hashtag-names ()
@@ -3434,8 +3409,9 @@ Excludes operating modes (=code, =debug) - use #= for those."
 
 (defun ai-code--agent-shell-hashtag-capf ()
   "Completion-at-point function for #hashtags in agent-shell.
+- # alone: wait for input (no completion)
 - #= prefix: only shows operating modes (#=code, #=debug)
-- # prefix: shows modifiers (#deep) and constraints (#chinese)"
+- #text: shows modifiers (#deep) and constraints (#chinese)"
   (when (and (boundp 'major-mode)
              (eq major-mode 'agent-shell-mode)
              (save-excursion
@@ -3446,24 +3422,23 @@ Excludes operating modes (=code, =debug) - use #= for those."
                     (1- (point))))
            (end (point))
            (after-hash (buffer-substring-no-properties start end))
-           (has-equals (string-match "^#=" after-hash))
-           (candidates
-            (if has-equals
-                (ai-code--behavior-mode-hashtag-names)
-              (ai-code--behavior-all-hashtag-names))))
-      (list start end candidates
-            :annotation-function
-            (lambda (cand)
-              (let ((name (string-trim (substring cand 1))))
-                (cond
-                 ((string-prefix-p "=" name)
-                  " [mode]")
-                 ((member name ai-code--behavior-modifiers)
-                  " [modifier]")
-                 ((assoc name ai-code--constraint-modifiers)
-                  " [constraint]")
-                 (t ""))))
-            :exclusive 'no))))
+           (text-length (- end start)))
+      ;; Only show completion if there's text after # (not just # alone)
+      (when (> text-length 1)
+        (let ((has-equals (string-prefix-p "#=" after-hash))
+              (candidates (if (string-prefix-p "#=" after-hash)
+                              (ai-code--behavior-mode-hashtag-names)
+                            (ai-code--behavior-all-hashtag-names))))
+          (list start end candidates
+                :annotation-function
+                (lambda (cand)
+                  (let ((name (string-trim (substring cand 1))))
+                    (cond
+                     ((string-prefix-p "=" name) " [mode]")
+                     ((member name ai-code--behavior-modifiers) " [modifier]")
+                     ((assoc name ai-code--constraint-modifiers) " [constraint]")
+                     (t ""))))
+                :exclusive 'no))))))
 
 (defun ai-code--agent-shell-preset-capf ()
   "Completion-at-point function for @preset names in agent-shell."
