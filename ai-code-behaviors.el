@@ -3287,6 +3287,87 @@ MODE-SWITCH-NEEDED is t when session should switch from plan to build mode."
                mode-switch)))
       (t (list prompt-text nil)))))
 
+(defun ai-code--extract-text-from-prompt-vec (prompt-vec)
+  "Extract text content from PROMPT-VEC.
+Handles three formats:
+- String: returned as-is
+- Vector of alists: concatenate all text blocks
+- Alist: extract text field"
+  (cond
+   ((stringp prompt-vec) prompt-vec)
+   ((and (vectorp prompt-vec) (> (length prompt-vec) 0))
+    (mapconcat
+     (lambda (elem)
+       (cond ((stringp elem) elem)
+             ((and (consp elem) (or (assoc 'text elem) (assoc "text" elem)))
+              (let* ((entry (or (assoc 'text elem) (assoc "text" elem)))
+                     (val (cdr entry)))
+                (cond ((stringp val) val)
+                      ((symbolp val) (symbol-name val))
+                      (t ""))))
+             (t "")))
+     prompt-vec ""))
+   ((and (consp prompt-vec) (or (assoc 'text prompt-vec) (assoc "text" prompt-vec)))
+    (let* ((entry (or (assoc 'text prompt-vec) (assoc "text" prompt-vec)))
+           (val (cdr entry)))
+      (cond ((stringp val) val)
+            ((symbolp val) (symbol-name val))
+            (t nil))))
+   (t nil)))
+
+(defun ai-code--detect-agent-shell-project-root ()
+  "Detect project root for agent-shell buffer.
+Tries multiple strategies: behaviors project root, current buffer,
+find agent-shell buffer, or default-directory as fallback."
+  (or (ai-code--behaviors-project-root)
+      (when (eq major-mode 'agent-shell-mode)
+        default-directory)
+      (let ((shell-buf (cl-find-if
+                         (lambda (b)
+                           (with-current-buffer b
+                             (eq major-mode 'agent-shell-mode)))
+                         (buffer-list))))
+        (when shell-buf
+          (buffer-local-value 'default-directory shell-buf)))
+      default-directory))
+
+(defun ai-code--store-last-prompt (project-root original processed state)
+  "Store last prompt for C-c P inspection.
+PROJECT-ROOT is the key, ORIGINAL is the original text,
+PROCESSED is the processed text, STATE is the behavior state."
+  (when (and project-root original)
+    (puthash project-root
+             (list :original original
+                   :processed (or processed original)
+                   :behaviors state)
+             ai-code--behaviors-last-prompts)))
+
+(defun ai-code--reconstruct-prompt-vec (prompt-vec processed-text params)
+  "Reconstruct PROMPT-VEC with PROCESSED-TEXT.
+Preserves non-text blocks (images, files) in vector format.
+Updates PARAMS in-place."
+  (cond
+   ;; Vector format: replace first text block, preserve non-text blocks
+   ((vectorp prompt-vec)
+    (let ((new-vec (vector `((type . "text") (text . ,processed-text))))
+          (non-text-blocks
+           (cl-remove-if
+            (lambda (elem)
+              (or (stringp elem)
+                  (and (consp elem)
+                       (or (assoc 'text elem) (assoc "text" elem)))))
+            prompt-vec)))
+      (when non-text-blocks
+        (setq new-vec (vconcat new-vec (vconcat non-text-blocks))))
+      (setf (map-elt params 'prompt) new-vec)))
+   ;; String format: replace params prompt
+   ((stringp prompt-vec)
+    (setf (map-elt params 'prompt) processed-text))
+   ;; Alist format: update the text field
+   ((and (consp prompt-vec) (or (assoc 'text prompt-vec) (assoc "text" prompt-vec)))
+    (let ((entry (or (assoc 'text prompt-vec) (assoc "text" prompt-vec))))
+      (setcdr entry processed-text)))))
+
 (defun ai-code-agent-shell-request-decorator (request)
   "Decorate agent-shell REQUEST with ai-code-behaviors.
 Intercepts session/prompt requests and injects behaviors based on
@@ -3296,47 +3377,10 @@ Also handles auto-switching from plan to build mode for modify operations."
       (progn
         (when (and (string= (map-elt request :method) "session/prompt")
                    ai-code-behaviors-enabled)
-          ;; Find the agent-shell buffer to get project root
           (let* ((params (map-elt request :params))
                  (prompt-vec (map-elt params 'prompt))
-                 ;; Agent-shell sends multiple content blocks in a vector:
-                 ;; [((type . "text") (text . "@preset")) ((type . "text") (text . " user message"))]
-                 ;; We need to concatenate ALL text blocks to get the full prompt
-                 (prompt-text (cond
-                               ((stringp prompt-vec) prompt-vec)
-                               ((and (vectorp prompt-vec) (> (length prompt-vec) 0))
-                                ;; Concatenate all text blocks
-                                (mapconcat
-                                 (lambda (elem)
-                                   (cond ((stringp elem) elem)
-                                         ((and (consp elem) (or (assoc 'text elem) (assoc "text" elem)))
-                                          (let* ((entry (or (assoc 'text elem) (assoc "text" elem)))
-                                                 (val (cdr entry)))
-                                            (cond ((stringp val) val)
-                                                  ((symbolp val) (symbol-name val))
-                                                  (t ""))))
-                                         (t "")))
-                                 prompt-vec ""))
-                               ((and (consp prompt-vec) (or (assoc 'text prompt-vec) (assoc "text" prompt-vec)))
-                                (let* ((entry (or (assoc 'text prompt-vec) (assoc "text" prompt-vec)))
-                                       (val (cdr entry)))
-                                  (cond ((stringp val) val)
-                                        ((symbolp val) (symbol-name val))
-                                        (t nil))))
-                               (t nil)))
-                 ;; Try to get project root from current buffer or find agent-shell buffer
-                 (project-root (or (ai-code--behaviors-project-root)
-                                   (when (eq major-mode 'agent-shell-mode)
-                                     default-directory)
-                                   ;; Find agent-shell buffer and use its default-directory
-                                   (let ((shell-buf (cl-find-if
-                                                      (lambda (b)
-                                                        (with-current-buffer b
-                                                          (eq major-mode 'agent-shell-mode)))
-                                                      (buffer-list))))
-                                     (when shell-buf
-                                       (buffer-local-value 'default-directory shell-buf)))
-                                   default-directory))
+                 (prompt-text (ai-code--extract-text-from-prompt-vec prompt-vec))
+                 (project-root (ai-code--detect-agent-shell-project-root))
                  (result (when prompt-text
                            (ai-code--agent-shell-process-behaviors prompt-text project-root)))
                  (processed-text (nth 0 result))
@@ -3344,42 +3388,14 @@ Also handles auto-switching from plan to build mode for modify operations."
                  (current-state (when project-root
                                    (ai-code--behaviors-get-state project-root))))
             ;; Store last prompt for inspection (C-c P)
-            (when (and project-root prompt-text)
-              (puthash project-root
-                       (list :original prompt-text
-                             :processed (or processed-text prompt-text)
-                             :behaviors current-state)
-                       ai-code--behaviors-last-prompts))
-            ;; Always inject processed text when available (even if prompt was just @preset)
-             (when processed-text
-               (cond
-                ;; Vector format: replace first text block, preserve non-text blocks
-                ((vectorp prompt-vec)
-                 (let ((new-vec (vector `((type . "text") (text . ,processed-text))))
-                       (non-text-blocks
-                        (cl-remove-if
-                         (lambda (elem)
-                           (or (stringp elem)
-                               (and (consp elem)
-                                    (or (assoc 'text elem) (assoc "text" elem)))))
-                         prompt-vec)))
-                   ;; Append any non-text blocks (images, files, etc.)
-                    (when non-text-blocks
-                     (setq new-vec (vconcat new-vec (vconcat non-text-blocks))))
-                    (setf (map-elt params 'prompt) new-vec)))
-                ;; String format: replace params prompt
-                ((stringp prompt-vec)
-                 (setf (map-elt params 'prompt) processed-text))
-                ;; Alist format: update the text field
-                ((and (consp prompt-vec) (or (assoc 'text prompt-vec) (assoc "text" prompt-vec)))
-                 (let ((entry (or (assoc 'text prompt-vec) (assoc "text" prompt-vec))))
-                   (setcdr entry processed-text))))
-            ;; DISABLED: Mode-line update causes deadlock during request processing
-            ;; (when project-root
-            ;;   (ai-code--behaviors-update-mode-line project-root))
+            (ai-code--store-last-prompt project-root prompt-text processed-text current-state)
+            ;; Inject processed text when available
+            (when processed-text
+              (ai-code--reconstruct-prompt-vec prompt-vec processed-text params))
+            ;; Handle mode switch if needed
             (when mode-switch-needed
-              (ai-code--agent-shell-maybe-switch-mode)))))
-      request)
+              (ai-code--agent-shell-maybe-switch-mode))))
+        request)
     (error
      (message "DECORATOR ERROR: %s" err)
      request)))
