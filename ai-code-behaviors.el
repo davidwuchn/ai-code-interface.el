@@ -3320,11 +3320,37 @@ ARGS are passed through."
         nil
       result)))
 
+(defun ai-code--agent-shell-preset-capf ()
+  "Completion-at-point function for @preset names in agent-shell."
+  (when (and (boundp 'major-mode)
+             (eq major-mode 'agent-shell-mode)
+             (save-excursion
+               (skip-chars-backward "a-zA-Z0-9_-")
+               (eq (char-before) ?@)))
+    (let* ((start (1- (point)))
+           (end (point))
+           (candidates (ai-code--behavior-preset-and-bundle-names))
+           (annotation-fn
+            (lambda (cand)
+              (let ((name (string-trim (substring cand 1))))
+                (cond
+                 ((assoc name ai-code--constraint-bundles)
+                  (let ((data (cdr (assoc name ai-code--constraint-bundles))))
+                    (format " %s" (plist-get data :description))))
+                 ((assoc name ai-code--behavior-presets)
+                  (let ((data (cdr (assoc name ai-code--behavior-presets))))
+                    (format " %s" (plist-get data :description))))
+                 (t ""))))))
+      (list start end candidates
+            :annotation-function annotation-fn
+            :exclusive 'no))))
+
 ;;;###autoload
 (defun ai-code-behaviors-agent-shell-setup ()
   "Set up ai-code-behaviors integration with agent-shell.
 Adds the request decorator to inject behaviors into agent-shell prompts.
-Also advises file completion to skip when @preset is typed."
+Also advises file completion to skip when @preset is typed.
+Adds preset completion to agent-shell buffers."
   (interactive)
   (require 'agent-shell nil t)
   (when (boundp 'agent-shell-outgoing-request-decorator)
@@ -3333,6 +3359,18 @@ Also advises file completion to skip when @preset is typed."
     (when (fboundp 'agent-shell--file-completion-at-point)
       (advice-add 'agent-shell--file-completion-at-point :around
                   #'ai-code--agent-shell-file-completion-advice))
+    ;; Add preset completion to agent-shell-mode buffers
+    (add-hook 'agent-shell-mode-hook
+              (lambda ()
+                (add-hook 'completion-at-point-functions
+                          #'ai-code--agent-shell-preset-capf nil t)))
+    ;; Also add to existing buffers
+    (dolist (buf (buffer-list))
+      (when (buffer-live-p buf)
+        (with-current-buffer buf
+          (when (eq major-mode 'agent-shell-mode)
+            (add-hook 'completion-at-point-functions
+                      #'ai-code--agent-shell-preset-capf nil t)))))
     (message "ai-code-behaviors: agent-shell integration enabled")))
 
 (provide 'ai-code-behaviors)
