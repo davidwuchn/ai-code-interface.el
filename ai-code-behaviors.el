@@ -3417,6 +3417,37 @@ Also handles auto-switching from plan to build mode for modify operations."
         (message "Auto-switching to build mode for modify operation")
         (agent-shell-cycle-session-mode)))))
 
+(defun ai-code--agent-shell-smart-at-capf ()
+  "Smart @ completion for agent-shell.
+When @ is alone, return nil so agent-shell's file completion runs.
+When @ has text after it, return preset completion candidates.
+Returns nil to fall back to next CAPF function."
+  ;; Check if we're after @
+  (when-let* ((pos (point))
+              (char-before-pos (when (> pos 1) (char-before pos)))
+              ((eq char-before-pos ?@))
+              ;; Find bounds of text after @
+              (end (progn (skip-chars-forward "[:alnum:]_-") (point)))
+              (start (progn (skip-chars-backward "[:alnum:]_-") (point)))
+              ;; Check that @ is before start
+              ((eq (char-before start) ?@))
+              ;; Get text after @
+              (text-after (buffer-substring-no-properties start end))
+              ;; Only proceed if there's actual text after @
+              ((> (length text-after) 0)))
+    ;; @ with text: return preset completion
+    (let ((preset-candidates (ai-code--behavior-preset-and-bundle-names)))
+      (list (1- start) end preset-candidates
+            :annotation-function
+            (lambda (cand)
+              (let ((name (string-trim (substring cand 1))))
+                (or (and (assoc name ai-code--constraint-bundles)
+                         (format " [bundle] %s" (plist-get (cdr (assoc name ai-code--constraint-bundles)) :description)))
+                    (and (assoc name ai-code--behavior-presets)
+                         (format " [preset] %s" (plist-get (cdr (assoc name ai-code--behavior-presets)) :description)))
+                    "")))
+            :exclusive 'no))))
+
 (defun ai-code--agent-shell-file-completion-advice (orig-fn &rest args)
   "Advice for @ completion in agent-shell.
 ORIG-FN is the original `agent-shell--file-completion-at-point'.
@@ -3513,18 +3544,12 @@ Safe to call multiple times - guards prevent duplicate advice/hooks."
     ;; Set global default for new sessions (idempotent)
     (setq agent-shell-outgoing-request-decorator
           #'ai-code-agent-shell-request-decorator)
-    ;; NOTE: Disabled custom @/# completion to preserve agent-shell's original transient menu
-    ;; Use C-c p for preset selection instead
-    ;; (when (and (fboundp 'agent-shell--file-completion-at-point)
-    ;;            (not (advice-member-p #'ai-code--agent-shell-file-completion-advice
-    ;;                                  'agent-shell--file-completion-at-point)))
-    ;;   (advice-add 'agent-shell--file-completion-at-point :around
-    ;;               #'ai-code--agent-shell-file-completion-advice))
-    ;; Hashtag completion also disabled to avoid conflicts
-    ;; (add-hook 'agent-shell-mode-hook
-    ;;           (lambda ()
-    ;;             (add-hook 'completion-at-point-functions
-    ;;                       #'ai-code--agent-shell-hashtag-capf nil t)))
+    ;; Smart @ completion: @ alone triggers agent-shell files, @text shows presets
+    ;; Add our CAPF with high priority (t) so it runs before agent-shell's
+    (add-hook 'agent-shell-mode-hook
+              (lambda ()
+                (add-hook 'completion-at-point-functions
+                          #'ai-code--agent-shell-smart-at-capf t t)))
     ;; Enable mode-line after shell is ready (avoids deadlock with transient)
     ;; The event subscription is per-buffer, so duplicates are naturally avoided
     (add-hook 'agent-shell-mode-hook
