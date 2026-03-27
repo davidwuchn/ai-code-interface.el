@@ -3435,7 +3435,7 @@ Returns nil to fall back to next CAPF function."
               (text-after (buffer-substring-no-properties start end))
               ;; Only proceed if there's actual text after @
               ((> (length text-after) 0)))
-    ;; @ with text: return preset completion
+    ;; @ with text: return EXCLUSIVE preset completion (blocks file completion)
     (let ((preset-candidates (ai-code--behavior-preset-and-bundle-names)))
       (list (1- start) end preset-candidates
             :annotation-function
@@ -3446,7 +3446,7 @@ Returns nil to fall back to next CAPF function."
                     (and (assoc name ai-code--behavior-presets)
                          (format " [preset] %s" (plist-get (cdr (assoc name ai-code--behavior-presets)) :description)))
                     "")))
-            :exclusive 'no))))
+            :exclusive 'yes))))
 
 (defun ai-code--agent-shell-file-completion-advice (orig-fn &rest args)
   "Advice for @ completion in agent-shell.
