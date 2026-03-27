@@ -2167,7 +2167,7 @@ Sets session state based on selection."
 
 (defun ai-code-behaviors-mode-line-enable ()
   "Enable mode-line display of active behaviors for current buffer.
-Only shows in gptel-mode or ai-code-prompt-mode buffers.
+Shows in gptel-mode, ai-code-prompt-mode, or agent-shell-mode buffers.
 For gptel-agent buffers, extracts project from buffer name.
 Installs global advice for gptel preset changes (once only).
 Starts idle timer for periodic cache cleanup."
@@ -2175,7 +2175,8 @@ Starts idle timer for periodic cache cleanup."
   (ai-code--behaviors-install-gptel-advice)
   (ai-code--behaviors-start-cleanup-timer)
   (when (or (bound-and-true-p gptel-mode)
-            (eq major-mode 'ai-code-prompt-mode))
+            (eq major-mode 'ai-code-prompt-mode)
+            (eq major-mode 'agent-shell-mode))
     (make-local-variable 'mode-line-misc-info)
     (unless (member '(:eval (ai-code--behaviors-mode-line-string)) mode-line-misc-info)
       (setq mode-line-misc-info
@@ -3350,7 +3351,7 @@ ARGS are passed through."
   "Set up ai-code-behaviors integration with agent-shell.
 Adds the request decorator to inject behaviors into agent-shell prompts.
 Also advises file completion to skip when @preset is typed.
-Adds preset completion to agent-shell buffers."
+Adds preset completion and mode-line to agent-shell buffers."
   (interactive)
   (require 'agent-shell nil t)
   (when (boundp 'agent-shell-outgoing-request-decorator)
@@ -3359,18 +3360,20 @@ Adds preset completion to agent-shell buffers."
     (when (fboundp 'agent-shell--file-completion-at-point)
       (advice-add 'agent-shell--file-completion-at-point :around
                   #'ai-code--agent-shell-file-completion-advice))
-    ;; Add preset completion to agent-shell-mode buffers
+    ;; Add preset completion and mode-line to agent-shell-mode buffers
     (add-hook 'agent-shell-mode-hook
               (lambda ()
                 (add-hook 'completion-at-point-functions
-                          #'ai-code--agent-shell-preset-capf nil t)))
+                          #'ai-code--agent-shell-preset-capf nil t)
+                (ai-code-behaviors-mode-line-enable)))
     ;; Also add to existing buffers
     (dolist (buf (buffer-list))
       (when (buffer-live-p buf)
         (with-current-buffer buf
           (when (eq major-mode 'agent-shell-mode)
             (add-hook 'completion-at-point-functions
-                      #'ai-code--agent-shell-preset-capf nil t)))))
+                      #'ai-code--agent-shell-preset-capf nil t)
+            (ai-code-behaviors-mode-line-enable)))))
     (message "ai-code-behaviors: agent-shell integration enabled")))
 
 (provide 'ai-code-behaviors)
