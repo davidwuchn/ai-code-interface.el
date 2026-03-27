@@ -3295,11 +3295,22 @@ Also handles auto-switching from plan to build mode for modify operations."
       (progn
         (when (and (string= (map-elt request :method) "session/prompt")
                    ai-code-behaviors-enabled)
+          ;; Find the agent-shell buffer to get project root
           (let* ((params (map-elt request :params))
                  (prompt-vec (map-elt params 'prompt))
                  (prompt-text (if (vectorp prompt-vec) (aref prompt-vec 0) prompt-vec))
-                 ;; Use ai-code--behaviors-project-root for consistent key
+                 ;; Try to get project root from current buffer or find agent-shell buffer
                  (project-root (or (ai-code--behaviors-project-root)
+                                   (when (eq major-mode 'agent-shell-mode)
+                                     default-directory)
+                                   ;; Find agent-shell buffer and use its default-directory
+                                   (let ((shell-buf (cl-find-if 
+                                                      (lambda (b) 
+                                                        (with-current-buffer b
+                                                          (eq major-mode 'agent-shell-mode)))
+                                                      (buffer-list))))
+                                     (when shell-buf
+                                       (buffer-local-value 'default-directory shell-buf)))
                                    default-directory))
                  (result (ai-code--agent-shell-process-behaviors prompt-text project-root))
                  (processed-text (nth 0 result))
@@ -3487,6 +3498,7 @@ Adds mode-line indicator to agent-shell buffers."
   (interactive)
   (require 'agent-shell nil t)
   (when (boundp 'agent-shell-outgoing-request-decorator)
+    ;; Set global default for new sessions
     (setq agent-shell-outgoing-request-decorator
           #'ai-code-agent-shell-request-decorator)
     ;; Merge preset names with file completion (@ triggers both files and presets)
@@ -3500,11 +3512,15 @@ Adds mode-line indicator to agent-shell buffers."
                           #'ai-code--agent-shell-hashtag-capf nil t)))
     ;; Add mode-line to agent-shell-mode buffers
     (add-hook 'agent-shell-mode-hook #'ai-code-behaviors-mode-line-enable)
-    ;; Also add to existing buffers
+    ;; Also update existing buffers - set decorator in their state
     (dolist (buf (buffer-list))
       (when (buffer-live-p buf)
         (with-current-buffer buf
           (when (eq major-mode 'agent-shell-mode)
+            ;; Set decorator in buffer-local state
+            (when (boundp 'agent-shell--state)
+              (map-put! agent-shell--state :outgoing-request-decorator
+                        #'ai-code-agent-shell-request-decorator))
             (add-hook 'completion-at-point-functions
                       #'ai-code--agent-shell-hashtag-capf nil t)
             (ai-code-behaviors-mode-line-enable)))))
