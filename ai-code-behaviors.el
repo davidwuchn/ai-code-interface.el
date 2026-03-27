@@ -3259,10 +3259,11 @@ MODE-SWITCH-NEEDED is t when session should switch from plan to build mode."
              (mode-switch (and ai-code-behaviors-agent-shell-auto-switch-mode
                                (eq mode 'modify))))
         (ai-code--behaviors-apply-and-format preset-name final-behaviors project-root)
+        ;; For agent-shell: always return behavior instruction, even if prompt is empty
+        ;; For gptel-agent: only set state, don't send (returns nil)
         (if (string-empty-p (string-trim cleaned-prompt))
-            (progn
-              (message "Preset applied: %s" (or preset-name "custom"))
-              (list nil mode-switch))
+            (list (ai-code--build-behavior-instruction final-behaviors)
+                  mode-switch)
           (list (ai-code--behaviors-wrap-with-instruction final-behaviors cleaned-prompt)
                 mode-switch))))
      (meets-threshold
@@ -3323,7 +3324,8 @@ Also handles auto-switching from plan to build mode for modify operations."
                              :processed (or processed-text prompt-text)
                              :behaviors current-state)
                        ai-code--behaviors-last-prompts))
-            (when (and processed-text (not (equal processed-text prompt-text)))
+            ;; Always inject processed text when available (even if prompt was just @preset)
+            (when processed-text
               (setf (map-elt params 'prompt)
                     (if (vectorp prompt-vec)
                         (vector processed-text)
