@@ -3251,15 +3251,15 @@ MODE-SWITCH-NEEDED is t when session should switch from plan to build mode."
     (when bundle-name
       (ai-code--behaviors-set-active-bundle bundle-name project-root))
     (cond
-     (explicit-behaviors
-      (ai-code--behaviors-clear-pending-preset project-root)
-      (let* ((preset-name (plist-get explicit-behaviors :preset))
-             (final-behaviors (ai-code--merge-preset-with-modifiers preset-name explicit-behaviors))
-             (mode (plist-get final-behaviors :mode))
-             (mode-switch (and ai-code-behaviors-agent-shell-auto-switch-mode
-                               (eq mode 'modify))))
-        (ai-code--behaviors-apply-and-format preset-name final-behaviors project-root)
-        ;; For agent-shell: always return behavior instruction, even if prompt is empty
+(explicit-behaviors
+       (ai-code--behaviors-clear-pending-preset project-root)
+       (let* ((preset-name (plist-get explicit-behaviors :preset))
+              (final-behaviors (ai-code--merge-preset-with-modifiers preset-name explicit-behaviors))
+              (mode (plist-get final-behaviors :mode))
+              (mode-switch (and ai-code-behaviors-agent-shell-auto-switch-mode
+                                (eq mode 'modify))))
+         (ai-code--behaviors-apply-and-format preset-name final-behaviors project-root)
+         ;; For agent-shell: always return behavior instruction, even if prompt is empty
         ;; For gptel-agent: only set state, don't send (returns nil)
         (if (string-empty-p (string-trim cleaned-prompt))
             (list (ai-code--build-behavior-instruction final-behaviors)
@@ -3294,35 +3294,36 @@ prompt classification or explicit hashtags.
 Also handles auto-switching from plan to build mode for modify operations."
   (condition-case err
       (progn
-        (when (and (string= (map-elt request :method) "session/prompt")
+(when (and (string= (map-elt request :method) "session/prompt")
                    ai-code-behaviors-enabled)
           ;; Find the agent-shell buffer to get project root
           (let* ((params (map-elt request :params))
                  (prompt-vec (map-elt params 'prompt))
-                 ;; Handle different prompt formats:
-                 ;; - vector of string: ["text"]
-                 ;; - string: "text"
-                 ;; - vector of alist: [((type . "text") (text . "..."))]
-                 ;; - alist: ((type . text) (text . "..."))
+                 ;; Agent-shell sends multiple content blocks in a vector:
+                 ;; [((type . "text") (text . "@preset")) ((type . "text") (text . " user message"))]
+                 ;; We need to concatenate ALL text blocks to get the full prompt
                  (prompt-text (cond
-                               ((and (vectorp prompt-vec) (> (length prompt-vec) 0))
-                                (let ((elem (aref prompt-vec 0)))
-                                  (cond ((stringp elem) elem)
-                                        ((and (consp elem) (or (assoc 'text elem) (assoc "text" elem)))
-                                         (let* ((entry (or (assoc 'text elem) (assoc "text" elem)))
-                                                (val (cdr entry)))
-                                           (cond ((stringp val) val)
-                                                 ((symbolp val) (symbol-name val))
-                                                 (t nil))))
-                                        (t nil))))
-                               ((stringp prompt-vec) prompt-vec)
-                               ((and (consp prompt-vec) (or (assoc 'text prompt-vec) (assoc "text" prompt-vec)))
-                                (let* ((entry (or (assoc 'text prompt-vec) (assoc "text" prompt-vec)))
-                                       (val (cdr entry)))
-                                  (cond ((stringp val) val)
-                                        ((symbolp val) (symbol-name val))
-                                        (t nil))))
-                               (t nil)))
+                                ((stringp prompt-vec) prompt-vec)
+                                ((and (vectorp prompt-vec) (> (length prompt-vec) 0))
+                                 ;; Concatenate all text blocks
+                                 (mapconcat
+                                  (lambda (elem)
+                                    (cond ((stringp elem) elem)
+                                          ((and (consp elem) (or (assoc 'text elem) (assoc "text" elem)))
+                                           (let* ((entry (or (assoc 'text elem) (assoc "text" elem)))
+                                                  (val (cdr entry)))
+                                             (cond ((stringp val) val)
+                                                   ((symbolp val) (symbol-name val))
+                                                   (t ""))))
+                                          (t "")))
+                                  prompt-vec ""))
+                                ((and (consp prompt-vec) (or (assoc 'text prompt-vec) (assoc "text" prompt-vec)))
+                                 (let* ((entry (or (assoc 'text prompt-vec) (assoc "text" prompt-vec)))
+                                        (val (cdr entry)))
+                                   (cond ((stringp val) val)
+                                         ((symbolp val) (symbol-name val))
+                                         (t nil))))
+                                (t nil)))
                  ;; Try to get project root from current buffer or find agent-shell buffer
                  (project-root (or (ai-code--behaviors-project-root)
                                    (when (eq major-mode 'agent-shell-mode)
@@ -3349,16 +3350,13 @@ Also handles auto-switching from plan to build mode for modify operations."
                              :processed (or processed-text prompt-text)
                              :behaviors current-state)
                        ai-code--behaviors-last-prompts))
-            ;; Always inject processed text when available (even if prompt was just @preset)
-            (when processed-text
+;; Always inject processed text when available (even if prompt was just @preset)
+             (when processed-text
                (cond
-                ;; Vector format: element 0 may be string or alist
-                ((and (vectorp prompt-vec) (> (length prompt-vec) 0))
-                 (let ((elem (aref prompt-vec 0)))
-                   (if (and (consp elem) (or (assoc 'text elem) (assoc "text" elem)))
-                       (let ((entry (or (assoc 'text elem) (assoc "text" elem))))
-                         (setcdr entry processed-text))
-                     (aset prompt-vec 0 processed-text))))
+                ;; Vector format: replace entire vector with single processed block
+                ((vectorp prompt-vec)
+                 (setf (map-elt params 'prompt)
+                       (vector `((type . "text") (text . ,processed-text)))))
                 ;; String format: replace params prompt
                 ((stringp prompt-vec)
                  (setf (map-elt params 'prompt) processed-text))
