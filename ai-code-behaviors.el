@@ -3513,18 +3513,18 @@ Safe to call multiple times - guards prevent duplicate advice/hooks."
     ;; Set global default for new sessions (idempotent)
     (setq agent-shell-outgoing-request-decorator
           #'ai-code-agent-shell-request-decorator)
-    ;; Hybrid completion: @ alone shows files, @text shows presets
-    (when (and (fboundp 'agent-shell--file-completion-at-point)
-               (not (advice-member-p #'ai-code--agent-shell-file-completion-advice
-                                     'agent-shell--file-completion-at-point)))
-      (advice-add 'agent-shell--file-completion-at-point :around
-                  #'ai-code--agent-shell-file-completion-advice))
-    ;; Add hashtag completion (triggers on #)
-    ;; Guard: check if hook already present to avoid duplicates
-    (add-hook 'agent-shell-mode-hook
-              (lambda ()
-                (add-hook 'completion-at-point-functions
-                          #'ai-code--agent-shell-hashtag-capf nil t)))
+    ;; NOTE: Disabled custom @/# completion to preserve agent-shell's original transient menu
+    ;; Use C-c p for preset selection instead
+    ;; (when (and (fboundp 'agent-shell--file-completion-at-point)
+    ;;            (not (advice-member-p #'ai-code--agent-shell-file-completion-advice
+    ;;                                  'agent-shell--file-completion-at-point)))
+    ;;   (advice-add 'agent-shell--file-completion-at-point :around
+    ;;               #'ai-code--agent-shell-file-completion-advice))
+    ;; Hashtag completion also disabled to avoid conflicts
+    ;; (add-hook 'agent-shell-mode-hook
+    ;;           (lambda ()
+    ;;             (add-hook 'completion-at-point-functions
+    ;;                       #'ai-code--agent-shell-hashtag-capf nil t)))
     ;; Enable mode-line after shell is ready (avoids deadlock with transient)
     ;; The event subscription is per-buffer, so duplicates are naturally avoided
     (add-hook 'agent-shell-mode-hook
