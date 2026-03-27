@@ -244,6 +244,10 @@ typically in your Emacs configuration with:
 
 ;;; Generated autoloads from ai-code-behaviors.el
 
+(autoload 'ai-code-behaviors-agent-shell-setup "ai-code-behaviors" "\
+Set up ai-code-behaviors integration with agent-shell.
+Adds the request decorator to inject behaviors into agent-shell prompts.
+Also advises file completion to skip when @preset is typed." t)
 (register-definition-prefixes "ai-code-behaviors" '("ai-code-"))
 
 
