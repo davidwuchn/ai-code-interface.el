@@ -2842,11 +2842,19 @@ Returns preset name string or nil."
        (t nil)))))
 
 (defun ai-code--behaviors-extract-project-from-buffer-name ()
-  "Extract project path from gptel-agent buffer name.
+  "Extract project path from gptel-agent or agent-shell buffer name.
 For gptel-agent buffers, returns default-directory which is set correctly.
-Returns nil if not a gptel-agent buffer."
-  (when (string-match "\\*gptel-agent:\\([^*]+\\)\\*" (buffer-name))
-    default-directory))
+For agent-shell buffers (e.g., \"OpenCode Agent @ .emacs.d\"), extracts project name
+and returns default-directory.
+Returns nil if not a recognized buffer type."
+  (cond
+   ;; gptel-agent buffer: "*gptel-agent:project*"
+   ((string-match "\\*gptel-agent:\\([^*]+\\)\\*" (buffer-name))
+    default-directory)
+   ;; agent-shell buffer: "AgentName Agent @ project"
+   ((string-match " Agent @ \\(.+\\)$" (buffer-name))
+    default-directory)
+   (t nil)))
 
 (defun ai-code-behaviors-show-last-prompt ()
   "Show the last prompt processed by behavior injection.
