@@ -3292,14 +3292,37 @@ MODE-SWITCH-NEEDED is t when session should switch from plan to build mode."
 Intercepts session/prompt requests and injects behaviors based on
 prompt classification or explicit hashtags.
 Also handles auto-switching from plan to build mode for modify operations."
-  (condition-case err
+(condition-case err
       (progn
         (when (and (string= (map-elt request :method) "session/prompt")
                    ai-code-behaviors-enabled)
           ;; Find the agent-shell buffer to get project root
           (let* ((params (map-elt request :params))
                  (prompt-vec (map-elt params 'prompt))
-                 (prompt-text (if (vectorp prompt-vec) (aref prompt-vec 0) prompt-vec))
+                 ;; Handle different prompt formats:
+                 ;; - vector of string: ["text"]
+                 ;; - string: "text"
+                 ;; - vector of alist: [((type . "text") (text . "..."))]
+                 ;; - alist: ((type . text) (text . "..."))
+                 (prompt-text (cond
+                               ((and (vectorp prompt-vec) (> (length prompt-vec) 0))
+                                (let ((elem (aref prompt-vec 0)))
+                                  (cond ((stringp elem) elem)
+                                        ((and (consp elem) (or (assoc 'text elem) (assoc "text" elem)))
+                                         (let* ((entry (or (assoc 'text elem) (assoc "text" elem)))
+                                                (val (cdr entry)))
+                                           (cond ((stringp val) val)
+                                                 ((symbolp val) (symbol-name val))
+                                                 (t nil))))
+                                        (t nil))))
+                               ((stringp prompt-vec) prompt-vec)
+                               ((and (consp prompt-vec) (or (assoc 'text prompt-vec) (assoc "text" prompt-vec)))
+                                (let* ((entry (or (assoc 'text prompt-vec) (assoc "text" prompt-vec)))
+                                       (val (cdr entry)))
+                                  (cond ((stringp val) val)
+                                        ((symbolp val) (symbol-name val))
+                                        (t nil))))
+                               (t nil)))
                  ;; Try to get project root from current buffer or find agent-shell buffer
                  (project-root (or (ai-code--behaviors-project-root)
                                    (when (eq major-mode 'agent-shell-mode)
@@ -3313,29 +3336,45 @@ Also handles auto-switching from plan to build mode for modify operations."
                                      (when shell-buf
                                        (buffer-local-value 'default-directory shell-buf)))
                                    default-directory))
-                 (result (ai-code--agent-shell-process-behaviors prompt-text project-root))
+                 (result (when prompt-text
+                           (ai-code--agent-shell-process-behaviors prompt-text project-root)))
                  (processed-text (nth 0 result))
                  (mode-switch-needed (nth 1 result))
-                 (current-state (ai-code--behaviors-get-state project-root)))
+                 (current-state (when project-root
+                                   (ai-code--behaviors-get-state project-root))))
             ;; Store last prompt for inspection (C-c P)
-            (when project-root
+            (when (and project-root prompt-text)
               (puthash project-root
                        (list :original prompt-text
                              :processed (or processed-text prompt-text)
                              :behaviors current-state)
                        ai-code--behaviors-last-prompts))
-            ;; Always inject processed text when available (even if prompt was just @preset)
-            (when processed-text
-              (setf (map-elt params 'prompt)
-                    (if (vectorp prompt-vec)
-                        (vector processed-text)
-                      processed-text)))
+;; Always inject processed text when available (even if prompt was just @preset)
+             (when processed-text
+               (cond
+                ;; Vector format: element 0 may be string or alist
+                ((and (vectorp prompt-vec) (> (length prompt-vec) 0))
+                 (let ((elem (aref prompt-vec 0)))
+                   (if (and (consp elem) (or (assoc 'text elem) (assoc "text" elem)))
+                       (let ((entry (or (assoc 'text elem) (assoc "text" elem))))
+                         (setcdr entry processed-text))
+                     (aset prompt-vec 0 processed-text))))
+                ;; String format: replace params prompt
+                ((stringp prompt-vec)
+                 (setf (map-elt params 'prompt) processed-text))
+                ;; Alist format: update the text field
+                ((and (consp prompt-vec) (or (assoc 'text prompt-vec) (assoc "text" prompt-vec)))
+                 (let ((entry (or (assoc 'text prompt-vec) (assoc "text" prompt-vec))))
+                   (setcdr entry processed-text)))))
             ;; Update mode-line in agent-shell buffer
-            (ai-code--behaviors-update-mode-line project-root)
+            (when project-root
+              (ai-code--behaviors-update-mode-line project-root))
             (when mode-switch-needed
               (ai-code--agent-shell-maybe-switch-mode))))
         request)
-    (error request)))
+    (error 
+     (message "DECORATOR ERROR: %s" err)
+     request)))
 
 (defun ai-code--agent-shell-maybe-switch-mode ()
   "Switch agent-shell from plan to build mode if appropriate."
