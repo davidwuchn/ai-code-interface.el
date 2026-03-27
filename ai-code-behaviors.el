@@ -3304,14 +3304,34 @@ Also handles auto-switching from plan to build mode for modify operations."
         (message "Auto-switching to build mode for modify operation")
         (agent-shell-cycle-session-mode)))))
 
+(defun ai-code--agent-shell-file-completion-advice (orig-fn &rest args)
+  "Advice to skip file completion when @word matches a preset name.
+ORIG-FN is the original `agent-shell--file-completion-at-point'.
+ARGS are passed through."
+  (let* ((result (apply orig-fn args))
+         (word (when result
+                 (buffer-substring-no-properties (nth 0 result) (nth 1 result)))))
+    (if (and word
+             (string-match "^@" word)
+             (let ((preset-name (substring word 1)))
+               (or (assoc preset-name ai-code--behavior-presets)
+                   (cl-find-if (lambda (p) (string= preset-name (car p)))
+                               ai-code--behavior-presets))))
+        nil
+      result)))
+
 (defun ai-code-behaviors-agent-shell-setup ()
   "Set up ai-code-behaviors integration with agent-shell.
-Adds the request decorator to inject behaviors into agent-shell prompts."
+Adds the request decorator to inject behaviors into agent-shell prompts.
+Also advises file completion to skip when @preset is typed."
   (interactive)
   (require 'agent-shell nil t)
   (when (boundp 'agent-shell-outgoing-request-decorator)
     (setq agent-shell-outgoing-request-decorator
           #'ai-code-agent-shell-request-decorator)
+    (when (fboundp 'agent-shell--file-completion-at-point)
+      (advice-add 'agent-shell--file-completion-at-point :around
+                  #'ai-code--agent-shell-file-completion-advice))
     (message "ai-code-behaviors: agent-shell integration enabled")))
 
 (provide 'ai-code-behaviors)
