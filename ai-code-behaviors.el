@@ -3524,21 +3524,21 @@ Adds mode-line indicator to agent-shell buffers."
               (lambda ()
                 (add-hook 'completion-at-point-functions
                           #'ai-code--agent-shell-hashtag-capf nil t)))
-    ;; Add mode-line to agent-shell-mode buffers
-    (add-hook 'agent-shell-mode-hook #'ai-code-behaviors-mode-line-enable)
-    ;; Also update existing buffers - set decorator in their state
-    (dolist (buf (buffer-list))
-      (when (buffer-live-p buf)
-        (with-current-buffer buf
-          (when (eq major-mode 'agent-shell-mode)
-            ;; Set decorator in buffer-local state
-            (when (boundp 'agent-shell--state)
-              (map-put! agent-shell--state :outgoing-request-decorator
-                        #'ai-code-agent-shell-request-decorator))
-            (add-hook 'completion-at-point-functions
-                      #'ai-code--agent-shell-hashtag-capf nil t)
-            (ai-code-behaviors-mode-line-enable)))))
-    (message "ai-code-behaviors: agent-shell integration enabled")))
+    ;; Enable mode-line after shell is ready (avoids deadlock with transient)
+    (add-hook 'agent-shell-mode-hook
+              (lambda ()
+                (when (and (boundp 'agent-shell--state)
+                           agent-shell--state
+                           (fboundp 'agent-shell-subscribe-to))
+                  (let ((buf (current-buffer)))
+                    (agent-shell-subscribe-to
+                     :shell-buffer buf
+                     :event 'prompt-ready
+                     :on-event (lambda (_event)
+                                 (when (buffer-live-p buf)
+                                   (with-current-buffer buf
+                                     (ai-code-behaviors-mode-line-enable))))))))))
+    (message "ai-code-behaviors: agent-shell integration enabled (auto mode-line on ready)"))
 
 (provide 'ai-code-behaviors)
 
