@@ -34,6 +34,7 @@
 (require 'seq)
 (require 'cl-lib)
 (require 'json)
+(require 'map)
 
 (require 'gptel nil t)
 
@@ -2138,7 +2139,6 @@ Auto-switches to agent mode when modify preset is selected in plan mode."
           ;; Handle agent-shell plan → build switch
           (when (and agent-shell-mode-p
                      (not readonly)
-                     (fboundp 'agent-shell--state)
                      (boundp 'agent-shell--state)
                      agent-shell--state
                      (fboundp 'map-nested-elt)
@@ -3242,7 +3242,6 @@ MODE-SWITCH-NEEDED is t when session should switch from plan to build mode."
          (cleaned-prompt (nth 1 extracted))
          (bundle-name (nth 3 extracted))
          (session-state (ai-code--behaviors-get-state project-root))
-         (pending-preset (ai-code--behaviors-get-pending-preset project-root))
          (classified (and ai-code-behaviors-agent-shell-auto-classify
                           ai-code-behaviors-auto-classify
                           (ai-code--classify-prompt-intent prompt-text)))
@@ -3257,8 +3256,8 @@ MODE-SWITCH-NEEDED is t when session should switch from plan to build mode."
        (let* ((preset-name (plist-get explicit-behaviors :preset))
               (final-behaviors (ai-code--merge-preset-with-modifiers preset-name explicit-behaviors))
               (mode (plist-get final-behaviors :mode))
-              (mode-switch (and ai-code-behaviors-agent-shell-auto-switch-mode
-                                (eq mode 'modify))))
+               (mode-switch (and ai-code-behaviors-agent-shell-auto-switch-mode
+                                 (member mode ai-code--behavior-modify-modes))))
          (ai-code--behaviors-apply-and-format preset-name final-behaviors project-root)
          ;; For agent-shell: always return behavior instruction, even if prompt is empty
          ;; For gptel-agent: only set state, don't send (returns nil)
@@ -3275,15 +3274,15 @@ MODE-SWITCH-NEEDED is t when session should switch from plan to build mode."
                                  (ai-code--merge-preset-with-modifiers nil classified)))
               (mode (plist-get final-behaviors :mode))
               (mode-switch (and ai-code-behaviors-agent-shell-auto-switch-mode
-                                (eq mode 'modify))))
+                                 (member mode ai-code--behavior-modify-modes))))
          (ai-code--behaviors-apply-and-format suggested-preset final-behaviors project-root
-                                              (format "Auto-classified: @%s" (or suggested-preset "custom")))
+                                               (format "Auto-classified: @%s" (or suggested-preset "custom")))
          (list (ai-code--behaviors-wrap-with-instruction final-behaviors prompt-text)
                mode-switch)))
       (session-state
        (let* ((mode (plist-get session-state :mode))
               (mode-switch (and ai-code-behaviors-agent-shell-auto-switch-mode
-                                (eq mode 'modify))))
+                                (member mode ai-code--behavior-modify-modes))))
          (list (ai-code--behaviors-wrap-with-instruction session-state prompt-text)
                mode-switch)))
       (t (list prompt-text nil)))))
@@ -3352,19 +3351,29 @@ Also handles auto-switching from plan to build mode for modify operations."
                              :behaviors current-state)
                        ai-code--behaviors-last-prompts))
             ;; Always inject processed text when available (even if prompt was just @preset)
-            (when processed-text
-              (cond
-               ;; Vector format: replace entire vector with single processed block
-               ((vectorp prompt-vec)
-                (setf (map-elt params 'prompt)
-                      (vector `((type . "text") (text . ,processed-text)))))
-               ;; String format: replace params prompt
-               ((stringp prompt-vec)
-                (setf (map-elt params 'prompt) processed-text))
-               ;; Alist format: update the text field
-               ((and (consp prompt-vec) (or (assoc 'text prompt-vec) (assoc "text" prompt-vec)))
-                (let ((entry (or (assoc 'text prompt-vec) (assoc "text" prompt-vec))))
-                  (setcdr entry processed-text)))))
+             (when processed-text
+               (cond
+                ;; Vector format: replace first text block, preserve non-text blocks
+                ((vectorp prompt-vec)
+                 (let ((new-vec (vector `((type . "text") (text . ,processed-text))))
+                       (non-text-blocks
+                        (cl-remove-if
+                         (lambda (elem)
+                           (or (stringp elem)
+                               (and (consp elem)
+                                    (or (assoc 'text elem) (assoc "text" elem)))))
+                         prompt-vec)))
+                   ;; Append any non-text blocks (images, files, etc.)
+                   (when non-text-blocks
+                     (setq new-vec (vconcat new-vec (vconcat non-text-blocks))))
+                   (setf (map-elt params 'prompt) new-vec)))
+                ;; String format: replace params prompt
+                ((stringp prompt-vec)
+                 (setf (map-elt params 'prompt) processed-text))
+                ;; Alist format: update the text field
+                ((and (consp prompt-vec) (or (assoc 'text prompt-vec) (assoc "text" prompt-vec)))
+                 (let ((entry (or (assoc 'text prompt-vec) (assoc "text" prompt-vec))))
+                   (setcdr entry processed-text)))))
             ;; Update mode-line in agent-shell buffer
             (when project-root
               (ai-code--behaviors-update-mode-line project-root))
@@ -3474,33 +3483,8 @@ Excludes operating modes (=code, =debug) - use #= for those."
                      ((string-prefix-p "=" name) " [mode]")
                      ((member name ai-code--behavior-modifiers) " [modifier]")
                      ((assoc name ai-code--constraint-modifiers) " [constraint]")
-                     (t ""))))
-                :exclusive 'no))))))
-
-(defun ai-code--agent-shell-preset-capf ()
-  "Completion-at-point function for @preset names in agent-shell."
-  (when (and (boundp 'major-mode)
-             (eq major-mode 'agent-shell-mode)
-             (save-excursion
-               (skip-chars-backward "a-zA-Z0-9_-")
-               (eq (char-before) ?@)))
-    (let* ((start (1- (point)))
-           (end (point))
-           (candidates (ai-code--behavior-preset-and-bundle-names))
-           (annotation-fn
-            (lambda (cand)
-              (let ((name (string-trim (substring cand 1))))
-                (cond
-                 ((assoc name ai-code--constraint-bundles)
-                  (let ((data (cdr (assoc name ai-code--constraint-bundles))))
-                    (format " %s" (plist-get data :description))))
-                 ((assoc name ai-code--behavior-presets)
-                  (let ((data (cdr (assoc name ai-code--behavior-presets))))
-                    (format " %s" (plist-get data :description))))
-                 (t ""))))))
-      (list start end candidates
-            :annotation-function annotation-fn
-            :exclusive 'no))))
+                      (t ""))))
+                 :exclusive 'no))))))
 
 ;;;###autoload
 (defun ai-code-behaviors-agent-shell-setup ()
@@ -3508,23 +3492,29 @@ Excludes operating modes (=code, =debug) - use #= for those."
 Adds the request decorator to inject behaviors into agent-shell prompts.
 Merges preset names with file completion (both show in same popup).
 Adds hashtag completion (triggers on #).
-Adds mode-line indicator to agent-shell buffers."
+Adds mode-line indicator to agent-shell buffers.
+Safe to call multiple times - guards prevent duplicate advice/hooks."
   (interactive)
   (require 'agent-shell nil t)
   (when (boundp 'agent-shell-outgoing-request-decorator)
-    ;; Set global default for new sessions
+    ;; Set global default for new sessions (idempotent)
     (setq agent-shell-outgoing-request-decorator
           #'ai-code-agent-shell-request-decorator)
     ;; Merge preset names with file completion (@ triggers both files and presets)
-    (when (fboundp 'agent-shell--file-completion-at-point)
+    ;; Guard: only add advice if not already present
+    (when (and (fboundp 'agent-shell--file-completion-at-point)
+               (not (advice-member-p #'ai-code--agent-shell-file-completion-advice
+                                     'agent-shell--file-completion-at-point)))
       (advice-add 'agent-shell--file-completion-at-point :around
                   #'ai-code--agent-shell-file-completion-advice))
     ;; Add hashtag completion (triggers on #)
+    ;; Guard: check if hook already present to avoid duplicates
     (add-hook 'agent-shell-mode-hook
               (lambda ()
                 (add-hook 'completion-at-point-functions
                           #'ai-code--agent-shell-hashtag-capf nil t)))
     ;; Enable mode-line after shell is ready (avoids deadlock with transient)
+    ;; The event subscription is per-buffer, so duplicates are naturally avoided
     (add-hook 'agent-shell-mode-hook
               (lambda ()
                 (when (and (boundp 'agent-shell--state)
