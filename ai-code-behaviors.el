@@ -3182,6 +3182,138 @@ Shows only constraints and bundles, not presets or behaviors."
   (append (mapcar (lambda (c) (concat "#" (car c))) ai-code--constraint-modifiers)
           (ai-code--constraint-bundle-names)))
 
+;;; ==============================================================================
+;;; AGENT-SHELL Integration
+;;; ==============================================================================
+
+(defcustom ai-code-behaviors-agent-shell-auto-classify t
+  "When non-nil, auto-classify prompts in agent-shell buffers.
+When nil, agent-shell prompts without explicit hashtags use existing
+session state without classification."
+  :type 'boolean
+  :group 'ai-code-behaviors)
+
+(defcustom ai-code-behaviors-agent-shell-auto-switch-mode t
+  "When non-nil, auto-switch agent-shell to 'build' mode for modify operations.
+When a behavior with :mode 'modify' is detected and session is in 'plan' mode,
+automatically switch to 'build' mode to allow file modifications."
+  :type 'boolean
+  :group 'ai-code-behaviors)
+
+(defvar ai-code--agent-shell-last-mode-switch nil
+  "Timestamp of last agent-shell mode switch to prevent rapid switching.")
+
+(defun ai-code--agent-shell-process-behaviors (prompt-text &optional project-root)
+  "Process behaviors for PROMPT-TEXT in agent-shell context.
+PROJECT-ROOT specifies the project for state lookup.
+Returns list (PROCESSED-TEXT MODE-SWITCH-NEEDED).
+PROCESSED-TEXT is the prompt with behaviors injected.
+MODE-SWITCH-NEEDED is t when session should switch from plan to build mode."
+  (let* ((extracted (ai-code--extract-and-remove-hashtags prompt-text))
+         (explicit-behaviors (nth 0 extracted))
+         (cleaned-prompt (nth 1 extracted))
+         (bundle-name (nth 3 extracted))
+         (session-state (ai-code--behaviors-get-state project-root))
+         (pending-preset (ai-code--behaviors-get-pending-preset project-root))
+         (classified (and ai-code-behaviors-agent-shell-auto-classify
+                          ai-code-behaviors-auto-classify
+                          (ai-code--classify-prompt-intent prompt-text)))
+         (confidence (and classified (or (plist-get classified :confidence) 'high)))
+         (meets-threshold (and confidence
+                               (ai-code--behaviors-meets-confidence-threshold-p confidence))))
+    (when bundle-name
+      (ai-code--behaviors-set-active-bundle bundle-name project-root))
+    (cond
+     (explicit-behaviors
+      (ai-code--behaviors-clear-pending-preset project-root)
+      (let* ((preset-name (plist-get explicit-behaviors :preset))
+             (final-behaviors (ai-code--merge-preset-with-modifiers preset-name explicit-behaviors))
+             (mode (plist-get final-behaviors :mode))
+             (mode-switch (and ai-code-behaviors-agent-shell-auto-switch-mode
+                               (eq mode 'modify))))
+        (ai-code--behaviors-apply-and-format preset-name final-behaviors project-root)
+        (if (string-empty-p (string-trim cleaned-prompt))
+            (progn
+              (message "Preset applied: %s" (or preset-name "custom"))
+              (list nil mode-switch))
+          (list (ai-code--behaviors-wrap-with-instruction final-behaviors cleaned-prompt)
+                mode-switch))))
+     (meets-threshold
+      (ai-code--behaviors-clear-pending-preset project-root)
+      (let* ((suggested-preset (ai-code--suggest-preset-for-classification classified))
+             (final-behaviors (if suggested-preset
+                                  (ai-code--merge-preset-with-modifiers suggested-preset nil)
+                                (ai-code--merge-preset-with-modifiers nil classified)))
+             (mode (plist-get final-behaviors :mode))
+             (mode-switch (and ai-code-behaviors-agent-shell-auto-switch-mode
+                               (eq mode 'modify))))
+        (ai-code--behaviors-apply-and-format suggested-preset final-behaviors project-root
+                                             (format "Auto-classified: @%s" (or suggested-preset "custom")))
+        (list (ai-code--behaviors-wrap-with-instruction final-behaviors prompt-text)
+              mode-switch)))
+     (session-state
+      (let ((mode (plist-get session-state :mode))
+            (mode-switch (and ai-code-behaviors-agent-shell-auto-switch-mode
+                              (eq mode 'modify))))
+        (list (ai-code--behaviors-wrap-with-instruction session-state prompt-text)
+              mode-switch)))
+     (t (list prompt-text nil)))))
+
+(defun ai-code-agent-shell-request-decorator (request)
+  "Decorate agent-shell REQUEST with ai-code-behaviors.
+Intercepts session/prompt requests and injects behaviors based on
+prompt classification or explicit hashtags.
+Also handles auto-switching from plan to build mode for modify operations."
+  (condition-case err
+      (progn
+        (when (and (string= (map-elt request :method) "session/prompt")
+                   ai-code-behaviors-enabled)
+          (let* ((params (map-elt request :params))
+                 (prompt-vec (map-elt params 'prompt))
+                 (prompt-text (if (vectorp prompt-vec) (aref prompt-vec 0) prompt-vec))
+                 (project-root (or (and (fboundp 'agent-shell--project-name)
+                                        (agent-shell--project-name))
+                                   default-directory))
+                 (result (ai-code--agent-shell-process-behaviors prompt-text project-root))
+                 (processed-text (nth 0 result))
+                 (mode-switch-needed (nth 1 result)))
+            (when (and processed-text (not (equal processed-text prompt-text)))
+              (setf (map-elt params 'prompt)
+                    (if (vectorp prompt-vec)
+                        (vector processed-text)
+                      processed-text)))
+            (when mode-switch-needed
+              (ai-code--agent-shell-maybe-switch-mode))))
+        request)
+    (error request)))
+
+(defun ai-code--agent-shell-maybe-switch-mode ()
+  "Switch agent-shell from plan to build mode if appropriate."
+  (when (and (boundp 'agent-shell--state)
+             agent-shell--state
+             (fboundp 'agent-shell-cycle-session-mode)
+             (fboundp 'map-nested-elt))
+    (let* ((current-mode (map-nested-elt agent-shell--state '(:session :mode-id)))
+           (now (current-time)))
+      (when (and current-mode
+                 (string= current-mode "plan")
+                 (or (null ai-code--agent-shell-last-mode-switch)
+                     (> (float-time (time-subtract now ai-code--agent-shell-last-mode-switch))
+                        5.0)))
+        (setq ai-code--agent-shell-last-mode-switch now)
+        (message "Auto-switching to build mode for modify operation")
+        (agent-shell-cycle-session-mode)))))
+
+(defun ai-code-behaviors-agent-shell-setup ()
+  "Set up ai-code-behaviors integration with agent-shell.
+Adds the request decorator to inject behaviors into agent-shell prompts."
+  (interactive)
+  (require 'agent-shell nil t)
+  (when (boundp 'agent-shell-outgoing-request-decorator)
+    (setq agent-shell-outgoing-request-decorator
+          #'ai-code-agent-shell-request-decorator)
+    (message "ai-code-behaviors: agent-shell integration enabled")))
+
 (provide 'ai-code-behaviors)
 
 ;;; ai-code-behaviors.el ends here
