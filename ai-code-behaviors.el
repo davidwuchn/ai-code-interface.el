@@ -290,7 +290,8 @@ Does nothing and returns nil if not in a project (prevents state leakage)."
   '("deep" "wide" "ground" "negative-space" "challenge" "steel-man"
     "user-lens" "concise" "first-principles" "creative" "subtract"
     "meta" "simulate" "decompose" "recursive" "fractal" "tdd"
-    "io" "contract" "backward" "analogy" "temporal" "name" "checklist" "file")
+    "io" "contract" "backward" "analogy" "temporal" "name" "checklist" "file"
+    "factor" "stop")
   "Modifier behaviors. Multiple can be active simultaneously.")
 
 (defconst ai-code--behavior-readonly-modes
@@ -542,7 +543,7 @@ Key: project root, Value: (:constraints (C1 C2 ...) :timestamp TIME).")
   "Hash table of active constraint bundles per project.
 Key: project root, Value: bundle name string or nil.")
 
-(defconst ai-code-behaviors--synced-commit "8633aa9"
+(defconst ai-code-behaviors--synced-commit "d1340b7"
   "The upstream ai-behaviors commit this source code is synced with.
 Update this when syncing with upstream behavior changes.")
 
