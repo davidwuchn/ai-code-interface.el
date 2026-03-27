@@ -3320,6 +3320,7 @@ ARGS are passed through."
         nil
       result)))
 
+;;;###autoload
 (defun ai-code-behaviors-agent-shell-setup ()
   "Set up ai-code-behaviors integration with agent-shell.
 Adds the request decorator to inject behaviors into agent-shell prompts.
