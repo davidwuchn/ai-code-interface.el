@@ -3280,8 +3280,8 @@ Also handles auto-switching from plan to build mode for modify operations."
           (let* ((params (map-elt request :params))
                  (prompt-vec (map-elt params 'prompt))
                  (prompt-text (if (vectorp prompt-vec) (aref prompt-vec 0) prompt-vec))
-                 (project-root (or (and (fboundp 'agent-shell--project-name)
-                                        (agent-shell--project-name))
+                 ;; Use ai-code--behaviors-project-root for consistent key
+                 (project-root (or (ai-code--behaviors-project-root)
                                    default-directory))
                  (result (ai-code--agent-shell-process-behaviors prompt-text project-root))
                  (processed-text (nth 0 result))
