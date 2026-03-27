@@ -3425,35 +3425,32 @@ ARGS are passed through.
 - @text: shows matching presets only (no files)
 
 Note: # completions are handled by ai-code--agent-shell-hashtag-capf."
-  (let* ((result (apply orig-fn args)))
-    (if result
-        (let* ((start (nth 0 result))
-               (end (nth 1 result))
-               ;; Check char before bounds for @
-               (char-before-start (when (> start 1) (char-before start)))
-               (has-at-prefix (eq char-before-start ?@))
-               ;; Text after @
-               (text-after-at (buffer-substring-no-properties start end))
-               (at-with-text (and has-at-prefix (> (length text-after-at) 0)))
-               ;; Adjust bounds to include @ for preset completion
-               (adjusted-start (if has-at-prefix (1- start) start)))
-          (cond
-           ;; @ with text after: show only matching presets (no files)
-           (at-with-text
-            (let ((preset-candidates (ai-code--behavior-preset-and-bundle-names)))
-              (list adjusted-start end preset-candidates
-                    :annotation-function
-                    (lambda (cand)
-                      (let ((name (string-trim (substring cand 1))))
-                        (or (and (assoc name ai-code--constraint-bundles)
-                                 (format " [bundle] %s" (plist-get (cdr (assoc name ai-code--constraint-bundles)) :description)))
-                            (and (assoc name ai-code--behavior-presets)
-                                 (format " [preset] %s" (plist-get (cdr (assoc name ai-code--behavior-presets)) :description)))
-                            "")))
-                    :exclusive 'no)))
-           ;; @ alone or no prefix: show files only (original behavior)
-           (t result)))
-      result)))
+  ;; Check context FIRST before calling original function
+  (let* ((pos (point))
+         (char-before-pos (when (> pos 1) (char-before pos)))
+         (has-at-prefix (eq char-before-pos ?@)))
+    (if (not has-at-prefix)
+        ;; No @ prefix, call original function
+        (apply orig-fn args)
+      ;; Has @ prefix, check if there's text after it
+      (let* ((next-char (char-after pos))
+             (has-text-after (and next-char 
+                                  (not (memq next-char '(?\s ?\t ?\n nil))))))
+        (if (not has-text-after)
+            ;; @ alone: show files (call original)
+            (apply orig-fn args)
+          ;; @ with text: show presets
+          (let ((preset-candidates (ai-code--behavior-preset-and-bundle-names)))
+            (list (1- pos) pos preset-candidates
+                  :annotation-function
+                  (lambda (cand)
+                    (let ((name (string-trim (substring cand 1))))
+                      (or (and (assoc name ai-code--constraint-bundles)
+                               (format " [bundle] %s" (plist-get (cdr (assoc name ai-code--constraint-bundles)) :description)))
+                          (and (assoc name ai-code--behavior-presets)
+                               (format " [preset] %s" (plist-get (cdr (assoc name ai-code--behavior-presets)) :description)))
+                          "")))
+                  :exclusive 'no)))))))
 
 (defun ai-code--behavior-all-hashtag-names ()
   "Return all hashtag completion candidates.
