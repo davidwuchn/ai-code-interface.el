@@ -2092,10 +2092,12 @@ Preserves existing constraint-modifiers from current state."
 (defun ai-code-behaviors-preset ()
   "Select and apply a behavior preset.
 In gptel modes, shows all presets with * annotation for modify presets.
+In agent-shell, auto-switches to build mode when modify preset is selected.
 Auto-switches to agent mode when modify preset is selected in plan mode."
   (interactive)
   (let* ((current-preset (when (boundp 'gptel--preset) gptel--preset))
          (gptel-mode-p (memq current-preset '(gptel-plan gptel-agent)))
+         (agent-shell-mode-p (eq major-mode 'agent-shell-mode))
          (readonly-presets '("frame-problem" "research-deep" "design-options"
                              "spec-planning" "quick-review" "deep-review" "mentor-learn"))
          (modify-presets '("tdd-dev" "quick-fix" "thorough-debug"))
@@ -2119,6 +2121,7 @@ Auto-switches to agent mode when modify preset is selected in plan mode."
       (let* ((preset-name (cdr (assoc choice presets)))
              (readonly (ai-code--behaviors-preset-readonly-p preset-name)))
         (when preset-name
+          ;; Handle gptel-plan → gptel-agent switch
           (when (and (boundp 'gptel--preset)
                      (eq gptel--preset 'gptel-plan)
                      (not readonly))
@@ -2131,7 +2134,22 @@ Auto-switches to agent mode when modify preset is selected in plan mode."
             (gptel--apply-preset 'gptel-agent
                                  (lambda (sym val) (set (make-local-variable sym) val)))
             (message "Switched to agent mode for @%s" preset-name))
-          (ai-code-behaviors-apply-preset preset-name))))))
+          ;; Handle agent-shell plan → build switch
+          (when (and agent-shell-mode-p
+                     (not readonly)
+                     (fboundp 'agent-shell--state)
+                     (boundp 'agent-shell--state)
+                     agent-shell--state
+                     (fboundp 'map-nested-elt)
+                     (string= (map-nested-elt agent-shell--state '(:session :mode-id)) "plan"))
+            (when (fboundp 'agent-shell-cycle-session-mode)
+              (agent-shell-cycle-session-mode)
+              (message "Switched to build mode for @%s" preset-name)))
+          ;; Apply the preset
+          (ai-code-behaviors-apply-preset preset-name)
+          ;; Update mode-line for agent-shell
+          (when agent-shell-mode-p
+            (ai-code--behaviors-update-mode-line)))))))
 
 (defun ai-code-behaviors-select ()
   "Interactively select and apply behaviors or presets.
@@ -3291,6 +3309,8 @@ Also handles auto-switching from plan to build mode for modify operations."
                     (if (vectorp prompt-vec)
                         (vector processed-text)
                       processed-text)))
+            ;; Update mode-line in agent-shell buffer
+            (ai-code--behaviors-update-mode-line project-root)
             (when mode-switch-needed
               (ai-code--agent-shell-maybe-switch-mode))))
         request)
