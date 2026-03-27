@@ -3530,30 +3530,51 @@ Excludes operating modes (=code, =debug) - use #= for those."
                       (t ""))))
                  :exclusive 'no))))))
 
-(defun ai-code--agent-shell-preset-capf ()
-  "Completion-at-point function for !presets in agent-shell.
-- ! alone: shows all preset candidates
-- !text: shows matching presets"
+(defun ai-code--agent-shell-merged-at-capf ()
+  "Completion-at-point function for @ in agent-shell.
+Merges file completion and preset completion.
+- @ alone: shows files + presets
+- @text: shows matching files + matching presets"
   (when (and (boundp 'major-mode)
              (eq major-mode 'agent-shell-mode)
              (save-excursion
-               (skip-chars-backward "a-zA-Z0-9_-")
-               (eq (char-before) ?!)))
+               (skip-chars-backward "a-zA-Z0-9_=")
+               (eq (char-before) ?@)))
     (let* ((start (save-excursion
-                    (skip-chars-backward "a-zA-Z0-9_-")
+                    (skip-chars-backward "a-zA-Z0-9_=")
                     (1- (point))))
            (end (point))
-           (candidates (ai-code--behavior-preset-and-bundle-names)))
-      (list start end candidates
-            :annotation-function
-            (lambda (cand)
-              (let ((name (string-trim (substring cand 1))))
-                (or (and (assoc name ai-code--constraint-bundles)
-                         (format " [bundle] %s" (plist-get (cdr (assoc name ai-code--constraint-bundles)) :description)))
-                    (and (assoc name ai-code--behavior-presets)
-                         (format " [preset] %s" (plist-get (cdr (assoc name ai-code--behavior-presets)) :description)))
-                    "")))
-            :exclusive 'yes))))
+           (prefix (buffer-substring-no-properties (1+ start) end))
+           ;; Get files from agent-shell
+           (files (when (fboundp 'agent-shell--project-files)
+                    (agent-shell--project-files)))
+           ;; Get presets
+           (presets (ai-code--behavior-preset-and-bundle-names))
+           ;; Filter by prefix if present
+           (filtered-files (if (> (length prefix) 0)
+                              (cl-remove-if-not (lambda (f) (string-prefix-p prefix f t)) files)
+                            files))
+           (filtered-presets (if (> (length prefix) 0)
+                                (cl-remove-if-not (lambda (p) (string-prefix-p (concat "@" prefix) p t)) presets)
+                              presets))
+           ;; Combine with prefixes to distinguish
+           (file-candidates (mapcar (lambda (f) (propertize f 'ai-code--type 'file)) filtered-files))
+           (preset-candidates (mapcar (lambda (p) (propertize p 'ai-code--type 'preset)) filtered-presets))
+           (all-candidates (append file-candidates preset-candidates)))
+      (when all-candidates
+        (list start end all-candidates
+              :annotation-function
+              (lambda (cand)
+                (case (get-text-property 0 'ai-code--type cand)
+                  ('file " [file]")
+                  ('preset 
+                   (let ((name (string-trim (substring cand 1))))
+                     (cond
+                      ((assoc name ai-code--constraint-bundles) " [bundle]")
+                      ((assoc name ai-code--behavior-presets) " [preset]")
+                      (t " [preset]"))))
+                  (t "")))
+              :exclusive 'no)))))
 
 ;;;###autoload
 (defun ai-code-behaviors-agent-shell-setup ()
@@ -3569,11 +3590,11 @@ Safe to call multiple times - guards prevent duplicate advice/hooks."
     ;; Set global default for new sessions (idempotent)
     (setq agent-shell-outgoing-request-decorator
           #'ai-code-agent-shell-request-decorator)
-    ;; ! completion for presets: ! shows preset candidates
+    ;; @ completion: merged files + presets
     (add-hook 'agent-shell-mode-hook
               (lambda ()
                 (add-hook 'completion-at-point-functions
-                          #'ai-code--agent-shell-preset-capf nil t)))
+                          #'ai-code--agent-shell-merged-at-capf nil t)))
     ;; # completion: # alone waits, #=text shows modes, #text shows modifiers/constraints
     (add-hook 'agent-shell-mode-hook
               (lambda ()
