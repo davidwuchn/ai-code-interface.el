@@ -298,6 +298,15 @@ Does nothing and returns nil if not in a project (prevents state leakage)."
   (remhash (or root (ai-code--behaviors-project-root))
            ai-code--active-constraint-bundles))
 
+(defun ai-code--behaviors-buffer-live-p (buffer)
+  "Return non-nil if BUFFER is a live buffer."
+  (and buffer (buffer-live-p buffer)))
+
+(defun ai-code--behaviors-buffer-local-value (symbol buffer)
+  "Get buffer-local value of SYMBOL in BUFFER if BUFFER is live."
+  (when (ai-code--behaviors-buffer-live-p buffer)
+    (buffer-local-value symbol buffer)))
+
 (defconst ai-code--behavior-operating-modes
   '("=frame" "=research" "=design" "=spec" "=code" "=debug"
     "=review" "=test" "=mentor" "=drive" "=navigate" "=probe" "=record")
@@ -2524,8 +2533,7 @@ Supports both calling conventions:
     (condition-case err
         (let* ((info (and fsm (gptel-fsm-info fsm)))
                (source-buffer (and info (plist-get info :buffer)))
-               (preset (when (buffer-live-p source-buffer)
-                         (buffer-local-value 'gptel--preset source-buffer)))
+               (preset (ai-code--behaviors-buffer-local-value 'gptel--preset source-buffer))
                (prompt-start (save-excursion
                                (goto-char (point-max))
                                (let ((heading-match (re-search-backward "^### " nil t)))
@@ -2552,7 +2560,7 @@ Supports both calling conventions:
                      (processed-text (nth 1 result))
                      (switch-needed (nth 2 result))
                      (behaviors-state (ai-code--behaviors-get-state project-root)))
-                (when (and switch-needed (buffer-live-p source-buffer))
+                (when (and switch-needed (ai-code--behaviors-buffer-live-p source-buffer))
                   (with-current-buffer source-buffer
                     (gptel--apply-preset 'gptel-agent
                                          (lambda (sym val) (set (make-local-variable sym) val)))))
