@@ -312,10 +312,11 @@ END-POS defaults to the current '#' position."
           (when candidates
             (list start end candidates :exclusive 'no)))))))
 
-(defun ai-code--comment-auto-trigger-filepath-completion ()
-  "Auto trigger file path/symbol completion in comments."
+(defun ai-code--auto-trigger-filepath-completion (delete-fn insert-fn)
+  "Auto trigger file path/symbol completion using DELETE-FN and INSERT-FN.
+DELETE-FN is called to delete the trigger character.
+INSERT-FN is called with the text to insert."
   (when (and ai-code-prompt-filepath-completion-enabled
-             (ai-code--comment-context-p)
              (buffer-file-name)
              (not (minibufferp)))
     (pcase (char-before)
@@ -324,36 +325,33 @@ END-POS defaults to the current '#' position."
          (when candidates
            (let ((choice (completing-read "File: " candidates nil nil)))
              (when (and choice (not (string-empty-p choice)))
-               (delete-char -1)  ; Remove the '@' we just typed
-               (insert choice))))))
+               (funcall delete-fn)
+               (funcall insert-fn choice))))))
       (?#
        (when-let* ((file (ai-code--hash-completion-target-file (1- (point))))
                    (symbol (ai-code--choose-symbol-from-file file)))
          (when (not (string-empty-p symbol))
-           (delete-char -1)  ; Remove the '#' we just typed
-           (insert (concat "#" symbol))))))))
+           (funcall delete-fn)
+           (funcall insert-fn (concat "#" symbol))))))))
+
+(defun ai-code--comment-auto-trigger-filepath-completion ()
+  "Auto trigger file path/symbol completion in comments."
+  (when (and (ai-code--comment-context-p)
+             (buffer-file-name)
+             (not (minibufferp)))
+    (ai-code--auto-trigger-filepath-completion
+     (lambda () (delete-char -1))
+     (lambda (text) (insert text)))))
 
 (defun ai-code--session-auto-trigger-filepath-completion ()
   "Auto trigger file path/symbol completion in AI session buffers."
-  (when (and ai-code-prompt-filepath-completion-enabled
-             (fboundp 'ai-code-backends-infra--session-buffer-p)
+  (when (and (fboundp 'ai-code-backends-infra--session-buffer-p)
              (ai-code-backends-infra--session-buffer-p (current-buffer))
              (not (minibufferp))
              (ai-code--git-root))
-    (pcase (char-before)
-      (?@
-       (let ((candidates (ai-code--prompt-filepath-candidates)))
-         (when candidates
-           (let ((choice (completing-read "File: " candidates nil nil)))
-             (when (and choice (not (string-empty-p choice)))
-               (ai-code-backends-infra--terminal-send-backspace)
-               (ai-code-backends-infra--terminal-send-string choice))))))
-      (?#
-       (when-let* ((file (ai-code--hash-completion-target-file (1- (point))))
-                   (symbol (ai-code--choose-symbol-from-file file)))
-         (when (not (string-empty-p symbol))
-           (ai-code-backends-infra--terminal-send-backspace)
-           (ai-code-backends-infra--terminal-send-string (concat "#" symbol))))))))
+    (ai-code--auto-trigger-filepath-completion
+     (lambda () (ai-code-backends-infra--terminal-send-backspace))
+     (lambda (text) (ai-code-backends-infra--terminal-send-string text)))))
 
 (defun ai-code--session-handle-at-input ()
   "Handle '@' input in AI session buffers with optional filepath completion."
