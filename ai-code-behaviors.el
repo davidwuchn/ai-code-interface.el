@@ -930,6 +930,7 @@ Return the prompt content string, or nil if not found."
 Shows * annotation for modify presets in gptel modes."
   (when (and (boundp 'major-mode)
              (eq major-mode 'ai-code-prompt-mode)
+             (not (bobp))  ; Ensure not at beginning of buffer
              (save-excursion
                (skip-chars-backward "a-zA-Z0-9_-")
                (eq (char-before) ?@)))
