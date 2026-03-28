@@ -166,6 +166,13 @@ Uses call-process instead of shell to avoid injection vulnerabilities."
     (when (zerop (apply #'call-process "git" nil t nil args))
       (string-trim (buffer-string)))))
 
+(defun ai-code--handle-error (err context)
+  "Handle error ERR with CONTEXT description.
+Logs error message and returns nil for further processing.
+CONTEXT is a string describing what operation failed."
+  (message "%s error: %s" context (error-message-string err))
+  nil)
+
 (defvar ai-code--behaviors-session-states (make-hash-table :test #'equal)
   "Hash table of behaviors per git repository.
 Key: git root directory (string)
@@ -1224,10 +1231,7 @@ Prompt:
                                   (lambda (m) (member m ai-code--behavior-modifiers))
                                   (when (listp modifiers) modifiers))))))))
     (error
-     (display-warning 'ai-code-behaviors
-                      (format "GPTel classification failed: %s\nFalling back to keyword matching."
-                              (error-message-string err))
-                      :warning)
+     (ai-code--handle-error err "GPTel classification")
      nil)))
 
 (defun ai-code--extract-json-from-response (response)
@@ -2569,7 +2573,7 @@ Supports both calling conventions:
                   (setq modified t))
                  (t nil))))))
       (error
-       (message "ai-code-behaviors transform error: %s" (error-message-string err))
+       (ai-code--handle-error err "ai-code-behaviors transform")
        (setq modified nil)))
     (if next
         (or modified (funcall next fsm))
@@ -3407,7 +3411,7 @@ Also handles auto-switching from plan to build mode for modify operations."
               (ai-code--agent-shell-maybe-switch-mode))))
         request)
     (error
-     (message "DECORATOR ERROR: %s" err)
+     (ai-code--handle-error err "DECORATOR")
      request)))
 
 (defun ai-code--agent-shell-maybe-switch-mode ()
