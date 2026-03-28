@@ -31,6 +31,10 @@
 
 (defvar flycheck-current-errors)
 
+(defun ai-code--get-current-line-text ()
+  "Return the current line text without properties."
+  (buffer-substring-no-properties (line-beginning-position) (line-end-position)))
+
 (defun ai-code--is-comment-line (line)
   "Check if LINE is a comment line based on current buffer's comment syntax.
 Returns non-nil if LINE starts with one or more comment characters,
@@ -259,7 +263,7 @@ Argument ARG is the prefix argument."
 (defun ai-code--implement-todo--handle-done-line ()
   "Handle actions when current line is a DONE comment.
 Returns non-nil if the action is handled and the caller should exit."
-  (let* ((line-str (buffer-substring-no-properties (line-beginning-position) (line-end-position)))
+  (let* ((line-str (ai-code--get-current-line-text))
          (comment-prefix (and comment-start (string-trim-right comment-start)))
          (done-re (when comment-prefix
                     (concat "^\\([ \t]*" (regexp-quote comment-prefix) "+[ \t]*\\)DONE:"))))
@@ -414,7 +418,7 @@ to include in each error report."
                     (save-excursion
                       (goto-char (point-min))
                       (forward-line (1- line))
-                      (buffer-substring-no-properties (line-beginning-position) (line-end-position)))))
+                      (ai-code--get-current-line-text))))
               (push (format "File: %s:%d:%d\nError: %s\nContext line:\n%s"
                             file-path-for-error-reporting line col msg error-line-text)
                     error-reports))

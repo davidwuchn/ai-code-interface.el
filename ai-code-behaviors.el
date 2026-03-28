@@ -197,6 +197,15 @@ Key: project root, Value: plist (:original ORIG :processed PROC :behaviors BEH).
 (defvar ai-code--behavior-presets)
 (defvar ai-code-behaviors-gptel-agent-auto-classify)
 
+;; ASSUMPTION: JSON parsing errors are the primary error type in extraction
+;; BEHAVIOR: Extracts error symbols for consistent error handling
+;; EDGE CASE: New error types can be added to the list
+;; TEST: Verify error patterns match json-read-from-string output
+(defconst ai-code--json-parse-error-symbols
+  '(json-read-error json-error)
+  "Error symbols thrown by JSON parsing functions.
+Used for consistent error handling across extraction functions.")
+
 (defun ai-code--behaviors-project-root (&optional buffer)
   "Return git root for BUFFER, or current buffer if nil.
 For gptel-agent buffers, falls back to extracting project from buffer name.
@@ -1237,9 +1246,9 @@ Returns parsed plist or nil if no valid JSON found or response exceeds size limi
   "Extract JSON from markdown code block in TEXT.
 Returns parsed plist or nil if no valid JSON code block found."
   (when (string-match "```\\(?:json\\)?[[:space:]]*\n\\([[:space:][:print:]]*?\\)[[:space:]]*```" text)
-    (condition-case nil
+    (condition-case err
         (json-read-from-string (match-string 1 text))
-      (error nil))))
+      ((json-read-error json-error) nil))))
 
 ;; ASSUMPTION: JSON object starts with { and ends with matching }
 ;; BEHAVIOR: Counts braces while tracking string/escape state
@@ -1251,9 +1260,9 @@ Returns parsed plist or nil if no valid JSON code block found."
 Returns parsed plist or nil if no valid JSON found or depth limit exceeded."
   (cond
    ((string-match-p "\\`[[:space:]]*{" text)
-    (condition-case nil
+    (condition-case err
         (json-read-from-string text)
-      (error nil)))
+      ((json-read-error json-error) nil)))
    ((string-match "{" text)
     (let ((start (match-beginning 0))
           (depth 0)
@@ -1274,9 +1283,9 @@ Returns parsed plist or nil if no valid JSON found or depth limit exceeded."
                   ((eq ch ?}) (setq depth (1- depth)))))))
         (setq i (1+ i)))
       (when (and (= depth 0) (<= depth max-depth))
-        (condition-case nil
+        (condition-case err
             (json-read-from-string (substring text start i))
-          (error nil)))))
+          ((json-read-error json-error) nil)))))
    (t nil)))
 
 (defun ai-code--classify-prompt-intent-keywords (prompt-text)
