@@ -64,9 +64,13 @@ CANDIDATE-LIST is an optional list of candidate strings to show before history."
   ;; Load history from file
   (let* ((helm-history-file (expand-file-name history-file-name user-emacs-directory))
          (helm-history (if (file-exists-p helm-history-file)
-                           (with-temp-buffer
-                             (insert-file-contents helm-history-file)
-                             (read (buffer-string))) ; Assumed newest first
+                           (condition-case nil
+                               (with-temp-buffer
+                                 (insert-file-contents helm-history-file)
+                                 (let ((content (buffer-string)))
+                                   (unless (string-empty-p content)
+                                     (read content))))
+                             (error nil))
                          '()))
          ;; Use only Helm history, no CLI history
          (history helm-history)
