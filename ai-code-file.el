@@ -612,10 +612,9 @@ toggle dedication for every window in the current frame."
   "Sanitize generated NAME for file or directory creation."
   (let ((clean-name (downcase (string-trim (ai-code--normalize-radar-text name)))))
     (setq clean-name (or (car (split-string clean-name "\n" t)) ""))
-    (setq clean-name (replace-regexp-in-string "[^a-z0-9._/-]" "_" clean-name))
+    (setq clean-name (replace-regexp-in-string "[^a-z0-9._-]" "_" clean-name))
     (setq clean-name (replace-regexp-in-string "_+" "_" clean-name))
-    (setq clean-name (replace-regexp-in-string "/+" "/" clean-name))
-    (setq clean-name (replace-regexp-in-string "^[_./]+\\|[_./]+$" "" clean-name))
+    (setq clean-name (replace-regexp-in-string "^[_.]+\\|[_.]+$" "" clean-name))
     clean-name))
 
 (defun ai-code--generate-file-or-dir-name-with-gptel (description target-type)
@@ -625,7 +624,7 @@ TARGET-TYPE should be either \"file\" or \"directory\"."
           (format
            (concat "Generate one concise lowercase %s name for this request: %s\n"
                    "Rules: return only the name, no explanation, no markdown, no quotes, max 60 chars.\n"
-                   "Use letters/numbers/_/./- and / for nested path if needed.")
+                   "Use letters/numbers/_/./- only, no slashes or path separators.")
            target-type
            description))
          (generated-name (condition-case nil

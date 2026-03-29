@@ -5,7 +5,7 @@
 
 ;;; Commentary:
 ;; This module provides behavior injection based on prompt intent classification.
-;; Behaviors are loaded from the ai-behaviors repository (https://github.com/davidwuchn/ai-behaviors)
+;; Behaviors are loaded from the ai-behaviors repository (https://github.com/xificurC/ai-behaviors)
 ;; and injected into prompts to guide AI responses.
 ;;
 ;; Features:
@@ -62,7 +62,7 @@ When nil, only explicit #hashtags in prompts are processed."
 
 (defcustom ai-code-behaviors-repo-path "~/.config/ai-behaviors"
   "Path to cloned ai-behaviors repository.
-The repository should be cloned from https://github.com/davidwuchn/ai-behaviors"
+The repository should be cloned from https://github.com/xificurC/ai-behaviors"
   :type 'directory
   :group 'ai-code-behaviors)
 
@@ -80,7 +80,7 @@ Default is nil - users must explicitly opt in."
   :type 'boolean
   :group 'ai-code-behaviors)
 
-(defcustom ai-code-behaviors-repo-url "https://github.com/davidwuchn/ai-behaviors"
+(defcustom ai-code-behaviors-repo-url "https://github.com/xificurC/ai-behaviors.git"
   "URL for cloning the ai-behaviors repository."
   :type 'string
   :group 'ai-code-behaviors)
@@ -166,13 +166,6 @@ Uses call-process instead of shell to avoid injection vulnerabilities."
     (when (zerop (apply #'call-process "git" nil t nil args))
       (string-trim (buffer-string)))))
 
-(defun ai-code--handle-error (err context)
-  "Handle error ERR with CONTEXT description.
-Logs error message and returns nil for further processing.
-CONTEXT is a string describing what operation failed."
-  (message "%s error: %s" context (error-message-string err))
-  nil)
-
 (defvar ai-code--behaviors-session-states (make-hash-table :test #'equal)
   "Hash table of behaviors per git repository.
 Key: git root directory (string)
@@ -203,15 +196,6 @@ Key: project root, Value: plist (:original ORIG :processed PROC :behaviors BEH).
 (defvar ai-code--active-constraint-bundles)
 (defvar ai-code--behavior-presets)
 (defvar ai-code-behaviors-gptel-agent-auto-classify)
-
-;; ASSUMPTION: JSON parsing errors are the primary error type in extraction
-;; BEHAVIOR: Extracts error symbols for consistent error handling
-;; EDGE CASE: New error types can be added to the list
-;; TEST: Verify error patterns match json-read-from-string output
-(defconst ai-code--json-parse-error-symbols
-  '(json-read-error json-error)
-  "Error symbols thrown by JSON parsing functions.
-Used for consistent error handling across extraction functions.")
 
 (defun ai-code--behaviors-project-root (&optional buffer)
   "Return git root for BUFFER, or current buffer if nil.
@@ -297,15 +281,6 @@ Does nothing and returns nil if not in a project (prevents state leakage)."
   "Clear active constraint bundle for project ROOT."
   (remhash (or root (ai-code--behaviors-project-root))
            ai-code--active-constraint-bundles))
-
-(defun ai-code--behaviors-buffer-live-p (buffer)
-  "Return non-nil if BUFFER is a live buffer."
-  (and buffer (buffer-live-p buffer)))
-
-(defun ai-code--behaviors-buffer-local-value (symbol buffer)
-  "Get buffer-local value of SYMBOL in BUFFER if BUFFER is live."
-  (when (ai-code--behaviors-buffer-live-p buffer)
-    (buffer-local-value symbol buffer)))
 
 (defconst ai-code--behavior-operating-modes
   '("=frame" "=research" "=design" "=spec" "=code" "=debug"
@@ -569,7 +544,7 @@ Key: project root, Value: (:constraints (C1 C2 ...) :timestamp TIME).")
   "Hash table of active constraint bundles per project.
 Key: project root, Value: bundle name string or nil.")
 
-(defconst ai-code-behaviors--synced-commit "14f1eed"
+(defconst ai-code-behaviors--synced-commit "d1340b7"
   "The upstream ai-behaviors commit this source code is synced with.
 Update this when syncing with upstream behavior changes.")
 
@@ -955,7 +930,6 @@ Return the prompt content string, or nil if not found."
 Shows * annotation for modify presets in gptel modes."
   (when (and (boundp 'major-mode)
              (eq major-mode 'ai-code-prompt-mode)
-             (not (bobp))  ; Ensure not at beginning of buffer
              (save-excursion
                (skip-chars-backward "a-zA-Z0-9_-")
                (eq (char-before) ?@)))
@@ -1092,21 +1066,6 @@ whitespace, offer behavior completion instead of symbol completion."
   "Return non-nil if NAME is a constraint bundle."
   (assoc name ai-code--constraint-bundles))
 
-(defun ai-code--valid-behavior-tag-p (tag)
-  "Check if TAG is a valid behavior tag.
-TAG is a string without the # prefix.
-Returns non-nil if the tag is a valid operating mode, modifier, or constraint."
-  (or (member tag ai-code--behavior-operating-modes)
-      (member tag ai-code--behavior-modifiers)
-      (assoc tag ai-code--constraint-modifiers)))
-
-(defun ai-code--valid-preset-name-p (name)
-  "Check if NAME is a valid preset name.
-NAME is a string without the @ prefix.
-Returns non-nil if the name is a valid preset or constraint bundle."
-  (or (assoc name ai-code--behavior-presets)
-      (ai-code--constraint-bundle-p name)))
-
 (defun ai-code--expand-constraint-bundle (bundle-name)
   "Expand BUNDLE-NAME to its constraint list.
 Returns list of constraint names from the bundle."
@@ -1133,6 +1092,9 @@ Callers should set the bundle using the correct project root via
         (unknown nil)
         (unknown-presets nil)
         (switch-needed nil)
+        (valid-tags (append ai-code--behavior-operating-modes
+                            ai-code--behavior-modifiers
+                            (mapcar #'car ai-code--constraint-modifiers)))
         (result prompt-text))
     (save-match-data
       (with-temp-buffer
@@ -1141,10 +1103,17 @@ Callers should set the bundle using the correct project root via
         (while (re-search-forward "@\\([a-zA-Z0-9_-]+\\)" nil t)
           (let ((at-name (match-string 1)))
             (cond
-             ((ai-code--valid-preset-name-p at-name)
+             ((assoc at-name ai-code--behavior-presets)
               (if preset
                   (message "Warning: Multiple presets, keeping @%s" preset)
                 (setq preset at-name)))
+             ((ai-code--constraint-bundle-p at-name)
+              (if constraint-bundle
+                  (message "Warning: Multiple constraint bundles, keeping @%s" constraint-bundle)
+                (setq constraint-bundle at-name)
+                (let ((bundle-constraints (ai-code--expand-constraint-bundle at-name)))
+                  (dolist (c bundle-constraints)
+                    (cl-pushnew c constraints :test #'equal)))))
              (t (cl-pushnew at-name unknown-presets :test #'equal)))))
         (goto-char (point-min))
         (while (re-search-forward "#\\([=a-zA-Z0-9_-]+\\)" nil t)
@@ -1175,12 +1144,11 @@ Callers should set the bundle using the correct project root via
         (goto-char (point-min))
         (while (re-search-forward "@\\([a-zA-Z0-9_-]+\\)\\s-*" nil t)
           (let ((name (match-string 1)))
-            (when (ai-code--valid-preset-name-p name)
+            (when (or (assoc name ai-code--behavior-presets)
+                      (ai-code--constraint-bundle-p name))
               (replace-match ""))))
         (goto-char (point-min))
-        (dolist (tag (append ai-code--behavior-operating-modes
-                             ai-code--behavior-modifiers
-                             (mapcar #'car ai-code--constraint-modifiers)))
+        (dolist (tag valid-tags)
           (goto-char (point-min))
           (while (re-search-forward (concat "#" (regexp-quote tag) "\\s-*") nil t)
             (replace-match "")))
@@ -1246,7 +1214,10 @@ Prompt:
                                   (lambda (m) (member m ai-code--behavior-modifiers))
                                   (when (listp modifiers) modifiers))))))))
     (error
-     (ai-code--handle-error err "GPTel classification")
+     (display-warning 'ai-code-behaviors
+                      (format "GPTel classification failed: %s\nFalling back to keyword matching."
+                              (error-message-string err))
+                      :warning)
      nil)))
 
 (defun ai-code--extract-json-from-response (response)
@@ -1265,9 +1236,9 @@ Returns parsed plist or nil if no valid JSON found or response exceeds size limi
   "Extract JSON from markdown code block in TEXT.
 Returns parsed plist or nil if no valid JSON code block found."
   (when (string-match "```\\(?:json\\)?[[:space:]]*\n\\([[:space:][:print:]]*?\\)[[:space:]]*```" text)
-    (condition-case err
+    (condition-case nil
         (json-read-from-string (match-string 1 text))
-      ((json-read-error json-error) nil))))
+      (error nil))))
 
 ;; ASSUMPTION: JSON object starts with { and ends with matching }
 ;; BEHAVIOR: Counts braces while tracking string/escape state
@@ -1279,9 +1250,9 @@ Returns parsed plist or nil if no valid JSON code block found."
 Returns parsed plist or nil if no valid JSON found or depth limit exceeded."
   (cond
    ((string-match-p "\\`[[:space:]]*{" text)
-    (condition-case err
+    (condition-case nil
         (json-read-from-string text)
-      ((json-read-error json-error) nil)))
+      (error nil)))
    ((string-match "{" text)
     (let ((start (match-beginning 0))
           (depth 0)
@@ -1302,9 +1273,9 @@ Returns parsed plist or nil if no valid JSON found or depth limit exceeded."
                   ((eq ch ?}) (setq depth (1- depth)))))))
         (setq i (1+ i)))
       (when (and (= depth 0) (<= depth max-depth))
-        (condition-case err
+        (condition-case nil
             (json-read-from-string (substring text start i))
-          ((json-read-error json-error) nil)))))
+          (error nil)))))
    (t nil)))
 
 (defun ai-code--classify-prompt-intent-keywords (prompt-text)
@@ -2013,7 +1984,7 @@ Otherwise, update current buffer only."
   (if project-root
       (save-current-buffer
         (dolist (buf (buffer-list))
-          (when (ai-code--behaviors-buffer-live-p buf)
+          (when (buffer-live-p buf)
             (set-buffer buf)
             (when (equal (ai-code--behaviors-project-root) project-root)
               (force-mode-line-update t)))))
@@ -2539,7 +2510,8 @@ Supports both calling conventions:
     (condition-case err
         (let* ((info (and fsm (gptel-fsm-info fsm)))
                (source-buffer (and info (plist-get info :buffer)))
-               (preset (ai-code--behaviors-buffer-local-value 'gptel--preset source-buffer))
+               (preset (when (buffer-live-p source-buffer)
+                         (buffer-local-value 'gptel--preset source-buffer)))
                (prompt-start (save-excursion
                                (goto-char (point-max))
                                (let ((heading-match (re-search-backward "^### " nil t)))
@@ -2566,7 +2538,7 @@ Supports both calling conventions:
                      (processed-text (nth 1 result))
                      (switch-needed (nth 2 result))
                      (behaviors-state (ai-code--behaviors-get-state project-root)))
-                (when (and switch-needed (ai-code--behaviors-buffer-live-p source-buffer))
+                (when (and switch-needed (buffer-live-p source-buffer))
                   (with-current-buffer source-buffer
                     (gptel--apply-preset 'gptel-agent
                                          (lambda (sym val) (set (make-local-variable sym) val)))))
@@ -2587,7 +2559,7 @@ Supports both calling conventions:
                   (setq modified t))
                  (t nil))))))
       (error
-       (ai-code--handle-error err "ai-code-behaviors transform")
+       (message "ai-code-behaviors transform error: %s" (error-message-string err))
        (setq modified nil)))
     (if next
         (or modified (funcall next fsm))
@@ -3425,7 +3397,7 @@ Also handles auto-switching from plan to build mode for modify operations."
               (ai-code--agent-shell-maybe-switch-mode))))
         request)
     (error
-     (ai-code--handle-error err "DECORATOR")
+     (message "DECORATOR ERROR: %s" err)
      request)))
 
 (defun ai-code--agent-shell-maybe-switch-mode ()

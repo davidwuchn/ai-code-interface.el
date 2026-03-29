@@ -72,18 +72,18 @@ everything is cleaned up afterward."
   (should (string= (ai-code--sanitize-generated-path-name "test____data.js")
                    "test_data.js")))
 
-(ert-deftest ai-code-test-sanitize-multiple-slashes ()
-  "Test that multiple consecutive slashes are collapsed to one."
+(ert-deftest ai-code-test-sanitize-slashes-replaced ()
+  "Test that slashes are replaced with underscores."
   (should (string= (ai-code--sanitize-generated-path-name "path//to///file.txt")
-                   "path/to/file.txt"))
+                   "path_to_file.txt"))
   (should (string= (ai-code--sanitize-generated-path-name "dir////subdir/file.js")
-                   "dir/subdir/file.js")))
+                   "dir_subdir_file.js")))
 
 (ert-deftest ai-code-test-sanitize-path-traversal-prevention ()
   "Test that path traversal attempts are sanitized."
-  ;; Leading dots and slashes should be removed
+  ;; Slashes replaced with underscores, leading dots/underscores stripped
   (should (string= (ai-code--sanitize-generated-path-name "../../../etc/passwd")
-                   "etc/passwd"))
+                   "etc_passwd"))
   (should (string= (ai-code--sanitize-generated-path-name "../../file.txt")
                    "file.txt"))
   ;; But dots in filenames are preserved
@@ -112,15 +112,15 @@ everything is cleaned up afterward."
   (should (string= (ai-code--sanitize-generated-path-name "\n\n\n") ""))
   (should (string= (ai-code--sanitize-generated-path-name nil) "")))
 
-(ert-deftest ai-code-test-sanitize-nested-paths ()
-  "Test that nested paths are properly sanitized."
+(ert-deftest ai-code-test-sanitize-nested-paths-flattened ()
+  "Test that nested paths have slashes replaced with underscores."
   (should (string= (ai-code--sanitize-generated-path-name "src/components/button.js")
-                   "src/components/button.js"))
+                   "src_components_button.js"))
   (should (string= (ai-code--sanitize-generated-path-name "lib/utils/helper_functions.py")
-                   "lib/utils/helper_functions.py")))
+                   "lib_utils_helper_functions.py")))
 
 (ert-deftest ai-code-test-sanitize-trailing-delimiters ()
-  "Test that trailing underscores, dots, and slashes are removed."
+  "Test that trailing underscores and dots are removed."
   (should (string= (ai-code--sanitize-generated-path-name "file___")
                    "file"))
   (should (string= (ai-code--sanitize-generated-path-name "dir///")
@@ -177,14 +177,14 @@ everything is cleaned up afterward."
       (should (string= result "user_service.py")))))
 
 (ert-deftest ai-code-test-generate-name-with-gptel-nested-path ()
-  "Test that GPTel can suggest nested paths."
+  "Test that GPTel nested path suggestions have slashes flattened."
   (cl-letf (((symbol-function 'ai-code-call-gptel-sync)
              (lambda (prompt)
                "src/services/user_service.py")))
     (let ((result (ai-code--generate-file-or-dir-name-with-gptel
                    "Create a user service in the services directory"
                    "file")))
-      (should (string= result "src/services/user_service.py")))))
+      (should (string= result "src_services_user_service.py")))))
 
 ;;; Tests for ai-code-create-file-or-dir
 
@@ -358,7 +358,7 @@ everything is cleaned up afterward."
        (should-error (ai-code-create-file-or-dir) :type 'user-error)))))
 
 (ert-deftest ai-code-test-create-nested-file ()
-  "Test creating file in nested directory structure."
+  "Test creating file with nested path input gets flattened."
   (ai-code-file-with-test-env
    (let ((created-file nil)
          (ai-code-task-use-gptel-filename nil))
@@ -369,7 +369,7 @@ everything is cleaned up afterward."
                 (lambda (prompt &optional initial-input)
                   (cond
                    ((string-match-p "Describe" prompt) "nested file")
-                   ((string-match-p "Confirm" prompt) "src/lib/utils.js"))))
+                   ((string-match-p "Confirm" prompt) "src_lib_utils.js"))))
                ((symbol-function 'find-file-other-window)
                 (lambda (file)
                   (setq created-file file)))
@@ -377,13 +377,10 @@ everything is cleaned up afterward."
                 (lambda (&rest args) nil)))
        ;; Call the function
        (ai-code-create-file-or-dir)
-       ;; Verify nested structure was created
+       ;; Verify file was created with flattened name
        (should created-file)
-       (should (string-suffix-p "src/lib/utils.js" created-file))
-       (should (file-exists-p created-file))
-       ;; Verify parent directories were created
-       (should (file-directory-p (expand-file-name "src" test-dir)))
-       (should (file-directory-p (expand-file-name "src/lib" test-dir)))))))
+       (should (string-suffix-p "src_lib_utils.js" created-file))
+       (should (file-exists-p created-file))))))
 
 (ert-deftest ai-code-test-create-file-user-confirmation-flow ()
   "Test that user can modify GPTel-suggested name."

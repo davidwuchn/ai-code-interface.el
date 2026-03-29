@@ -2,6 +2,11 @@
 * Release history
 
 ** Main branch change
+- Feat: Add agent-shell integration for ai-code-behaviors, by davidwuchn
+- Chore: Make TDD prompts explicit Red Green Blue stages
+- Fix: Fix selected byte-compilation warnings, by Silex
+- Chore: Update AGENTS guidance, by Silex
+- Fix: Fix byte-compilation warnings and document verification workflow, by Silex
 
 ** 1.64
 - Feat: Support basic Symbol navigation inside AI coding session
