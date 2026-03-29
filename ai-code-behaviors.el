@@ -1773,16 +1773,17 @@ Returns plist with :preset, :confidence, :source, or nil."
 (defun ai-code--detect-project-structure (root)
   "Detect preset from project at ROOT.
 Returns plist with :preset, :confidence or nil."
-  (let ((default-directory root))
-    (catch 'found
-      (dolist (entry ai-code--project-structure-signals)
-        (when (file-exists-p (car entry))
-          (let ((signals (cdr entry)))
-            (dolist (signal signals)
-              (when (or (file-exists-p (car signal))
-                        (file-directory-p (car signal)))
-                (throw 'found (list :preset (cdr signal)
-                                    :confidence :medium))))))))))
+  (when (and root (file-directory-p root))
+    (let ((default-directory root))
+      (catch 'found
+        (dolist (entry ai-code--project-structure-signals)
+          (when (file-exists-p (car entry))
+            (let ((signals (cdr entry)))
+              (dolist (signal signals)
+                (when (or (file-exists-p (car signal))
+                          (file-directory-p (car signal)))
+                  (throw 'found (list :preset (cdr signal)
+                                      :confidence :medium)))))))))))
 
 (defun ai-code--with-detection-cache (source detect-fn)
   "Get cached detection result for SOURCE using DETECT-FN.
