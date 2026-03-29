@@ -847,7 +847,14 @@ If FORCE-PROMPT is nil and there are no existing instances, return \"default\"."
 (defun ai-code-backends-infra--resolve-start-command (program switches arg &optional prompt-label)
   "Build command string for PROGRAM and SWITCHES.
 When ARG is non-nil, prompt for CLI args using SWITCHES as default input.
-PROMPT-LABEL is used in the minibuffer prompt."
+PROMPT-LABEL is used in the minibuffer prompt.
+ASSUMPTION: PROGRAM is a non-empty string, SWITCHES is a list of strings.
+EDGE CASE: Nil or empty PROGRAM signals an error to prevent invalid command construction.
+EDGE CASE: Non-list SWITCHES is normalized to empty list to prevent mapconcat errors."
+  (unless (and (stringp program) (> (length program) 0))
+    (user-error "Cannot resolve start command with nil or empty program"))
+  (unless (listp switches)
+    (setq switches nil))
   (let* ((default-args (mapconcat #'identity switches " "))
          (prompt (format "%s args: " (or prompt-label "CLI")))
          (prompt-args (when arg
