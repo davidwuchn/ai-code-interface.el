@@ -1099,9 +1099,10 @@ Return list (BEHAVIORS CLEANED-PROMPT SWITCH-NEEDED BUNDLE-NAME) where:
 
 Callers should set the bundle using the correct project root via
 `ai-code--behaviors-set-active-bundle'."
-  (unless (stringp prompt-text)
-    (cl-return-from ai-code--extract-and-remove-hashtags (list nil prompt-text nil nil)))
-  (let ((mode nil)
+  (cl-block ai-code--extract-and-remove-hashtags
+    (unless (stringp prompt-text)
+      (cl-return-from ai-code--extract-and-remove-hashtags (list nil prompt-text nil nil)))
+    (let ((mode nil)
         (modifiers nil)
         (constraints nil)
         (preset nil)
@@ -1177,7 +1178,7 @@ Callers should set the bundle using the correct project root via
                   :preset preset))
           result
           switch-needed
-          constraint-bundle)))
+          constraint-bundle))))
 
 (defun ai-code--classify-prompt-intent-gptel (prompt-text)
   "Classify PROMPT-TEXT intent using GPTel.
@@ -2400,25 +2401,26 @@ Clears detection cache on enable.
 Idempotent - safe to call multiple times.
 Returns t if enabled, nil if `ai-code--insert-prompt' is not defined."
   (interactive)
-  (unless (fboundp 'ai-code--insert-prompt)
-    (message "Cannot enable: ai-code--insert-prompt not defined (load ai-code first)")
-    (cl-return-from ai-code-behaviors-enable-auto-presets nil))
-  (ai-code--behaviors-clear-detection-cache)
-  (advice-remove 'ai-code--insert-prompt #'ai-code--insert-prompt-behaviors-advice)
-  (advice-add 'ai-code--insert-prompt :around
-              #'ai-code--insert-prompt-behaviors-advice)
-  (add-hook 'ai-code-prompt-mode-hook #'ai-code--behavior-setup-preset-completion)
-  (ai-code--behavior-enable-preset-in-file-completion)
-  (advice-add 'ai-code-plain-read-string :around
-              #'ai-code--behavior-plain-read-string-advice)
-  (advice-add 'ai-code-helm-read-string-with-history :around
-              #'ai-code--behavior-helm-read-string-advice)
-  (advice-add 'ai-code--prompt-auto-trigger-filepath-completion :around
-              #'ai-code--behavior-prompt-auto-trigger-advice)
-  (when-let ((preset (ai-code--behaviors-detect-context-preset)))
-    (ai-code-behaviors-apply-preset preset))
-  (message "ai-code-behaviors auto-presets enabled")
-  t)
+  (cl-block ai-code-behaviors-enable-auto-presets
+    (unless (fboundp 'ai-code--insert-prompt)
+      (message "Cannot enable: ai-code--insert-prompt not defined (load ai-code first)")
+      (cl-return-from ai-code-behaviors-enable-auto-presets nil))
+    (ai-code--behaviors-clear-detection-cache)
+    (advice-remove 'ai-code--insert-prompt #'ai-code--insert-prompt-behaviors-advice)
+    (advice-add 'ai-code--insert-prompt :around
+                #'ai-code--insert-prompt-behaviors-advice)
+    (add-hook 'ai-code-prompt-mode-hook #'ai-code--behavior-setup-preset-completion)
+    (ai-code--behavior-enable-preset-in-file-completion)
+    (advice-add 'ai-code-plain-read-string :around
+                #'ai-code--behavior-plain-read-string-advice)
+    (advice-add 'ai-code-helm-read-string-with-history :around
+                #'ai-code--behavior-helm-read-string-advice)
+    (advice-add 'ai-code--prompt-auto-trigger-filepath-completion :around
+                #'ai-code--behavior-prompt-auto-trigger-advice)
+    (when-let ((preset (ai-code--behaviors-detect-context-preset)))
+      (ai-code-behaviors-apply-preset preset))
+    (message "ai-code-behaviors auto-presets enabled")
+    t))
 
 (defun ai-code-behaviors-disable-auto-presets ()
   "Disable automatic preset application."
@@ -3267,9 +3269,10 @@ PROJECT-ROOT specifies the project for state lookup.
 Returns list (PROCESSED-TEXT MODE-SWITCH-NEEDED).
 PROCESSED-TEXT is the prompt with behaviors injected.
 MODE-SWITCH-NEEDED is t when session should switch from plan to build mode."
-  (unless (stringp prompt-text)
-    (cl-return-from ai-code--agent-shell-process-behaviors (list prompt-text nil)))
-  (let* ((extracted (ai-code--extract-and-remove-hashtags prompt-text))
+  (cl-block ai-code--agent-shell-process-behaviors
+    (unless (stringp prompt-text)
+      (cl-return-from ai-code--agent-shell-process-behaviors (list prompt-text nil)))
+    (let* ((extracted (ai-code--extract-and-remove-hashtags prompt-text))
          (explicit-behaviors (nth 0 extracted))
          (cleaned-prompt (nth 1 extracted))
          (bundle-name (nth 3 extracted))
@@ -3317,7 +3320,7 @@ MODE-SWITCH-NEEDED is t when session should switch from plan to build mode."
                                (member mode ai-code--behavior-modify-modes))))
         (list (ai-code--behaviors-wrap-with-instruction session-state prompt-text)
               mode-switch)))
-     (t (list prompt-text nil)))))
+     (t (list prompt-text nil))))))
 
 (defun ai-code--extract-text-from-prompt-vec (prompt-vec)
   "Extract text content from PROMPT-VEC.
