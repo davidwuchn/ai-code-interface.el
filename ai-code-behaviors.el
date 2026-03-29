@@ -1276,7 +1276,7 @@ Returns parsed plist or nil if no valid JSON code block found."
 ;; TEST: Verify with valid JSON, malformed JSON, deeply nested JSON
 (defun ai-code--extract-json-balanced (text)
   "Extract JSON using balanced brace detection from TEXT.
-Returns parsed plist or nil if no valid JSON found or depth limit exceeded."
+Returns parsed plist or nil if no valid JSON found or depth exceeds limit."
   (cond
    ((string-match-p "\\`[[:space:]]*{" text)
     (condition-case err
@@ -1289,22 +1289,27 @@ Returns parsed plist or nil if no valid JSON found or depth limit exceeded."
           (i (match-beginning 0))
           (len (length text))
           (in-string nil)
-          (escape-next nil))
-      (while (and (< i len) (>= depth 0) (<= depth max-depth))
+          (escape-next nil)
+          (found-end nil))
+      (while (and (not found-end) (< i len) (>= depth 0) (<= depth max-depth))
         (let ((ch (aref text i)))
           (cond
            (escape-next (setq escape-next nil))
            ((eq ch ?\\) (setq escape-next t))
            (in-string (when (eq ch ?\") (setq in-string nil)))
            ((eq ch ?\") (setq in-string t))
-           ((not in-string)
-            (cond ((eq ch ?{) (setq depth (1+ depth)))
-                  ((eq ch ?}) (setq depth (1- depth)))))))
-        (setq i (1+ i)))
-      (when (and (= depth 0) (<= depth max-depth))
-        (condition-case err
-            (json-read-from-string (substring text start i))
-          ((json-read-error json-error) nil)))))
+            ((not in-string)
+             (cond ((eq ch ?{) (setq depth (1+ depth)))
+                   ((eq ch ?})
+                    (setq depth (1- depth))
+                    (when (= depth 0)
+                      (setq found-end t)))))))
+         (unless found-end
+           (setq i (1+ i))))
+       (when (and found-end (= depth 0))
+         (condition-case nil
+             (json-read-from-string (substring text start (1+ i)))
+           (error nil)))))
    (t nil)))
 
 (defun ai-code--classify-prompt-intent-keywords (prompt-text)
@@ -3279,41 +3284,41 @@ MODE-SWITCH-NEEDED is t when session should switch from plan to build mode."
     (when bundle-name
       (ai-code--behaviors-set-active-bundle bundle-name project-root))
     (cond
-      (explicit-behaviors
-       (ai-code--behaviors-clear-pending-preset project-root)
-       (let* ((preset-name (plist-get explicit-behaviors :preset))
-              (final-behaviors (ai-code--merge-preset-with-modifiers preset-name explicit-behaviors))
-              (mode (plist-get final-behaviors :mode))
-               (mode-switch (and ai-code-behaviors-agent-shell-auto-switch-mode
-                                 (member mode ai-code--behavior-modify-modes))))
-         (ai-code--behaviors-apply-and-format preset-name final-behaviors project-root)
-         ;; For agent-shell: always return behavior instruction, even if prompt is empty
-         ;; For gptel-agent: only set state, don't send (returns nil)
-         (if (string-empty-p (string-trim cleaned-prompt))
-             (list (ai-code--build-behavior-instruction final-behaviors)
-                   mode-switch)
-           (list (ai-code--behaviors-wrap-with-instruction final-behaviors cleaned-prompt)
-                 mode-switch))))
-      (meets-threshold
-       (ai-code--behaviors-clear-pending-preset project-root)
-       (let* ((suggested-preset (ai-code--suggest-preset-for-classification classified))
-              (final-behaviors (if suggested-preset
-                                   (ai-code--merge-preset-with-modifiers suggested-preset nil)
-                                 (ai-code--merge-preset-with-modifiers nil classified)))
-              (mode (plist-get final-behaviors :mode))
-              (mode-switch (and ai-code-behaviors-agent-shell-auto-switch-mode
-                                 (member mode ai-code--behavior-modify-modes))))
-         (ai-code--behaviors-apply-and-format suggested-preset final-behaviors project-root
-                                               (format "Auto-classified: @%s" (or suggested-preset "custom")))
-         (list (ai-code--behaviors-wrap-with-instruction final-behaviors prompt-text)
-               mode-switch)))
-      (session-state
-       (let* ((mode (plist-get session-state :mode))
-              (mode-switch (and ai-code-behaviors-agent-shell-auto-switch-mode
-                                (member mode ai-code--behavior-modify-modes))))
-         (list (ai-code--behaviors-wrap-with-instruction session-state prompt-text)
-               mode-switch)))
-      (t (list prompt-text nil)))))
+     (explicit-behaviors
+      (ai-code--behaviors-clear-pending-preset project-root)
+      (let* ((preset-name (plist-get explicit-behaviors :preset))
+             (final-behaviors (ai-code--merge-preset-with-modifiers preset-name explicit-behaviors))
+             (mode (plist-get final-behaviors :mode))
+             (mode-switch (and ai-code-behaviors-agent-shell-auto-switch-mode
+                               (member mode ai-code--behavior-modify-modes))))
+        (ai-code--behaviors-apply-and-format preset-name final-behaviors project-root)
+        ;; For agent-shell: always return behavior instruction, even if prompt is empty
+        ;; For gptel-agent: only set state, don't send (returns nil)
+        (if (string-empty-p (string-trim cleaned-prompt))
+            (list (ai-code--build-behavior-instruction final-behaviors)
+                  mode-switch)
+          (list (ai-code--behaviors-wrap-with-instruction final-behaviors cleaned-prompt)
+                mode-switch))))
+     (meets-threshold
+      (ai-code--behaviors-clear-pending-preset project-root)
+      (let* ((suggested-preset (ai-code--suggest-preset-for-classification classified))
+             (final-behaviors (if suggested-preset
+                                  (ai-code--merge-preset-with-modifiers suggested-preset nil)
+                                (ai-code--merge-preset-with-modifiers nil classified)))
+             (mode (plist-get final-behaviors :mode))
+             (mode-switch (and ai-code-behaviors-agent-shell-auto-switch-mode
+                               (member mode ai-code--behavior-modify-modes))))
+        (ai-code--behaviors-apply-and-format suggested-preset final-behaviors project-root
+                                             (format "Auto-classified: @%s" (or suggested-preset "custom")))
+        (list (ai-code--behaviors-wrap-with-instruction final-behaviors prompt-text)
+              mode-switch)))
+     (session-state
+      (let* ((mode (plist-get session-state :mode))
+             (mode-switch (and ai-code-behaviors-agent-shell-auto-switch-mode
+                               (member mode ai-code--behavior-modify-modes))))
+        (list (ai-code--behaviors-wrap-with-instruction session-state prompt-text)
+              mode-switch)))
+     (t (list prompt-text nil)))))
 
 (defun ai-code--extract-text-from-prompt-vec (prompt-vec)
   "Extract text content from PROMPT-VEC.
@@ -3351,10 +3356,10 @@ find agent-shell buffer, or default-directory as fallback."
       (when (eq major-mode 'agent-shell-mode)
         default-directory)
       (let ((shell-buf (cl-find-if
-                         (lambda (b)
-                           (with-current-buffer b
-                             (eq major-mode 'agent-shell-mode)))
-                         (buffer-list))))
+                        (lambda (b)
+                          (with-current-buffer b
+                            (eq major-mode 'agent-shell-mode)))
+                        (buffer-list))))
         (when shell-buf
           (buffer-local-value 'default-directory shell-buf)))
       default-directory))
@@ -3414,7 +3419,7 @@ Also handles auto-switching from plan to build mode for modify operations."
                  (processed-text (nth 0 result))
                  (mode-switch-needed (nth 1 result))
                  (current-state (when project-root
-                                   (ai-code--behaviors-get-state project-root))))
+                                  (ai-code--behaviors-get-state project-root))))
             ;; Store last prompt for inspection (C-c P)
             (ai-code--store-last-prompt project-root prompt-text processed-text current-state)
             ;; Inject processed text when available
@@ -3555,8 +3560,8 @@ Excludes operating modes (=code, =debug) - use #= for those."
                      ((string-prefix-p "=" name) " [mode]")
                      ((member name ai-code--behavior-modifiers) " [modifier]")
                      ((assoc name ai-code--constraint-modifiers) " [constraint]")
-                      (t ""))))
-                 :exclusive 'no))))))
+                     (t ""))))
+                :exclusive 'no))))))
 
 (defun ai-code--agent-shell-merged-at-capf ()
   "Completion-at-point function for @ in agent-shell.
@@ -3580,11 +3585,11 @@ Merges file completion and preset completion.
            (presets (ai-code--behavior-preset-and-bundle-names))
            ;; Filter by prefix if present
            (filtered-files (if (> (length prefix) 0)
-                              (cl-remove-if-not (lambda (f) (string-prefix-p prefix f t)) files)
-                            files))
+                               (cl-remove-if-not (lambda (f) (string-prefix-p prefix f t)) files)
+                             files))
            (filtered-presets (if (> (length prefix) 0)
-                                (cl-remove-if-not (lambda (p) (string-prefix-p (concat "@" prefix) p t)) presets)
-                              presets))
+                                 (cl-remove-if-not (lambda (p) (string-prefix-p (concat "@" prefix) p t)) presets)
+                               presets))
            ;; Combine with prefixes to distinguish
            (file-candidates (mapcar (lambda (f) (propertize f 'ai-code--type 'file)) filtered-files))
            (preset-candidates (mapcar (lambda (p) (propertize p 'ai-code--type 'preset)) filtered-presets))
@@ -3592,16 +3597,16 @@ Merges file completion and preset completion.
       (when all-candidates
         (list start end all-candidates
               :annotation-function
-               (lambda (cand)
-                 (pcase (get-text-property 0 'ai-code--type cand)
-                   ('file " [file]")
-                   ('preset 
-                    (let ((name (string-trim (substring cand 1))))
-                      (cond
-                       ((assoc name ai-code--constraint-bundles) " [bundle]")
-                       ((assoc name ai-code--behavior-presets) " [preset]")
-                       (t " [preset]"))))
-                   (_ "")))
+              (lambda (cand)
+                (pcase (get-text-property 0 'ai-code--type cand)
+                  ('file " [file]")
+                  ('preset 
+                   (let ((name (string-trim (substring cand 1))))
+                     (cond
+                      ((assoc name ai-code--constraint-bundles) " [bundle]")
+                      ((assoc name ai-code--behavior-presets) " [preset]")
+                      (t " [preset]"))))
+                  (_ "")))
               :exclusive 'no)))))
 
 ;;;###autoload
@@ -3643,7 +3648,7 @@ Safe to call multiple times - guards prevent duplicate advice/hooks."
                                  (when (buffer-live-p buf)
                                    (with-current-buffer buf
                                      (ai-code-behaviors-mode-line-enable))))))))))
-    (message "ai-code-behaviors: agent-shell integration enabled (auto mode-line on ready)"))
+  (message "ai-code-behaviors: agent-shell integration enabled (auto mode-line on ready)"))
 
 (provide 'ai-code-behaviors)
 
