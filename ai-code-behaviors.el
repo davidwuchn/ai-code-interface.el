@@ -5,7 +5,7 @@
 
 ;;; Commentary:
 ;; This module provides behavior injection based on prompt intent classification.
-;; Behaviors are loaded from the ai-behaviors repository (https://github.com/xificurC/ai-behaviors)
+;; Behaviors are loaded from the ai-behaviors repository (https://github.com/davidwuchn/ai-behaviors)
 ;; and injected into prompts to guide AI responses.
 ;;
 ;; Features:
@@ -62,7 +62,7 @@ When nil, only explicit #hashtags in prompts are processed."
 
 (defcustom ai-code-behaviors-repo-path "~/.config/ai-behaviors"
   "Path to cloned ai-behaviors repository.
-The repository should be cloned from https://github.com/xificurC/ai-behaviors"
+The repository should be cloned from https://github.com/davidwuchn/ai-behaviors"
   :type 'directory
   :group 'ai-code-behaviors)
 
@@ -80,7 +80,7 @@ Default is nil - users must explicitly opt in."
   :type 'boolean
   :group 'ai-code-behaviors)
 
-(defcustom ai-code-behaviors-repo-url "https://github.com/xificurC/ai-behaviors.git"
+(defcustom ai-code-behaviors-repo-url "https://github.com/davidwuchn/ai-behaviors"
   "URL for cloning the ai-behaviors repository."
   :type 'string
   :group 'ai-code-behaviors)
