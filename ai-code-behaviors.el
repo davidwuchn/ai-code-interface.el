@@ -2007,7 +2007,7 @@ Otherwise, update current buffer only."
   (if project-root
       (save-current-buffer
         (dolist (buf (buffer-list))
-          (when (buffer-live-p buf)
+          (when (ai-code--behaviors-buffer-live-p buf)
             (set-buffer buf)
             (when (equal (ai-code--behaviors-project-root) project-root)
               (force-mode-line-update t)))))
