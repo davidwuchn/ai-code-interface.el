@@ -440,12 +440,15 @@ returns to normal terminal interaction."
               (ai-code-backends-infra--current-terminal-backend)))))
 
 (defun ai-code-backends-infra--terminal-send-string (string)
-  "Send STRING to the terminal in the current buffer."
-  (ai-code-backends-infra--terminal-dispatch
-   (lambda () (vterm-send-string string))
-   (lambda ()
-     (when (bound-and-true-p eat-terminal)
-       (eat-term-send-string eat-terminal string)))))
+  "Send STRING to the terminal in the current buffer.
+ASSUMPTION: STRING is a non-empty string to be sent to the terminal.
+EDGE CASE: Nil or empty strings are ignored to prevent terminal errors."
+  (when (and (stringp string) (> (length string) 0))
+    (ai-code-backends-infra--terminal-dispatch
+     (lambda () (vterm-send-string string))
+     (lambda ()
+       (when (bound-and-true-p eat-terminal)
+         (eat-term-send-string eat-terminal string))))))
 
 (defun ai-code-backends-infra--terminal-send-escape ()
   "Send escape key to the terminal in the current buffer."
@@ -640,7 +643,7 @@ Return a cons of (BUFFER . MISSING-P)."
           (cons nil nil)))))))
 
 (defun ai-code-backends-infra--resolve-session-buffer (buffer-name missing-message prefix working-dir
-                                                                  force-prompt source-buffer)
+                                                                   force-prompt source-buffer)
   "Resolve session buffer using BUFFER-NAME or selection rules.
 MISSING-MESSAGE is used when no target session exists.
 When PREFIX and WORKING-DIR are present, prefer the attached session for
@@ -1062,7 +1065,7 @@ session starts successfully."
            process-table))))))
 
 (defun ai-code-backends-infra--switch-to-session-buffer (buffer-name missing-message
-                                                                    &optional prefix working-dir force-prompt)
+                                                                     &optional prefix working-dir force-prompt)
   "Switch to BUFFER-NAME or signal MISSING-MESSAGE.
 When PREFIX and WORKING-DIR are provided, select from multiple sessions."
   (let* ((source-buffer (current-buffer))
@@ -1078,9 +1081,13 @@ When PREFIX and WORKING-DIR are provided, select from multiple sessions."
       (ai-code-backends-infra--display-buffer-in-side-window buffer))))
 
 (defun ai-code-backends-infra--send-line-to-session (buffer-name missing-message line
-                                                                &optional prefix working-dir force-prompt)
+                                                                 &optional prefix working-dir force-prompt)
   "Send LINE to BUFFER-NAME or signal MISSING-MESSAGE.
-When PREFIX and WORKING-DIR are provided, select from multiple sessions."
+When PREFIX and WORKING-DIR are provided, select from multiple sessions.
+ASSUMPTION: LINE is a non-nil string to send to the session.
+EDGE CASE: Nil or empty LINE signals an error to prevent silent failures."
+  (unless (and (stringp line) (> (length line) 0))
+    (user-error "Cannot send nil or empty line to session"))
   (let* ((source-buffer (current-buffer))
          (buffer (ai-code-backends-infra--resolve-session-buffer
                   buffer-name
@@ -1092,7 +1099,7 @@ When PREFIX and WORKING-DIR are provided, select from multiple sessions."
     (with-current-buffer buffer
       (ai-code-backends-infra--remember-session-buffer prefix working-dir buffer)
       (ai-code-backends-infra--terminal-send-string line)
-      (sit-for 0.5) ;; 0.1 might be too low for some cli backends such as github copilot cli
+      (sit-for 0.5)
       (ai-code-backends-infra--terminal-send-return))))
 
 ;;; Generic Session Creation
@@ -1102,13 +1109,24 @@ When PREFIX and WORKING-DIR are provided, select from multiple sessions."
 BUFFER-NAME is the name for the buffer.
 WORKING-DIR is the directory.
 COMMAND is the shell command to run.
-ENV-VARS is a list of environment variables."
+ENV-VARS is a list of environment variables.
+ASSUMPTION: BUFFER-NAME, WORKING-DIR, and COMMAND are non-nil strings.
+EDGE CASE: Nil or empty required parameters signal an error.
+TEST: Verify with nil/empty inputs that user-error is signaled."
+  (unless (and (stringp buffer-name) (> (length buffer-name) 0))
+    (user-error "Cannot create terminal session with nil or empty buffer-name"))
+  (unless (and (stringp working-dir) (> (length working-dir) 0))
+    (user-error "Cannot create terminal session with nil or empty working-dir"))
+  (unless (and (stringp command) (> (length command) 0))
+    (user-error "Cannot create terminal session with nil or empty command"))
+  (unless (listp env-vars)
+    (user-error "ENV-VARS must be a list, got %s" (type-of env-vars)))
   (ai-code-backends-infra--terminal-ensure-backend)
   (let ((default-directory working-dir))
     (cond
      ((eq ai-code-backends-infra-terminal-backend 'vterm)
       (let* ((vterm-shell command)
-             (vterm-kill-buffer-on-exit nil)  ; Keep buffer alive to show errors
+             (vterm-kill-buffer-on-exit nil)
              (vterm-environment (append env-vars (bound-and-true-p vterm-environment))))
         (let ((buffer (save-window-excursion (vterm buffer-name))))
           (ai-code-backends-infra--set-session-directory buffer working-dir)
@@ -1133,21 +1151,18 @@ ENV-VARS is a list of environment variables."
           (ai-code-backends-infra--install-navigation-cursor-sync)
           (setq-local process-environment (append env-vars process-environment))
           (eat-exec buffer buffer-name program nil args)
-          ;; Add process filter to track activity for notifications
           (when-let ((proc (get-buffer-process buffer)))
             (let ((orig-filter (process-filter proc)))
               (set-process-filter
                proc
                (lambda (process output)
-                 ;; Call original filter first
                  (when orig-filter
                    (funcall orig-filter process output))
-                 ;; Then track activity for notifications
                  (with-current-buffer (process-buffer process)
                    (when (ai-code-backends-infra--output-meaningful-p output)
                      (ai-code-backends-infra--note-meaningful-output))
                    (ai-code-session-link--linkify-recent-output output))))))
-           (cons buffer (get-buffer-process buffer)))))
+          (cons buffer (get-buffer-process buffer)))))
      (t (error "Unknown backend")))))
 
 (defun ai-code-backends-infra--cleanup-dead-processes (table)
