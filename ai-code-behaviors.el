@@ -265,38 +265,53 @@ Does nothing and returns nil if not in a project (prevents state leakage)."
   (ai-code--behaviors--set :preset preset root))
 
 (defun ai-code--behaviors-clear-state (&optional root)
-  "Clear behavior state for project ROOT, or current project if nil."
-  (remhash (or root (ai-code--behaviors-project-root)) ai-code--behaviors-session-states))
+  "Clear behavior state for project ROOT, or current project if nil.
+Returns nil if not in a project (prevents state leakage)."
+  (let ((r (or root (ai-code--behaviors-project-root))))
+    (when r
+      (remhash r ai-code--behaviors-session-states))))
 
 (defun ai-code--behaviors-set-pending-preset (preset &optional root)
-  "Set pending PRESET for project ROOT."
-  (puthash (or root (ai-code--behaviors-project-root)) preset
-           ai-code--behaviors-pending-presets))
+  "Set pending PRESET for project ROOT.
+Returns nil if not in a project (prevents state leakage)."
+  (let ((r (or root (ai-code--behaviors-project-root))))
+    (when r
+      (puthash r preset ai-code--behaviors-pending-presets))))
 
 (defun ai-code--behaviors-get-pending-preset (&optional root)
-  "Get pending preset for project ROOT."
-  (gethash (or root (ai-code--behaviors-project-root))
-           ai-code--behaviors-pending-presets))
+  "Get pending preset for project ROOT.
+Returns nil if not in a project."
+  (let ((r (or root (ai-code--behaviors-project-root))))
+    (when r
+      (gethash r ai-code--behaviors-pending-presets))))
 
 (defun ai-code--behaviors-clear-pending-preset (&optional root)
-  "Clear pending preset for project ROOT."
-  (remhash (or root (ai-code--behaviors-project-root))
-           ai-code--behaviors-pending-presets))
+  "Clear pending preset for project ROOT.
+Returns nil if not in a project (prevents state leakage)."
+  (let ((r (or root (ai-code--behaviors-project-root))))
+    (when r
+      (remhash r ai-code--behaviors-pending-presets))))
 
 (defun ai-code--behaviors-get-active-bundle (&optional root)
-  "Get active constraint bundle for project ROOT, or current project if nil."
-  (gethash (or root (ai-code--behaviors-project-root))
-           ai-code--active-constraint-bundles))
+  "Get active constraint bundle for project ROOT, or current project if nil.
+Returns nil if not in a project."
+  (let ((r (or root (ai-code--behaviors-project-root))))
+    (when r
+      (gethash r ai-code--active-constraint-bundles))))
 
 (defun ai-code--behaviors-set-active-bundle (bundle &optional root)
-  "Set active constraint BUNDLE for project ROOT, or current project if nil."
-  (puthash (or root (ai-code--behaviors-project-root)) bundle
-           ai-code--active-constraint-bundles))
+  "Set active constraint BUNDLE for project ROOT, or current project if nil.
+Returns nil if not in a project (prevents state leakage)."
+  (let ((r (or root (ai-code--behaviors-project-root))))
+    (when r
+      (puthash r bundle ai-code--active-constraint-bundles))))
 
 (defun ai-code--behaviors-clear-active-bundle (&optional root)
-  "Clear active constraint bundle for project ROOT."
-  (remhash (or root (ai-code--behaviors-project-root))
-           ai-code--active-constraint-bundles))
+  "Clear active constraint bundle for project ROOT.
+Returns nil if not in a project (prevents state leakage)."
+  (let ((r (or root (ai-code--behaviors-project-root))))
+    (when r
+      (remhash r ai-code--active-constraint-bundles))))
 
 (defun ai-code--behaviors-buffer-live-p (buffer)
   "Return non-nil if BUFFER is a live buffer."
