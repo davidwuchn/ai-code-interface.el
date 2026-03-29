@@ -1092,6 +1092,21 @@ whitespace, offer behavior completion instead of symbol completion."
   "Return non-nil if NAME is a constraint bundle."
   (assoc name ai-code--constraint-bundles))
 
+(defun ai-code--valid-behavior-tag-p (tag)
+  "Check if TAG is a valid behavior tag.
+TAG is a string without the # prefix.
+Returns non-nil if the tag is a valid operating mode, modifier, or constraint."
+  (or (member tag ai-code--behavior-operating-modes)
+      (member tag ai-code--behavior-modifiers)
+      (assoc tag ai-code--constraint-modifiers)))
+
+(defun ai-code--valid-preset-name-p (name)
+  "Check if NAME is a valid preset name.
+NAME is a string without the @ prefix.
+Returns non-nil if the name is a valid preset or constraint bundle."
+  (or (assoc name ai-code--behavior-presets)
+      (ai-code--constraint-bundle-p name)))
+
 (defun ai-code--expand-constraint-bundle (bundle-name)
   "Expand BUNDLE-NAME to its constraint list.
 Returns list of constraint names from the bundle."
@@ -1118,9 +1133,6 @@ Callers should set the bundle using the correct project root via
         (unknown nil)
         (unknown-presets nil)
         (switch-needed nil)
-        (valid-tags (append ai-code--behavior-operating-modes
-                            ai-code--behavior-modifiers
-                            (mapcar #'car ai-code--constraint-modifiers)))
         (result prompt-text))
     (save-match-data
       (with-temp-buffer
@@ -1129,17 +1141,10 @@ Callers should set the bundle using the correct project root via
         (while (re-search-forward "@\\([a-zA-Z0-9_-]+\\)" nil t)
           (let ((at-name (match-string 1)))
             (cond
-             ((assoc at-name ai-code--behavior-presets)
+             ((ai-code--valid-preset-name-p at-name)
               (if preset
                   (message "Warning: Multiple presets, keeping @%s" preset)
                 (setq preset at-name)))
-             ((ai-code--constraint-bundle-p at-name)
-              (if constraint-bundle
-                  (message "Warning: Multiple constraint bundles, keeping @%s" constraint-bundle)
-                (setq constraint-bundle at-name)
-                (let ((bundle-constraints (ai-code--expand-constraint-bundle at-name)))
-                  (dolist (c bundle-constraints)
-                    (cl-pushnew c constraints :test #'equal)))))
              (t (cl-pushnew at-name unknown-presets :test #'equal)))))
         (goto-char (point-min))
         (while (re-search-forward "#\\([=a-zA-Z0-9_-]+\\)" nil t)
@@ -1170,11 +1175,12 @@ Callers should set the bundle using the correct project root via
         (goto-char (point-min))
         (while (re-search-forward "@\\([a-zA-Z0-9_-]+\\)\\s-*" nil t)
           (let ((name (match-string 1)))
-            (when (or (assoc name ai-code--behavior-presets)
-                      (ai-code--constraint-bundle-p name))
+            (when (ai-code--valid-preset-name-p name)
               (replace-match ""))))
         (goto-char (point-min))
-        (dolist (tag valid-tags)
+        (dolist (tag (append ai-code--behavior-operating-modes
+                             ai-code--behavior-modifiers
+                             (mapcar #'car ai-code--constraint-modifiers)))
           (goto-char (point-min))
           (while (re-search-forward (concat "#" (regexp-quote tag) "\\s-*") nil t)
             (replace-match "")))
