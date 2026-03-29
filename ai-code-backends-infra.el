@@ -666,8 +666,12 @@ When INSTANCE-NAME is non-nil and not \"default\", include it in the name."
     "default"))
 
 (defun ai-code-backends-infra--session-key (directory instance-name)
-  "Return a session key for DIRECTORY and INSTANCE-NAME."
-  (cons directory (ai-code-backends-infra--normalize-instance-name instance-name)))
+  "Return a session key for DIRECTORY and INSTANCE-NAME.
+ASSUMPTION: DIRECTORY may be relative or absolute path.
+BEHAVIOR: Normalizes directory to absolute path for consistent session matching.
+EDGE CASE: Nil directory is passed through to avoid errors in callers."
+  (cons (if directory (expand-file-name directory) directory)
+        (ai-code-backends-infra--normalize-instance-name instance-name)))
 
 (defun ai-code-backends-infra--session-map-key (prefix directory)
   "Return a map key for PREFIX and DIRECTORY."
