@@ -1453,13 +1453,15 @@ If PROMPT-TEXT already contains <user-prompt> tags, extracts content first."
 
 (defun ai-code--behaviors-meets-confidence-threshold-p (confidence)
   "Check if CONFIDENCE meets `ai-code-behaviors-reclassify-min-confidence'.
-CONFIDENCE should be `high', `medium', or `low'."
+CONFIDENCE should be `high', `medium', or `low'.
+Returns nil for unknown confidence values."
   (let ((levels '(high medium low))
         (min-level ai-code-behaviors-reclassify-min-confidence))
     (and confidence
          min-level
-         (<= (or (cl-position confidence levels) 0)
-             (or (cl-position min-level levels) 1)))))
+         (let ((conf-pos (cl-position confidence levels))
+               (min-pos (cl-position min-level levels)))
+           (and conf-pos min-pos (<= conf-pos min-pos))))))
 
 (defun ai-code--behaviors-apply-and-format (preset-name behaviors project-root &optional message-text)
   "Apply PRESET-NAME and BEHAVIORS for PROJECT-ROOT, return formatted prompt.
