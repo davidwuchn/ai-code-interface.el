@@ -1084,6 +1084,8 @@ Return list (BEHAVIORS CLEANED-PROMPT SWITCH-NEEDED BUNDLE-NAME) where:
 
 Callers should set the bundle using the correct project root via
 `ai-code--behaviors-set-active-bundle'."
+  (unless (stringp prompt-text)
+    (cl-return-from ai-code--extract-and-remove-hashtags (list nil prompt-text nil nil)))
   (let ((mode nil)
         (modifiers nil)
         (constraints nil)
@@ -3242,6 +3244,8 @@ PROJECT-ROOT specifies the project for state lookup.
 Returns list (PROCESSED-TEXT MODE-SWITCH-NEEDED).
 PROCESSED-TEXT is the prompt with behaviors injected.
 MODE-SWITCH-NEEDED is t when session should switch from plan to build mode."
+  (unless (stringp prompt-text)
+    (cl-return-from ai-code--agent-shell-process-behaviors (list prompt-text nil)))
   (let* ((extracted (ai-code--extract-and-remove-hashtags prompt-text))
          (explicit-behaviors (nth 0 extracted))
          (cleaned-prompt (nth 1 extracted))
