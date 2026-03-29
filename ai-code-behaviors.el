@@ -2598,6 +2598,11 @@ If we did, gptel's gptel--transform-apply-preset would remove @preset
 from prompts before our transform could see it. We handle @preset
 in our own transform and provide completion via ai-code--behavior-preset-gptel-capf."
   (add-hook 'gptel-mode-hook #'ai-code--behavior-setup-hashtag-completion)
+  ;; Fix corfu-auto-prefix for immediate # and @ completion triggers
+  (add-hook 'gptel-mode-hook
+            (lambda ()
+              (when (boundp 'corfu-auto-prefix)
+                (setq-local corfu-auto-prefix 1))))
   (unless (memq 'ai-code--gptel-agent-transform-inject-behaviors
                 (default-value 'gptel-prompt-transform-functions))
     (add-hook 'gptel-prompt-transform-functions
@@ -3624,7 +3629,10 @@ Safe to call multiple times - guards prevent duplicate advice/hooks."
     (add-hook 'agent-shell-mode-hook
               (lambda ()
                 (add-hook 'completion-at-point-functions
-                          #'ai-code--agent-shell-hashtag-capf nil t)))
+                          #'ai-code--agent-shell-hashtag-capf nil t)
+                ;; Fix corfu-auto-prefix for immediate # and @ completion
+                (when (boundp 'corfu-auto-prefix)
+                  (setq-local corfu-auto-prefix 1))))
     ;; Enable mode-line after shell is ready (avoids deadlock with transient)
     ;; The event subscription is per-buffer, so duplicates are naturally avoided
     (add-hook 'agent-shell-mode-hook
