@@ -1151,6 +1151,8 @@ TEST: Verify with nil/empty inputs that user-error is signaled."
              (parts (split-string-shell-command command))
              (program (car parts))
              (args (cdr parts)))
+        (unless (and (stringp program) (> (length program) 0))
+          (user-error "Cannot parse command '%s' for eat backend" command))
         (ai-code-backends-infra--set-session-directory buffer working-dir)
         (with-current-buffer buffer
           (setq-local ai-code-backends-infra--session-terminal-backend 'eat)
