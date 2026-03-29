@@ -3068,7 +3068,7 @@ Handles * (matches anything) and ? (matches single char)."
           (setq result (concat result ".*")))
          ((eq char ??)
           (setq result (concat result ".")))
-         ((memq char '(?. ?^ ?$ ?+ ?\\ ?\[ ?\] ?\( ?\)))
+         ((memq char '(?. ?^ ?$ ?+ ?\\ ?\[ ?\] ?\( ?\) ?\{ ?\} ?\|))
           (setq result (concat result "\\" (string char))))
          (t
           (setq result (concat result (string char))))))
