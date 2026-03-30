@@ -229,20 +229,20 @@ TEST: Call with nil root outside a git repo, should return nil"
 If ROOT is nil, use current project root.
 Returns nil if not in a project."
   (ai-code--with-project-root r
-                              (plist-get (or (gethash r ai-code--behaviors-session-states)
-                                             '(:state nil :preset nil))
-                                         key)))
+    (plist-get (or (gethash r ai-code--behaviors-session-states)
+                   '(:state nil :preset nil))
+               key)))
 
 (defun ai-code--behaviors--set (key value &optional root)
   "Set entry KEY to VALUE in session states for ROOT.
 If ROOT is nil, use current project root.
 Does nothing and returns nil if not in a project (prevents state leakage)."
   (ai-code--with-project-root r
-                              (let ((entry (or (gethash r ai-code--behaviors-session-states)
-                                               '(:state nil :preset nil))))
-                                (puthash r (plist-put (copy-tree entry) key value)
-                                         ai-code--behaviors-session-states)
-                                value)))
+    (let ((entry (or (gethash r ai-code--behaviors-session-states)
+                     '(:state nil :preset nil))))
+      (puthash r (plist-put (copy-tree entry) key value)
+               ai-code--behaviors-session-states)
+      value)))
 
 (defun ai-code--behaviors-get-state (&optional root)
   "Get behavior state for project ROOT, or current project if nil."
@@ -264,43 +264,43 @@ Does nothing and returns nil if not in a project (prevents state leakage)."
   "Clear behavior state for project ROOT, or current project if nil.
 Returns nil if not in a project (prevents state leakage)."
   (ai-code--with-project-root r
-                              (remhash r ai-code--behaviors-session-states)))
+    (remhash r ai-code--behaviors-session-states)))
 
 (defun ai-code--behaviors-set-pending-preset (preset &optional root)
   "Set pending PRESET for project ROOT.
 Returns nil if not in a project (prevents state leakage)."
   (ai-code--with-project-root r
-                              (puthash r preset ai-code--behaviors-pending-presets)))
+    (puthash r preset ai-code--behaviors-pending-presets)))
 
 (defun ai-code--behaviors-get-pending-preset (&optional root)
   "Get pending preset for project ROOT.
 Returns nil if not in a project."
   (ai-code--with-project-root r
-                              (gethash r ai-code--behaviors-pending-presets)))
+    (gethash r ai-code--behaviors-pending-presets)))
 
 (defun ai-code--behaviors-clear-pending-preset (&optional root)
   "Clear pending preset for project ROOT.
 Returns nil if not in a project (prevents state leakage)."
   (ai-code--with-project-root r
-                              (remhash r ai-code--behaviors-pending-presets)))
+    (remhash r ai-code--behaviors-pending-presets)))
 
 (defun ai-code--behaviors-get-active-bundle (&optional root)
   "Get active constraint bundle for project ROOT, or current project if nil.
 Returns nil if not in a project."
   (ai-code--with-project-root r
-                              (gethash r ai-code--active-constraint-bundles)))
+    (gethash r ai-code--active-constraint-bundles)))
 
 (defun ai-code--behaviors-set-active-bundle (bundle &optional root)
   "Set active constraint BUNDLE for project ROOT, or current project if nil.
 Returns nil if not in a project (prevents state leakage)."
   (ai-code--with-project-root r
-                              (puthash r bundle ai-code--active-constraint-bundles)))
+    (puthash r bundle ai-code--active-constraint-bundles)))
 
 (defun ai-code--behaviors-clear-active-bundle (&optional root)
   "Clear active constraint bundle for project ROOT.
 Returns nil if not in a project (prevents state leakage)."
   (ai-code--with-project-root r
-                              (remhash r ai-code--active-constraint-bundles)))
+    (remhash r ai-code--active-constraint-bundles)))
 
 (defconst ai-code--behavior-operating-modes
   '("=frame" "=research" "=design" "=spec" "=code" "=debug"
@@ -1115,41 +1115,53 @@ Callers should set the bundle using the correct project root via
           (unknown nil)
           (unknown-presets nil)
           (switch-needed nil)
-          (valid-tags (append ai-code--behavior-operating-modes
-                              ai-code--behavior-modifiers
-                              (mapcar #'car ai-code--constraint-modifiers)))
-          (result prompt-text))
+          (valid-modes ai-code--behavior-operating-modes)
+          (valid-modifiers ai-code--behavior-modifiers)
+          (valid-constraints (mapcar #'car ai-code--constraint-modifiers))
+          (valid-presets (mapcar #'car ai-code--behavior-presets))
+          (valid-bundles (mapcar #'car ai-code--constraint-bundles))
+          (result prompt-text)
+          (tags-to-remove nil))
       (save-match-data
         (with-temp-buffer
           (insert prompt-text)
           (goto-char (point-min))
           (while (re-search-forward "@\\([a-zA-Z0-9_-]+\\)" nil t)
-            (let ((at-name (match-string 1)))
+            (let ((at-name (match-string 1))
+                  (start (match-beginning 0))
+                  (end (match-end 0)))
               (cond
-               ((assoc at-name ai-code--behavior-presets)
+               ((member at-name valid-presets)
                 (if preset
                     (message "Warning: Multiple presets, keeping @%s" preset)
-                  (setq preset at-name)))
-               ((ai-code--constraint-bundle-p at-name)
+                  (setq preset at-name))
+                (push (cons start end) tags-to-remove))
+               ((member at-name valid-bundles)
                 (if constraint-bundle
                     (message "Warning: Multiple constraint bundles, keeping @%s" constraint-bundle)
                   (setq constraint-bundle at-name)
                   (let ((bundle-constraints (ai-code--expand-constraint-bundle at-name)))
                     (dolist (c bundle-constraints)
-                      (cl-pushnew c constraints :test #'equal)))))
+                      (cl-pushnew c constraints :test #'equal))))
+                (push (cons start end) tags-to-remove))
                (t (cl-pushnew at-name unknown-presets :test #'equal)))))
           (goto-char (point-min))
           (while (re-search-forward "#\\([=a-zA-Z0-9_-]+\\)" nil t)
-            (let ((tag (match-string 1)))
+            (let ((tag (match-string 1))
+                  (start (match-beginning 0))
+                  (end (match-end 0)))
               (cond
-               ((member tag ai-code--behavior-operating-modes)
+               ((member tag valid-modes)
                 (if mode
                     (message "Warning: Multiple operating modes, keeping #%s (ignoring #%s)" mode tag)
-                  (setq mode tag)))
-               ((member tag ai-code--behavior-modifiers)
-                (cl-pushnew tag modifiers :test #'equal))
-               ((assoc tag ai-code--constraint-modifiers)
-                (cl-pushnew tag constraints :test #'equal))
+                  (setq mode tag))
+                (push (cons start end) tags-to-remove))
+               ((member tag valid-modifiers)
+                (cl-pushnew tag modifiers :test #'equal)
+                (push (cons start end) tags-to-remove))
+               ((member tag valid-constraints)
+                (cl-pushnew tag constraints :test #'equal)
+                (push (cons start end) tags-to-remove))
                (t (cl-pushnew tag unknown :test #'equal)))))
           (when unknown
             (message "Warning: Unknown behaviors preserved in prompt: #%s"
@@ -1164,17 +1176,8 @@ Callers should set the bundle using the correct project root via
             (when (and preset (not (ai-code--behaviors-preset-readonly-p preset)))
               (message "Switching to agent mode for @%s..." preset)
               (setq switch-needed t)))
-          (goto-char (point-min))
-          (while (re-search-forward "@\\([a-zA-Z0-9_-]+\\)\\s-*" nil t)
-            (let ((name (match-string 1)))
-              (when (or (assoc name ai-code--behavior-presets)
-                        (ai-code--constraint-bundle-p name))
-                (replace-match ""))))
-          (goto-char (point-min))
-          (dolist (tag valid-tags)
-            (goto-char (point-min))
-            (while (re-search-forward (concat "#" (regexp-quote tag) "\\s-*") nil t)
-              (replace-match "")))
+          (dolist (pos (sort tags-to-remove (lambda (a b) (> (car a) (car b)))))
+            (delete-region (car pos) (cdr pos)))
           (setq result (string-trim (buffer-string)))))
       (list (when (or mode modifiers constraints preset)
               (list :mode mode
