@@ -62,7 +62,7 @@ Can be either `vterm' or `eat'."
   :group 'ai-code-backends-infra)
 
 (defcustom ai-code-backends-infra-window-width 90
-  "Body width of the side window when opened on left or right."
+  "Width of the side window when opened on left or right."
   :type 'integer
   :group 'ai-code-backends-infra)
 
@@ -86,7 +86,7 @@ Can be either `vterm' or `eat'."
   :type 'boolean
   :group 'ai-code-backends-infra)
 
-(defcustom ai-code-backends-infra-vterm-render-delay 0.01
+(defcustom ai-code-backends-infra-vterm-render-delay 0.005
   "Rendering optimization delay for batched terminal updates."
   :type 'number
   :group 'ai-code-backends-infra)
@@ -166,12 +166,6 @@ if the AI session buffer is not currently visible."
   :group 'ai-code-backends-infra)
 
 ;;; Vterm Rendering Optimization
-
-(defconst ai-code-backends-infra--vterm-redraw-regexp
-  "\033\\[[0-9;?]*[A-GJKMH]"
-  "Regexp to detect ANSI terminal redraw or movement sequences.
-Standalone carriage returns are intentionally excluded so simple CR-based
-updates are handled separately via carriage return counting.")
 
 (defvar-local ai-code-backends-infra--vterm-render-queue nil)
 (defvar-local ai-code-backends-infra--vterm-render-timer nil)
@@ -268,84 +262,46 @@ The timer is reset only after meaningful output is observed."
        (process-buffer process)
        input))))
 
-(defun ai-code-backends-infra--vterm-render-preserving-copy-mode-view (render-fn)
-  "Call RENDER-FN while keeping the user's `vterm-copy-mode' viewport stable."
-  (if (not (bound-and-true-p vterm-copy-mode))
-      (funcall render-fn)
-    (let ((point-marker (copy-marker (point) t))
-          ;; Use advancing markers so output inserted at saved positions
-          ;; keeps the restored viewport aligned with the same content.
-          (window-states
-           (mapcar (lambda (window)
-                     (list window
-                           (copy-marker (window-start window) t)
-                           (copy-marker (window-point window) t)))
-                   (get-buffer-window-list (current-buffer) nil t))))
-      (unwind-protect
-          ;; Suppress intermediate redisplay until restoring the captured
-          ;; viewport state, avoiding visible jumps to live terminal output.
-          (let ((inhibit-redisplay t))
-            (funcall render-fn))
-        (dolist (state window-states)
-          (pcase-let ((`(,window ,start-marker ,window-point-marker) state))
-            (when (window-live-p window)
-              (set-window-start window start-marker t)
-              (set-window-point window window-point-marker))
-            (set-marker start-marker nil)
-            (set-marker window-point-marker nil)))
-        (goto-char point-marker)
-        (set-marker point-marker nil)))))
-
-(defun ai-code-backends-infra--vterm-render-queued-output (orig-fun buffer)
-  "Render queued vterm output for BUFFER using ORIG-FUN."
-  (when (buffer-live-p buffer)
-    (with-current-buffer buffer
-      (setq ai-code-backends-infra--vterm-render-timer nil)
-      (when ai-code-backends-infra--vterm-render-queue
-        (let ((data ai-code-backends-infra--vterm-render-queue))
-          (setq ai-code-backends-infra--vterm-render-queue nil)
-          (when-let* ((process (get-buffer-process buffer))
-                      ((process-live-p process)))
-            (ai-code-backends-infra--vterm-render-preserving-copy-mode-view
-             (lambda ()
-               (funcall orig-fun process data)))))))))
-
 (defun ai-code-backends-infra--vterm-smart-renderer (orig-fun process input)
   "Smart rendering filter for optimized vterm display updates.
 Activity tracking for notifications is handled separately by
 `ai-code-backends-infra--vterm-notification-tracker'.
-When `vterm-copy-mode' is active, rendering preserves the current
-viewport so scrollback continues updating without yanking navigation."
+Deferred rendering is suspended while `vterm-copy-mode' is active so that
+scrolling and copying are not disrupted by timer-driven redraws."
   (if (or (not ai-code-backends-infra-vterm-anti-flicker)
           (not (ai-code-backends-infra--session-buffer-p (process-buffer process))))
       (funcall orig-fun process input)
     (with-current-buffer (process-buffer process)
       (let* ((complex-redraw-detected
-              (string-match-p ai-code-backends-infra--vterm-redraw-regexp input))
+              (string-match-p "\033\\[[0-9]*A.*\033\\[K.*\033\\[[0-9]*A.*\033\\[K" input))
              (clear-count (1- (length (split-string input "\033\\[K"))))
-             (cr-count (cl-count ?\15 input))
              (escape-count (cl-count ?\033 input))
              (input-length (length input))
-             (escape-density (if (> input-length 0)
-                                 (/ (float escape-count) input-length)
-                               0)))
+             (escape-density (if (> input-length 0) (/ (float escape-count) input-length) 0)))
         (if (or complex-redraw-detected
-                (>= cr-count 2)
                 (and (> escape-density 0.3) (>= clear-count 2))
-                ai-code-backends-infra--vterm-render-queue)
-            (let ((buffer (current-buffer)))
+                ai-code-backends-infra--vterm-render-queue
+                (bound-and-true-p vterm-copy-mode))
+            (progn
               (setq ai-code-backends-infra--vterm-render-queue
                     (concat ai-code-backends-infra--vterm-render-queue input))
               (when ai-code-backends-infra--vterm-render-timer
                 (cancel-timer ai-code-backends-infra--vterm-render-timer))
               (setq ai-code-backends-infra--vterm-render-timer
                     (run-at-time ai-code-backends-infra-vterm-render-delay nil
-                                 #'ai-code-backends-infra--vterm-render-queued-output
-                                 orig-fun
-                                 buffer)))
-          (ai-code-backends-infra--vterm-render-preserving-copy-mode-view
-           (lambda ()
-             (funcall orig-fun process input))))))))
+                                 (lambda (buf)
+                                   (when (buffer-live-p buf)
+                                     (with-current-buffer buf
+                                       ;; Clear timer reference regardless of whether we render.
+                                       (setq ai-code-backends-infra--vterm-render-timer nil)
+                                       (when (and ai-code-backends-infra--vterm-render-queue
+                                                  (not (bound-and-true-p vterm-copy-mode)))
+                                         (let ((inhibit-redisplay t)
+                                               (data ai-code-backends-infra--vterm-render-queue))
+                                           (setq ai-code-backends-infra--vterm-render-queue nil)
+                                           (funcall orig-fun (get-buffer-process buf) data))))))
+                                 (current-buffer))))
+          (funcall orig-fun process input))))))
 
 (defun ai-code-backends-infra--vterm-flush-on-copy-mode-exit ()
   "Flush any pending render queue when exiting `vterm-copy-mode'.
@@ -442,12 +398,16 @@ returns to normal terminal interaction."
                #'ai-code-backends-infra--sync-terminal-cursor nil t))))
 
 (defun ai-code-backends-infra--terminal-dispatch (vterm-fn eat-fn)
-  "Run VTERM-FN or EAT-FN based on selected terminal backend."
-  (pcase (ai-code-backends-infra--current-terminal-backend)
-    ('vterm (funcall vterm-fn))
-    ('eat (funcall eat-fn))
-    (_ (error "Unknown terminal backend: %s"
-              (ai-code-backends-infra--current-terminal-backend)))))
+  "Run VTERM-FN or EAT-FN based on selected terminal backend.
+ASSUMPTION: VTERM-FN and EAT-FN are callable functions.
+BEHAVIOR: Dispatches to appropriate backend function based on current terminal backend.
+EDGE CASE: Unknown backend signals an error with the backend value for debugging.
+TEST: Verify error message includes the unknown backend value."
+  (let ((backend (ai-code-backends-infra--current-terminal-backend)))
+    (pcase backend
+      ('vterm (funcall vterm-fn))
+      ('eat (funcall eat-fn))
+      (_ (error "Unknown terminal backend: %s" backend)))))
 
 (defun ai-code-backends-infra--terminal-send-string (string)
   "Send STRING to the terminal in the current buffer.
@@ -507,13 +467,18 @@ SEQUENCE is the terminal sequence sent for `S-<return>' and `C-<return>'."
                                                          multiline-input-sequence)
   "Configure BUFFER with shared session keybindings.
 ESCAPE-FN is bound to `C-<escape>' when non-nil.
-MULTILINE-INPUT-SEQUENCE configures `S-<return>' and `C-<return>' when non-nil."
-  (with-current-buffer buffer
-    (when escape-fn
-      (local-set-key (kbd "C-<escape>") escape-fn))
-    (ai-code-backends-infra--configure-multiline-input
-     multiline-input-sequence)
-    (ai-code-session-link--linkify-session-region (point-min) (point-max))))
+MULTILINE-INPUT-SEQUENCE configures `S-<return>' and `C-<return>' when non-nil.
+ASSUMPTION: BUFFER is a live buffer object.
+EDGE CASE: Nil or dead buffers are silently ignored to prevent errors.
+TEST: (ai-code-backends-infra--configure-session-buffer nil) => nil
+      (ai-code-backends-infra--configure-session-buffer (get-buffer-create \"*test*\")) => configures buffer"
+  (when (buffer-live-p buffer)
+    (with-current-buffer buffer
+      (when escape-fn
+        (local-set-key (kbd "C-<escape>") escape-fn))
+      (ai-code-backends-infra--configure-multiline-input
+       multiline-input-sequence)
+      (ai-code-session-link--linkify-session-region (point-min) (point-max)))))
 
 ;;; Reflow and Window Management
 
@@ -568,34 +533,33 @@ MULTILINE-INPUT-SEQUENCE configures `S-<return>' and `C-<return>' when non-nil."
                   :test #'eq))))
 
 (defun ai-code-backends-infra--display-buffer-in-side-window (buffer)
-  "Display BUFFER in a side window."
-  (let ((window
-         (if ai-code-backends-infra-use-side-window
-             (let* ((side ai-code-backends-infra-window-side)
-                    (display-buffer-alist
-                     `((,(regexp-quote (buffer-name buffer))
-                        (display-buffer-in-side-window)
-                        (side . ,side)
-                        (slot . 0)
-                        ,@(when (memq side '(left right))
-                            `((window-width
-                               . ,#'ai-code-backends-infra--fit-side-window-body-width)))
-                        ,@(when (memq side '(top bottom))
-                            `((window-height . ,ai-code-backends-infra-window-height)))
-                        (window-parameters . ((no-delete-other-windows . t)))))))
-               (display-buffer buffer))
-           (display-buffer buffer))))
-    (setq ai-code-backends-infra--last-accessed-buffer buffer)
-    (when (and window ai-code-backends-infra-focus-on-open)
-      (select-window window))
-    window))
-
-(defun ai-code-backends-infra--fit-side-window-body-width (window)
-  "Resize WINDOW so its body width matches `ai-code-backends-infra-window-width'."
-  (let ((delta (- ai-code-backends-infra-window-width
-                  (window-body-width window))))
-    (unless (zerop delta)
-      (window-resize window delta t))))
+  "Display BUFFER in a side window.
+ASSUMPTION: BUFFER is a buffer object or buffer name string.
+BEHAVIOR: Displays buffer in side window if use-side-window is enabled.
+EDGE CASE: Nil or dead buffers return nil without error.
+TEST: (ai-code-backends-infra--display-buffer-in-side-window nil) => nil
+      (ai-code-backends-infra--display-buffer-in-side-window \"*nonexistent*\") => nil"
+  (when (and buffer (or (buffer-live-p buffer)
+                        (and (stringp buffer) (get-buffer buffer))))
+    (let ((window
+           (if ai-code-backends-infra-use-side-window
+               (let* ((side ai-code-backends-infra-window-side)
+                      (display-buffer-alist
+                       `((,(regexp-quote (buffer-name (get-buffer buffer)))
+                          (display-buffer-in-side-window)
+                          (side . ,side)
+                          (slot . 0)
+                          ,@(when (memq side '(left right))
+                              `((window-width . ,ai-code-backends-infra-window-width)))
+                          ,@(when (memq side '(top bottom))
+                              `((window-height . ,ai-code-backends-infra-window-height)))
+                          (window-parameters . ((no-delete-other-windows . t)))))))
+                 (display-buffer buffer))
+             (display-buffer buffer))))
+      (setq ai-code-backends-infra--last-accessed-buffer buffer)
+      (when (and window ai-code-backends-infra-focus-on-open)
+        (select-window window))
+      window)))
 
 ;;; Session Helpers
 
@@ -658,26 +622,16 @@ Return a cons of (BUFFER . MISSING-P)."
 MISSING-MESSAGE is used when no target session exists.
 When PREFIX and WORKING-DIR are present, prefer the attached session for
 SOURCE-BUFFER unless FORCE-PROMPT is non-nil."
-  (let* ((file-session-key (and prefix
-                                source-buffer
-                                (ai-code-backends-infra--file-session-map-key
-                                 prefix
-                                 source-buffer)))
-         (attached-state (and prefix working-dir
+  (let* ((attached-state (and prefix working-dir
                               (ai-code-backends-infra--attached-file-session
                                prefix
                                source-buffer
                                working-dir)))
          (attached-buffer (car-safe attached-state))
          (attached-missing (cdr-safe attached-state))
-         (needs-initial-file-selection (and (null buffer-name)
-                                            file-session-key
-                                            (null attached-buffer)
-                                            (not attached-missing)))
          (effective-force-prompt
           (or force-prompt
-              attached-missing
-              needs-initial-file-selection))
+              attached-missing))
          (buffer (or (and buffer-name (get-buffer buffer-name))
                      (and attached-buffer (not force-prompt) attached-buffer)
                      (and prefix working-dir
@@ -1032,8 +986,8 @@ CLEANUP-FN is called with no arguments when the process exits.
 INSTANCE-NAME overrides instance selection when non-nil.
 PREFIX enables instance selection when BUFFER-NAME is nil.
 When FORCE-PROMPT is non-nil, always prompt for a new instance name.
-ENV-VARS is a list of additional environment variable strings, for example
-\"VAR=value\", passed to the terminal session on creation.
+ENV-VARS is a list of additional environment variable strings (e.g., \"VAR=value\")
+passed to the terminal session on creation.
 MULTILINE-INPUT-SEQUENCE configures `S-<return>' and `C-<return>' to send
 that sequence inside the session buffer.
 POST-START-FN is called with (BUFFER PROCESS INSTANCE-NAME) after a new
