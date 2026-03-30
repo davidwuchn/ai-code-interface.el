@@ -5,7 +5,7 @@
 
 ;;; Commentary:
 ;; This module provides behavior injection based on prompt intent classification.
-;; Behaviors are loaded from the ai-behaviors repository (https://github.com/davidwuchn/ai-behaviors)
+;; Behaviors are loaded from the ai-behaviors repository (https://github.com/xificurC/ai-behaviors)
 ;; and injected into prompts to guide AI responses.
 ;;
 ;; Features:
@@ -62,7 +62,7 @@ When nil, only explicit #hashtags in prompts are processed."
 
 (defcustom ai-code-behaviors-repo-path "~/.config/ai-behaviors"
   "Path to cloned ai-behaviors repository.
-The repository should be cloned from https://github.com/davidwuchn/ai-behaviors"
+The repository should be cloned from https://github.com/xificurC/ai-behaviors"
   :type 'directory
   :group 'ai-code-behaviors)
 
@@ -80,7 +80,7 @@ Default is nil - users must explicitly opt in."
   :type 'boolean
   :group 'ai-code-behaviors)
 
-(defcustom ai-code-behaviors-repo-url "https://github.com/davidwuchn/ai-behaviors"
+(defcustom ai-code-behaviors-repo-url "https://github.com/xificurC/ai-behaviors.git"
   "URL for cloning the ai-behaviors repository."
   :type 'string
   :group 'ai-code-behaviors)
@@ -166,13 +166,6 @@ Uses call-process instead of shell to avoid injection vulnerabilities."
     (when (zerop (apply #'call-process "git" nil t nil args))
       (string-trim (buffer-string)))))
 
-(defun ai-code--handle-error (err context)
-  "Handle error ERR with CONTEXT description.
-Logs error message and returns nil for further processing.
-CONTEXT is a string describing what operation failed."
-  (message "%s error: %s" context (error-message-string err))
-  nil)
-
 (defvar ai-code--behaviors-session-states (make-hash-table :test #'equal)
   "Hash table of behaviors per git repository.
 Key: git root directory (string)
@@ -204,15 +197,6 @@ Key: project root, Value: plist (:original ORIG :processed PROC :behaviors BEH).
 (defvar ai-code--behavior-presets)
 (defvar ai-code-behaviors-gptel-agent-auto-classify)
 
-;; ASSUMPTION: JSON parsing errors are the primary error type in extraction
-;; BEHAVIOR: Extracts error symbols for consistent error handling
-;; EDGE CASE: New error types can be added to the list
-;; TEST: Verify error patterns match json-read-from-string output
-(defconst ai-code--json-parse-error-symbols
-  '(json-read-error json-error)
-  "Error symbols thrown by JSON parsing functions.
-Used for consistent error handling across extraction functions.")
-
 (defun ai-code--behaviors-project-root (&optional buffer)
   "Return git root for BUFFER, or current buffer if nil.
 For gptel-agent buffers, falls back to extracting project from buffer name.
@@ -226,27 +210,39 @@ Returns nil if not in a project (prevents state leakage between projects)."
         (and (fboundp 'ai-code--behaviors-extract-project-from-buffer-name)
              (ai-code--behaviors-extract-project-from-buffer-name)))))
 
+(defmacro ai-code--with-project-root (root &rest body)
+  "Execute BODY with ROOT bound to project root, or return nil if not in project.
+ROOT is a symbol that will be bound to the project root directory.
+If project root cannot be determined, BODY is not executed and nil is returned.
+
+ASSUMPTION: Most behavior operations require a valid project root
+BEHAVIOR: Binds ROOT to project root or returns nil
+EDGE CASE: Returns nil gracefully when not in a project (prevents state leakage)
+TEST: Call with nil root outside a git repo, should return nil"
+  (declare (indent 1))
+  `(let ((,root (or ,root (ai-code--behaviors-project-root))))
+     (when ,root
+       ,@body)))
+
 (defun ai-code--behaviors--get (key &optional root)
   "Get entry KEY from session states for ROOT.
 If ROOT is nil, use current project root.
 Returns nil if not in a project."
-  (let ((r (or root (ai-code--behaviors-project-root))))
-    (when r
-      (plist-get (or (gethash r ai-code--behaviors-session-states)
-                     '(:state nil :preset nil))
-                 key))))
+  (ai-code--with-project-root r
+                              (plist-get (or (gethash r ai-code--behaviors-session-states)
+                                             '(:state nil :preset nil))
+                                         key)))
 
 (defun ai-code--behaviors--set (key value &optional root)
   "Set entry KEY to VALUE in session states for ROOT.
 If ROOT is nil, use current project root.
 Does nothing and returns nil if not in a project (prevents state leakage)."
-  (let ((r (or root (ai-code--behaviors-project-root))))
-    (when r
-      (let ((entry (or (gethash r ai-code--behaviors-session-states)
-                       '(:state nil :preset nil))))
-        (puthash r (plist-put (copy-tree entry) key value)
-                 ai-code--behaviors-session-states)
-        value))))
+  (ai-code--with-project-root r
+                              (let ((entry (or (gethash r ai-code--behaviors-session-states)
+                                               '(:state nil :preset nil))))
+                                (puthash r (plist-put (copy-tree entry) key value)
+                                         ai-code--behaviors-session-states)
+                                value)))
 
 (defun ai-code--behaviors-get-state (&optional root)
   "Get behavior state for project ROOT, or current project if nil."
@@ -267,60 +263,44 @@ Does nothing and returns nil if not in a project (prevents state leakage)."
 (defun ai-code--behaviors-clear-state (&optional root)
   "Clear behavior state for project ROOT, or current project if nil.
 Returns nil if not in a project (prevents state leakage)."
-  (let ((r (or root (ai-code--behaviors-project-root))))
-    (when r
-      (remhash r ai-code--behaviors-session-states))))
+  (ai-code--with-project-root r
+                              (remhash r ai-code--behaviors-session-states)))
 
 (defun ai-code--behaviors-set-pending-preset (preset &optional root)
   "Set pending PRESET for project ROOT.
 Returns nil if not in a project (prevents state leakage)."
-  (let ((r (or root (ai-code--behaviors-project-root))))
-    (when r
-      (puthash r preset ai-code--behaviors-pending-presets))))
+  (ai-code--with-project-root r
+                              (puthash r preset ai-code--behaviors-pending-presets)))
 
 (defun ai-code--behaviors-get-pending-preset (&optional root)
   "Get pending preset for project ROOT.
 Returns nil if not in a project."
-  (let ((r (or root (ai-code--behaviors-project-root))))
-    (when r
-      (gethash r ai-code--behaviors-pending-presets))))
+  (ai-code--with-project-root r
+                              (gethash r ai-code--behaviors-pending-presets)))
 
 (defun ai-code--behaviors-clear-pending-preset (&optional root)
   "Clear pending preset for project ROOT.
 Returns nil if not in a project (prevents state leakage)."
-  (let ((r (or root (ai-code--behaviors-project-root))))
-    (when r
-      (remhash r ai-code--behaviors-pending-presets))))
+  (ai-code--with-project-root r
+                              (remhash r ai-code--behaviors-pending-presets)))
 
 (defun ai-code--behaviors-get-active-bundle (&optional root)
   "Get active constraint bundle for project ROOT, or current project if nil.
 Returns nil if not in a project."
-  (let ((r (or root (ai-code--behaviors-project-root))))
-    (when r
-      (gethash r ai-code--active-constraint-bundles))))
+  (ai-code--with-project-root r
+                              (gethash r ai-code--active-constraint-bundles)))
 
 (defun ai-code--behaviors-set-active-bundle (bundle &optional root)
   "Set active constraint BUNDLE for project ROOT, or current project if nil.
 Returns nil if not in a project (prevents state leakage)."
-  (let ((r (or root (ai-code--behaviors-project-root))))
-    (when r
-      (puthash r bundle ai-code--active-constraint-bundles))))
+  (ai-code--with-project-root r
+                              (puthash r bundle ai-code--active-constraint-bundles)))
 
 (defun ai-code--behaviors-clear-active-bundle (&optional root)
   "Clear active constraint bundle for project ROOT.
 Returns nil if not in a project (prevents state leakage)."
-  (let ((r (or root (ai-code--behaviors-project-root))))
-    (when r
-      (remhash r ai-code--active-constraint-bundles))))
-
-(defun ai-code--behaviors-buffer-live-p (buffer)
-  "Return non-nil if BUFFER is a live buffer."
-  (and buffer (buffer-live-p buffer)))
-
-(defun ai-code--behaviors-buffer-local-value (symbol buffer)
-  "Get buffer-local value of SYMBOL in BUFFER if BUFFER is live."
-  (when (ai-code--behaviors-buffer-live-p buffer)
-    (buffer-local-value symbol buffer)))
+  (ai-code--with-project-root r
+                              (remhash r ai-code--active-constraint-bundles)))
 
 (defconst ai-code--behavior-operating-modes
   '("=frame" "=research" "=design" "=spec" "=code" "=debug"
@@ -584,7 +564,7 @@ Key: project root, Value: (:constraints (C1 C2 ...) :timestamp TIME).")
   "Hash table of active constraint bundles per project.
 Key: project root, Value: bundle name string or nil.")
 
-(defconst ai-code-behaviors--synced-commit "14f1eed"
+(defconst ai-code-behaviors--synced-commit "d1340b7"
   "The upstream ai-behaviors commit this source code is synced with.
 Update this when syncing with upstream behavior changes.")
 
@@ -970,7 +950,6 @@ Return the prompt content string, or nil if not found."
 Shows * annotation for modify presets in gptel modes."
   (when (and (boundp 'major-mode)
              (eq major-mode 'ai-code-prompt-mode)
-             (not (bobp))  ; Ensure not at beginning of buffer
              (save-excursion
                (skip-chars-backward "a-zA-Z0-9_-")
                (eq (char-before) ?@)))
@@ -1107,21 +1086,6 @@ whitespace, offer behavior completion instead of symbol completion."
   "Return non-nil if NAME is a constraint bundle."
   (assoc name ai-code--constraint-bundles))
 
-(defun ai-code--valid-behavior-tag-p (tag)
-  "Check if TAG is a valid behavior tag.
-TAG is a string without the # prefix.
-Returns non-nil if the tag is a valid operating mode, modifier, or constraint."
-  (or (member tag ai-code--behavior-operating-modes)
-      (member tag ai-code--behavior-modifiers)
-      (assoc tag ai-code--constraint-modifiers)))
-
-(defun ai-code--valid-preset-name-p (name)
-  "Check if NAME is a valid preset name.
-NAME is a string without the @ prefix.
-Returns non-nil if the name is a valid preset or constraint bundle."
-  (or (assoc name ai-code--behavior-presets)
-      (ai-code--constraint-bundle-p name)))
-
 (defun ai-code--expand-constraint-bundle (bundle-name)
   "Expand BUNDLE-NAME to its constraint list.
 Returns list of constraint names from the bundle."
@@ -1144,73 +1108,82 @@ Callers should set the bundle using the correct project root via
     (unless (stringp prompt-text)
       (cl-return-from ai-code--extract-and-remove-hashtags (list nil prompt-text nil nil)))
     (let ((mode nil)
-        (modifiers nil)
-        (constraints nil)
-        (preset nil)
-        (constraint-bundle nil)
-        (unknown nil)
-        (unknown-presets nil)
-        (switch-needed nil)
-        (result prompt-text))
-    (save-match-data
-      (with-temp-buffer
-        (insert prompt-text)
-        (goto-char (point-min))
-        (while (re-search-forward "@\\([a-zA-Z0-9_-]+\\)" nil t)
-          (let ((at-name (match-string 1)))
-            (cond
-             ((ai-code--valid-preset-name-p at-name)
-              (if preset
-                  (message "Warning: Multiple presets, keeping @%s" preset)
-                (setq preset at-name)))
-             (t (cl-pushnew at-name unknown-presets :test #'equal)))))
-        (goto-char (point-min))
-        (while (re-search-forward "#\\([=a-zA-Z0-9_-]+\\)" nil t)
-          (let ((tag (match-string 1)))
-            (cond
-             ((member tag ai-code--behavior-operating-modes)
-              (if mode
-                  (message "Warning: Multiple operating modes, keeping #%s (ignoring #%s)" mode tag)
-                (setq mode tag)))
-             ((member tag ai-code--behavior-modifiers)
-              (cl-pushnew tag modifiers :test #'equal))
-             ((assoc tag ai-code--constraint-modifiers)
-              (cl-pushnew tag constraints :test #'equal))
-             (t (cl-pushnew tag unknown :test #'equal)))))
-        (when unknown
-          (message "Warning: Unknown behaviors preserved in prompt: #%s"
-                   (mapconcat #'identity unknown " #")))
-        (when unknown-presets
-          (message "Warning: Unknown presets preserved in prompt: @%s"
-                   (mapconcat #'identity unknown-presets " @")))
-        (when (eq context-preset 'gptel-plan)
-          (when (and mode (not (ai-code--behaviors-mode-readonly-p mode)))
-            (message "Switching to agent mode for #%s..." mode)
-            (setq switch-needed t))
-          (when (and preset (not (ai-code--behaviors-preset-readonly-p preset)))
-            (message "Switching to agent mode for @%s..." preset)
-            (setq switch-needed t)))
-        (goto-char (point-min))
-        (while (re-search-forward "@\\([a-zA-Z0-9_-]+\\)\\s-*" nil t)
-          (let ((name (match-string 1)))
-            (when (ai-code--valid-preset-name-p name)
-              (replace-match ""))))
-        (goto-char (point-min))
-        (dolist (tag (append ai-code--behavior-operating-modes
-                             ai-code--behavior-modifiers
-                             (mapcar #'car ai-code--constraint-modifiers)))
+          (modifiers nil)
+          (constraints nil)
+          (preset nil)
+          (constraint-bundle nil)
+          (unknown nil)
+          (unknown-presets nil)
+          (switch-needed nil)
+          (valid-tags (append ai-code--behavior-operating-modes
+                              ai-code--behavior-modifiers
+                              (mapcar #'car ai-code--constraint-modifiers)))
+          (result prompt-text))
+      (save-match-data
+        (with-temp-buffer
+          (insert prompt-text)
           (goto-char (point-min))
-          (while (re-search-forward (concat "#" (regexp-quote tag) "\\s-*") nil t)
-            (replace-match "")))
-        (setq result (string-trim (buffer-string)))))
-    (list (when (or mode modifiers constraints preset)
-            (list :mode mode
-                  :modifiers (reverse modifiers)
-                  :constraint-modifiers (reverse constraints)
-                  :preset preset))
-          result
-          switch-needed
-          constraint-bundle))))
+          (while (re-search-forward "@\\([a-zA-Z0-9_-]+\\)" nil t)
+            (let ((at-name (match-string 1)))
+              (cond
+               ((assoc at-name ai-code--behavior-presets)
+                (if preset
+                    (message "Warning: Multiple presets, keeping @%s" preset)
+                  (setq preset at-name)))
+               ((ai-code--constraint-bundle-p at-name)
+                (if constraint-bundle
+                    (message "Warning: Multiple constraint bundles, keeping @%s" constraint-bundle)
+                  (setq constraint-bundle at-name)
+                  (let ((bundle-constraints (ai-code--expand-constraint-bundle at-name)))
+                    (dolist (c bundle-constraints)
+                      (cl-pushnew c constraints :test #'equal)))))
+               (t (cl-pushnew at-name unknown-presets :test #'equal)))))
+          (goto-char (point-min))
+          (while (re-search-forward "#\\([=a-zA-Z0-9_-]+\\)" nil t)
+            (let ((tag (match-string 1)))
+              (cond
+               ((member tag ai-code--behavior-operating-modes)
+                (if mode
+                    (message "Warning: Multiple operating modes, keeping #%s (ignoring #%s)" mode tag)
+                  (setq mode tag)))
+               ((member tag ai-code--behavior-modifiers)
+                (cl-pushnew tag modifiers :test #'equal))
+               ((assoc tag ai-code--constraint-modifiers)
+                (cl-pushnew tag constraints :test #'equal))
+               (t (cl-pushnew tag unknown :test #'equal)))))
+          (when unknown
+            (message "Warning: Unknown behaviors preserved in prompt: #%s"
+                     (mapconcat #'identity unknown " #")))
+          (when unknown-presets
+            (message "Warning: Unknown presets preserved in prompt: @%s"
+                     (mapconcat #'identity unknown-presets " @")))
+          (when (eq context-preset 'gptel-plan)
+            (when (and mode (not (ai-code--behaviors-mode-readonly-p mode)))
+              (message "Switching to agent mode for #%s..." mode)
+              (setq switch-needed t))
+            (when (and preset (not (ai-code--behaviors-preset-readonly-p preset)))
+              (message "Switching to agent mode for @%s..." preset)
+              (setq switch-needed t)))
+          (goto-char (point-min))
+          (while (re-search-forward "@\\([a-zA-Z0-9_-]+\\)\\s-*" nil t)
+            (let ((name (match-string 1)))
+              (when (or (assoc name ai-code--behavior-presets)
+                        (ai-code--constraint-bundle-p name))
+                (replace-match ""))))
+          (goto-char (point-min))
+          (dolist (tag valid-tags)
+            (goto-char (point-min))
+            (while (re-search-forward (concat "#" (regexp-quote tag) "\\s-*") nil t)
+              (replace-match "")))
+          (setq result (string-trim (buffer-string)))))
+      (list (when (or mode modifiers constraints preset)
+              (list :mode mode
+                    :modifiers (reverse modifiers)
+                    :constraint-modifiers (reverse constraints)
+                    :preset preset))
+            result
+            switch-needed
+            constraint-bundle))))
 
 (defun ai-code--classify-prompt-intent-gptel (prompt-text)
   "Classify PROMPT-TEXT intent using GPTel.
@@ -1264,7 +1237,10 @@ Prompt:
                                   (lambda (m) (member m ai-code--behavior-modifiers))
                                   (when (listp modifiers) modifiers))))))))
     (error
-     (ai-code--handle-error err "GPTel classification")
+     (display-warning 'ai-code-behaviors
+                      (format "GPTel classification failed: %s\nFalling back to keyword matching."
+                              (error-message-string err))
+                      :warning)
      nil)))
 
 (defun ai-code--extract-json-from-response (response)
@@ -1283,9 +1259,9 @@ Returns parsed plist or nil if no valid JSON found or response exceeds size limi
   "Extract JSON from markdown code block in TEXT.
 Returns parsed plist or nil if no valid JSON code block found."
   (when (string-match "```\\(?:json\\)?[[:space:]]*\n\\([[:space:][:print:]]*?\\)[[:space:]]*```" text)
-    (condition-case err
+    (condition-case nil
         (json-read-from-string (match-string 1 text))
-      ((json-read-error json-error) nil))))
+      (error nil))))
 
 ;; ASSUMPTION: JSON object starts with { and ends with matching }
 ;; BEHAVIOR: Counts braces while tracking string/escape state
@@ -1297,9 +1273,9 @@ Returns parsed plist or nil if no valid JSON code block found."
 Returns parsed plist or nil if no valid JSON found or depth exceeds limit."
   (cond
    ((string-match-p "\\`[[:space:]]*{" text)
-    (condition-case err
+    (condition-case nil
         (json-read-from-string text)
-      ((json-read-error json-error) nil)))
+      (error nil)))
    ((string-match "{" text)
     (let ((start (match-beginning 0))
           (depth 0)
@@ -1316,18 +1292,18 @@ Returns parsed plist or nil if no valid JSON found or depth exceeds limit."
            ((eq ch ?\\) (setq escape-next t))
            (in-string (when (eq ch ?\") (setq in-string nil)))
            ((eq ch ?\") (setq in-string t))
-            ((not in-string)
-             (cond ((eq ch ?{) (setq depth (1+ depth)))
-                   ((eq ch ?})
-                    (setq depth (1- depth))
-                    (when (= depth 0)
-                      (setq found-end t)))))))
-         (unless found-end
-           (setq i (1+ i))))
-       (when (and found-end (= depth 0))
-         (condition-case nil
-             (json-read-from-string (substring text start (1+ i)))
-           (error nil)))))
+           ((not in-string)
+            (cond ((eq ch ?{) (setq depth (1+ depth)))
+                  ((eq ch ?})
+                   (setq depth (1- depth))
+                   (when (= depth 0)
+                     (setq found-end t)))))))
+        (unless found-end
+          (setq i (1+ i))))
+      (when (and found-end (= depth 0))
+        (condition-case nil
+            (json-read-from-string (substring text start (1+ i)))
+          (error nil)))))
    (t nil)))
 
 (defun ai-code--classify-prompt-intent-keywords (prompt-text)
@@ -2039,7 +2015,7 @@ Otherwise, update current buffer only."
   (if project-root
       (save-current-buffer
         (dolist (buf (buffer-list))
-          (when (ai-code--behaviors-buffer-live-p buf)
+          (when (buffer-live-p buf)
             (set-buffer buf)
             (when (equal (ai-code--behaviors-project-root) project-root)
               (force-mode-line-update t)))))
@@ -2566,7 +2542,8 @@ Supports both calling conventions:
     (condition-case err
         (let* ((info (and fsm (gptel-fsm-info fsm)))
                (source-buffer (and info (plist-get info :buffer)))
-               (preset (ai-code--behaviors-buffer-local-value 'gptel--preset source-buffer))
+               (preset (when (buffer-live-p source-buffer)
+                         (buffer-local-value 'gptel--preset source-buffer)))
                (prompt-start (save-excursion
                                (goto-char (point-max))
                                (let ((heading-match (re-search-backward "^### " nil t)))
@@ -2593,7 +2570,7 @@ Supports both calling conventions:
                      (processed-text (nth 1 result))
                      (switch-needed (nth 2 result))
                      (behaviors-state (ai-code--behaviors-get-state project-root)))
-                (when (and switch-needed (ai-code--behaviors-buffer-live-p source-buffer))
+                (when (and switch-needed (buffer-live-p source-buffer))
                   (with-current-buffer source-buffer
                     (gptel--apply-preset 'gptel-agent
                                          (lambda (sym val) (set (make-local-variable sym) val)))))
@@ -2614,7 +2591,7 @@ Supports both calling conventions:
                   (setq modified t))
                  (t nil))))))
       (error
-       (ai-code--handle-error err "ai-code-behaviors transform")
+       (message "ai-code-behaviors transform error: %s" (error-message-string err))
        (setq modified nil)))
     (if next
         (or modified (funcall next fsm))
@@ -3301,54 +3278,54 @@ MODE-SWITCH-NEEDED is t when session should switch from plan to build mode."
     (unless (stringp prompt-text)
       (cl-return-from ai-code--agent-shell-process-behaviors (list prompt-text nil)))
     (let* ((extracted (ai-code--extract-and-remove-hashtags prompt-text))
-         (explicit-behaviors (nth 0 extracted))
-         (cleaned-prompt (nth 1 extracted))
-         (bundle-name (nth 3 extracted))
-         (session-state (ai-code--behaviors-get-state project-root))
-         (classified (and ai-code-behaviors-agent-shell-auto-classify
-                          ai-code-behaviors-auto-classify
-                          (ai-code--classify-prompt-intent prompt-text)))
-         (confidence (and classified (or (plist-get classified :confidence) 'high)))
-         (meets-threshold (and confidence
-                               (ai-code--behaviors-meets-confidence-threshold-p confidence))))
-    (when bundle-name
-      (ai-code--behaviors-set-active-bundle bundle-name project-root))
-    (cond
-     (explicit-behaviors
-      (ai-code--behaviors-clear-pending-preset project-root)
-      (let* ((preset-name (plist-get explicit-behaviors :preset))
-             (final-behaviors (ai-code--merge-preset-with-modifiers preset-name explicit-behaviors))
-             (mode (plist-get final-behaviors :mode))
-             (mode-switch (and ai-code-behaviors-agent-shell-auto-switch-mode
-                               (member mode ai-code--behavior-modify-modes))))
-        (ai-code--behaviors-apply-and-format preset-name final-behaviors project-root)
-        ;; For agent-shell: always return behavior instruction, even if prompt is empty
-        ;; For gptel-agent: only set state, don't send (returns nil)
-        (if (string-empty-p (string-trim cleaned-prompt))
-            (list (ai-code--build-behavior-instruction final-behaviors)
-                  mode-switch)
-          (list (ai-code--behaviors-wrap-with-instruction final-behaviors cleaned-prompt)
-                mode-switch))))
-     (meets-threshold
-      (ai-code--behaviors-clear-pending-preset project-root)
-      (let* ((suggested-preset (ai-code--suggest-preset-for-classification classified))
-             (final-behaviors (if suggested-preset
-                                  (ai-code--merge-preset-with-modifiers suggested-preset nil)
-                                (ai-code--merge-preset-with-modifiers nil classified)))
-             (mode (plist-get final-behaviors :mode))
-             (mode-switch (and ai-code-behaviors-agent-shell-auto-switch-mode
-                               (member mode ai-code--behavior-modify-modes))))
-        (ai-code--behaviors-apply-and-format suggested-preset final-behaviors project-root
-                                             (format "Auto-classified: @%s" (or suggested-preset "custom")))
-        (list (ai-code--behaviors-wrap-with-instruction final-behaviors prompt-text)
-              mode-switch)))
-     (session-state
-      (let* ((mode (plist-get session-state :mode))
-             (mode-switch (and ai-code-behaviors-agent-shell-auto-switch-mode
-                               (member mode ai-code--behavior-modify-modes))))
-        (list (ai-code--behaviors-wrap-with-instruction session-state prompt-text)
-              mode-switch)))
-     (t (list prompt-text nil))))))
+           (explicit-behaviors (nth 0 extracted))
+           (cleaned-prompt (nth 1 extracted))
+           (bundle-name (nth 3 extracted))
+           (session-state (ai-code--behaviors-get-state project-root))
+           (classified (and ai-code-behaviors-agent-shell-auto-classify
+                            ai-code-behaviors-auto-classify
+                            (ai-code--classify-prompt-intent prompt-text)))
+           (confidence (and classified (or (plist-get classified :confidence) 'high)))
+           (meets-threshold (and confidence
+                                 (ai-code--behaviors-meets-confidence-threshold-p confidence))))
+      (when bundle-name
+        (ai-code--behaviors-set-active-bundle bundle-name project-root))
+      (cond
+       (explicit-behaviors
+        (ai-code--behaviors-clear-pending-preset project-root)
+        (let* ((preset-name (plist-get explicit-behaviors :preset))
+               (final-behaviors (ai-code--merge-preset-with-modifiers preset-name explicit-behaviors))
+               (mode (plist-get final-behaviors :mode))
+               (mode-switch (and ai-code-behaviors-agent-shell-auto-switch-mode
+                                 (member mode ai-code--behavior-modify-modes))))
+          (ai-code--behaviors-apply-and-format preset-name final-behaviors project-root)
+          ;; For agent-shell: always return behavior instruction, even if prompt is empty
+          ;; For gptel-agent: only set state, don't send (returns nil)
+          (if (string-empty-p (string-trim cleaned-prompt))
+              (list (ai-code--build-behavior-instruction final-behaviors)
+                    mode-switch)
+            (list (ai-code--behaviors-wrap-with-instruction final-behaviors cleaned-prompt)
+                  mode-switch))))
+       (meets-threshold
+        (ai-code--behaviors-clear-pending-preset project-root)
+        (let* ((suggested-preset (ai-code--suggest-preset-for-classification classified))
+               (final-behaviors (if suggested-preset
+                                    (ai-code--merge-preset-with-modifiers suggested-preset nil)
+                                  (ai-code--merge-preset-with-modifiers nil classified)))
+               (mode (plist-get final-behaviors :mode))
+               (mode-switch (and ai-code-behaviors-agent-shell-auto-switch-mode
+                                 (member mode ai-code--behavior-modify-modes))))
+          (ai-code--behaviors-apply-and-format suggested-preset final-behaviors project-root
+                                               (format "Auto-classified: @%s" (or suggested-preset "custom")))
+          (list (ai-code--behaviors-wrap-with-instruction final-behaviors prompt-text)
+                mode-switch)))
+       (session-state
+        (let* ((mode (plist-get session-state :mode))
+               (mode-switch (and ai-code-behaviors-agent-shell-auto-switch-mode
+                                 (member mode ai-code--behavior-modify-modes))))
+          (list (ai-code--behaviors-wrap-with-instruction session-state prompt-text)
+                mode-switch)))
+       (t (list prompt-text nil))))))
 
 (defun ai-code--extract-text-from-prompt-vec (prompt-vec)
   "Extract text content from PROMPT-VEC.
@@ -3460,7 +3437,7 @@ Also handles auto-switching from plan to build mode for modify operations."
               (ai-code--agent-shell-maybe-switch-mode))))
         request)
     (error
-     (ai-code--handle-error err "DECORATOR")
+     (message "DECORATOR ERROR: %s" err)
      request)))
 
 (defun ai-code--agent-shell-maybe-switch-mode ()
