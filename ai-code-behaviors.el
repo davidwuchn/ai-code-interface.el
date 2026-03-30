@@ -3345,21 +3345,23 @@ Handles three formats:
     (mapconcat
      (lambda (elem)
        (cond ((stringp elem) elem)
-             ((and (consp elem) (or (assoc 'text elem) (assoc "text" elem)))
-              (let* ((entry (or (assoc 'text elem) (assoc "text" elem)))
-                     (val (cdr entry)))
-                (cond ((stringp val) val)
-                      ((symbolp val) (symbol-name val))
-                      (t ""))))
+             ((consp elem)
+              (ai-code--extract-text-value elem))
              (t "")))
      prompt-vec ""))
-   ((and (consp prompt-vec) (or (assoc 'text prompt-vec) (assoc "text" prompt-vec)))
-    (let* ((entry (or (assoc 'text prompt-vec) (assoc "text" prompt-vec)))
-           (val (cdr entry)))
-      (cond ((stringp val) val)
-            ((symbolp val) (symbol-name val))
-            (t nil))))
+   ((consp prompt-vec)
+    (ai-code--extract-text-value prompt-vec))
    (t nil)))
+
+(defun ai-code--extract-text-value (alist)
+  "Extract text value from ALIST.
+Handles both 'text and \"text\" keys.
+Returns string, symbol name, or empty string."
+  (let* ((entry (or (assoc 'text alist) (assoc "text" alist)))
+         (val (when entry (cdr entry))))
+    (cond ((stringp val) val)
+          ((symbolp val) (symbol-name val))
+          (t ""))))
 
 (defun ai-code--detect-agent-shell-project-root ()
   "Detect project root for agent-shell buffer.
