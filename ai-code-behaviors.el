@@ -1255,13 +1255,23 @@ Returns parsed plist or nil if no valid JSON found or response exceeds size limi
         (or (ai-code--extract-json-from-code-block trimmed)
             (ai-code--extract-json-balanced trimmed))))))
 
+(defun ai-code--safe-json-read (string)
+  "Safely parse STRING as JSON, returning nil on any error.
+Extracts duplicate error handling pattern from JSON parsing functions.
+
+ASSUMPTION: json-read-from-string may signal error on malformed JSON
+BEHAVIOR: Returns parsed plist or nil on error
+EDGE CASE: Handles all error types uniformly
+TEST: Verify with valid JSON returns plist, invalid JSON returns nil"
+  (condition-case nil
+      (json-read-from-string string)
+    (error nil)))
+
 (defun ai-code--extract-json-from-code-block (text)
   "Extract JSON from markdown code block in TEXT.
 Returns parsed plist or nil if no valid JSON code block found."
   (when (string-match "```\\(?:json\\)?[[:space:]]*\n\\([[:space:][:print:]]*?\\)[[:space:]]*```" text)
-    (condition-case nil
-        (json-read-from-string (match-string 1 text))
-      (error nil))))
+    (ai-code--safe-json-read (match-string 1 text))))
 
 ;; ASSUMPTION: JSON object starts with { and ends with matching }
 ;; BEHAVIOR: Counts braces while tracking string/escape state
@@ -1273,9 +1283,7 @@ Returns parsed plist or nil if no valid JSON code block found."
 Returns parsed plist or nil if no valid JSON found or depth exceeds limit."
   (cond
    ((string-match-p "\\`[[:space:]]*{" text)
-    (condition-case nil
-        (json-read-from-string text)
-      (error nil)))
+    (ai-code--safe-json-read text))
    ((string-match "{" text)
     (let ((start (match-beginning 0))
           (depth 0)
@@ -1301,9 +1309,7 @@ Returns parsed plist or nil if no valid JSON found or depth exceeds limit."
         (unless found-end
           (setq i (1+ i))))
       (when (and found-end (= depth 0))
-        (condition-case nil
-            (json-read-from-string (substring text start (1+ i)))
-          (error nil)))))
+        (ai-code--safe-json-read (substring text start (1+ i))))))
    (t nil)))
 
 (defun ai-code--classify-prompt-intent-keywords (prompt-text)
