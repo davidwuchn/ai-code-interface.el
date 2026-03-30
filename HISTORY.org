@@ -2,6 +2,8 @@
 * Release history
 
 ** Main branch change
+
+** 1.65
 - Feat: Add agent-shell integration for ai-code-behaviors, by davidwuchn
 - Chore: Make TDD prompts explicit Red Green Blue stages
 - Fix: Fix selected byte-compilation warnings, by Silex
