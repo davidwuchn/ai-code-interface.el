@@ -398,12 +398,16 @@ returns to normal terminal interaction."
                #'ai-code-backends-infra--sync-terminal-cursor nil t))))
 
 (defun ai-code-backends-infra--terminal-dispatch (vterm-fn eat-fn)
-  "Run VTERM-FN or EAT-FN based on selected terminal backend."
-  (pcase (ai-code-backends-infra--current-terminal-backend)
-    ('vterm (funcall vterm-fn))
-    ('eat (funcall eat-fn))
-    (_ (error "Unknown terminal backend: %s"
-              (ai-code-backends-infra--current-terminal-backend)))))
+  "Run VTERM-FN or EAT-FN based on selected terminal backend.
+ASSUMPTION: VTERM-FN and EAT-FN are callable functions.
+BEHAVIOR: Dispatches to appropriate backend function based on current terminal backend.
+EDGE CASE: Unknown backend signals an error with the backend value for debugging.
+TEST: Verify error message includes the unknown backend value."
+  (let ((backend (ai-code-backends-infra--current-terminal-backend)))
+    (pcase backend
+      ('vterm (funcall vterm-fn))
+      ('eat (funcall eat-fn))
+      (_ (error "Unknown terminal backend: %s" backend)))))
 
 (defun ai-code-backends-infra--terminal-send-string (string)
   "Send STRING to the terminal in the current buffer.
@@ -463,13 +467,18 @@ SEQUENCE is the terminal sequence sent for `S-<return>' and `C-<return>'."
                                                          multiline-input-sequence)
   "Configure BUFFER with shared session keybindings.
 ESCAPE-FN is bound to `C-<escape>' when non-nil.
-MULTILINE-INPUT-SEQUENCE configures `S-<return>' and `C-<return>' when non-nil."
-  (with-current-buffer buffer
-    (when escape-fn
-      (local-set-key (kbd "C-<escape>") escape-fn))
-    (ai-code-backends-infra--configure-multiline-input
-     multiline-input-sequence)
-    (ai-code-session-link--linkify-session-region (point-min) (point-max))))
+MULTILINE-INPUT-SEQUENCE configures `S-<return>' and `C-<return>' when non-nil.
+ASSUMPTION: BUFFER is a live buffer object.
+EDGE CASE: Nil or dead buffers are silently ignored to prevent errors.
+TEST: (ai-code-backends-infra--configure-session-buffer nil) => nil
+      (ai-code-backends-infra--configure-session-buffer (get-buffer-create \"*test*\")) => configures buffer"
+  (when (buffer-live-p buffer)
+    (with-current-buffer buffer
+      (when escape-fn
+        (local-set-key (kbd "C-<escape>") escape-fn))
+      (ai-code-backends-infra--configure-multiline-input
+       multiline-input-sequence)
+      (ai-code-session-link--linkify-session-region (point-min) (point-max)))))
 
 ;;; Reflow and Window Management
 
@@ -524,26 +533,33 @@ MULTILINE-INPUT-SEQUENCE configures `S-<return>' and `C-<return>' when non-nil."
                   :test #'eq))))
 
 (defun ai-code-backends-infra--display-buffer-in-side-window (buffer)
-  "Display BUFFER in a side window."
-  (let ((window
-         (if ai-code-backends-infra-use-side-window
-             (let* ((side ai-code-backends-infra-window-side)
-                    (display-buffer-alist
-                     `((,(regexp-quote (buffer-name buffer))
-                        (display-buffer-in-side-window)
-                        (side . ,side)
-                        (slot . 0)
-                        ,@(when (memq side '(left right))
-                            `((window-width . ,ai-code-backends-infra-window-width)))
-                        ,@(when (memq side '(top bottom))
-                            `((window-height . ,ai-code-backends-infra-window-height)))
-                        (window-parameters . ((no-delete-other-windows . t)))))))
-               (display-buffer buffer))
-           (display-buffer buffer))))
-    (setq ai-code-backends-infra--last-accessed-buffer buffer)
-    (when (and window ai-code-backends-infra-focus-on-open)
-      (select-window window))
-    window))
+  "Display BUFFER in a side window.
+ASSUMPTION: BUFFER is a buffer object or buffer name string.
+BEHAVIOR: Displays buffer in side window if use-side-window is enabled.
+EDGE CASE: Nil or dead buffers return nil without error.
+TEST: (ai-code-backends-infra--display-buffer-in-side-window nil) => nil
+      (ai-code-backends-infra--display-buffer-in-side-window \"*nonexistent*\") => nil"
+  (when (and buffer (or (buffer-live-p buffer)
+                        (and (stringp buffer) (get-buffer buffer))))
+    (let ((window
+           (if ai-code-backends-infra-use-side-window
+               (let* ((side ai-code-backends-infra-window-side)
+                      (display-buffer-alist
+                       `((,(regexp-quote (buffer-name (get-buffer buffer)))
+                          (display-buffer-in-side-window)
+                          (side . ,side)
+                          (slot . 0)
+                          ,@(when (memq side '(left right))
+                              `((window-width . ,ai-code-backends-infra-window-width)))
+                          ,@(when (memq side '(top bottom))
+                              `((window-height . ,ai-code-backends-infra-window-height)))
+                          (window-parameters . ((no-delete-other-windows . t)))))))
+                 (display-buffer buffer))
+             (display-buffer buffer))))
+      (setq ai-code-backends-infra--last-accessed-buffer buffer)
+      (when (and window ai-code-backends-infra-focus-on-open)
+        (select-window window))
+      window)))
 
 ;;; Session Helpers
 
