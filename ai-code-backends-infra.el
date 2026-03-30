@@ -186,6 +186,16 @@ if the AI session buffer is not currently visible."
          (str (replace-regexp-in-string "[\x00-\x1f\x7f]" "" str)))
     (string-match-p "[^ \t\n\r]" str)))
 
+
+(defun ai-code-backends-infra--non-empty-string-p (str)
+  "Return non-nil when STR is a non-empty string.
+ASSUMPTION: STR may be nil, a string, or any other type.
+BEHAVIOR: Validates both type and content in a single check.
+EDGE CASE: Nil, empty strings, and non-strings all return nil.
+TEST: (ai-code-backends-infra--non-empty-string-p \"test\") => t
+      (ai-code-backends-infra--non-empty-string-p \"\") => nil
+      (ai-code-backends-infra--non-empty-string-p nil) => nil"
+  (and (stringp str) (> (length str) 0)))
 (defun ai-code-backends-infra--buffer-user-visible-p (buffer)
   "Return non-nil when BUFFER is visible in any live window."
   (and (get-buffer-window-list buffer nil t) t))
@@ -399,7 +409,7 @@ returns to normal terminal interaction."
   "Send STRING to the terminal in the current buffer.
 ASSUMPTION: STRING is a non-empty string to be sent to the terminal.
 EDGE CASE: Nil or empty strings are ignored to prevent terminal errors."
-  (when (and (stringp string) (> (length string) 0))
+  (when (ai-code-backends-infra--non-empty-string-p string)
     (ai-code-backends-infra--terminal-dispatch
      (lambda () (vterm-send-string string))
      (lambda ()
@@ -789,7 +799,7 @@ PROMPT-LABEL is used in the minibuffer prompt.
 ASSUMPTION: PROGRAM is a non-empty string, SWITCHES is a list of strings.
 EDGE CASE: Nil or empty PROGRAM signals an error to prevent invalid command construction.
 EDGE CASE: Non-list SWITCHES is normalized to empty list to prevent mapconcat errors."
-  (unless (and (stringp program) (> (length program) 0))
+  (unless (ai-code-backends-infra--non-empty-string-p program)
     (user-error "Cannot resolve start command with nil or empty program"))
   (unless (listp switches)
     (setq switches nil))
@@ -1035,7 +1045,7 @@ When PREFIX and WORKING-DIR are provided, select from multiple sessions."
 When PREFIX and WORKING-DIR are provided, select from multiple sessions.
 ASSUMPTION: LINE is a non-nil string to send to the session.
 EDGE CASE: Nil or empty LINE signals an error to prevent silent failures."
-  (unless (and (stringp line) (> (length line) 0))
+  (unless (ai-code-backends-infra--non-empty-string-p line)
     (user-error "Cannot send nil or empty line to session"))
   (let* ((source-buffer (current-buffer))
          (buffer (ai-code-backends-infra--resolve-session-buffer
@@ -1062,11 +1072,11 @@ ENV-VARS is a list of environment variables.
 ASSUMPTION: BUFFER-NAME, WORKING-DIR, and COMMAND are non-nil strings.
 EDGE CASE: Nil or empty required parameters signal an error.
 TEST: Verify with nil/empty inputs that user-error is signaled."
-  (unless (and (stringp buffer-name) (> (length buffer-name) 0))
+  (unless (ai-code-backends-infra--non-empty-string-p buffer-name)
     (user-error "Cannot create terminal session with nil or empty buffer-name"))
-  (unless (and (stringp working-dir) (> (length working-dir) 0))
+  (unless (ai-code-backends-infra--non-empty-string-p working-dir)
     (user-error "Cannot create terminal session with nil or empty working-dir"))
-  (unless (and (stringp command) (> (length command) 0))
+  (unless (ai-code-backends-infra--non-empty-string-p command)
     (user-error "Cannot create terminal session with nil or empty command"))
   (unless (listp env-vars)
     (user-error "ENV-VARS must be a list, got %s" (type-of env-vars)))
@@ -1089,7 +1099,7 @@ TEST: Verify with nil/empty inputs that user-error is signaled."
              (parts (split-string-shell-command command))
              (program (car parts))
              (args (cdr parts)))
-        (unless (and (stringp program) (> (length program) 0))
+        (unless (ai-code-backends-infra--non-empty-string-p program)
           (user-error "Cannot parse command '%s' for eat backend" command))
         (ai-code-backends-infra--set-session-directory buffer working-dir)
         (with-current-buffer buffer
