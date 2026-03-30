@@ -1118,8 +1118,6 @@ Callers should set the bundle using the correct project root via
           (valid-modes ai-code--behavior-operating-modes)
           (valid-modifiers ai-code--behavior-modifiers)
           (valid-constraints (mapcar #'car ai-code--constraint-modifiers))
-          (valid-presets (mapcar #'car ai-code--behavior-presets))
-          (valid-bundles (mapcar #'car ai-code--constraint-bundles))
           (result prompt-text)
           (tags-to-remove nil))
       (save-match-data
@@ -1131,12 +1129,12 @@ Callers should set the bundle using the correct project root via
                   (start (match-beginning 0))
                   (end (match-end 0)))
               (cond
-               ((member at-name valid-presets)
+               ((assoc at-name ai-code--behavior-presets)
                 (if preset
                     (message "Warning: Multiple presets, keeping @%s" preset)
                   (setq preset at-name))
                 (push (cons start end) tags-to-remove))
-               ((member at-name valid-bundles)
+               ((ai-code--constraint-bundle-p at-name)
                 (if constraint-bundle
                     (message "Warning: Multiple constraint bundles, keeping @%s" constraint-bundle)
                   (setq constraint-bundle at-name)
