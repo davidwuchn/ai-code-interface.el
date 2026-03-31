@@ -465,7 +465,7 @@ Shows the current backend label to the right."
   (ai-code--infix-select-code-change-auto-test)
   ("r" "Refactor Code" ai-code-refactor-book-method)
   ("t" "Test Driven Development" ai-code-tdd-cycle)
-  ("v" "Pull or Review Code Change" ai-code-pull-or-review-diff-file)
+  ("v" "GitHub PR AI Action" ai-code-pull-or-review-diff-file)
   ("!" "Run Current File or Command" ai-code-run-current-file-or-shell-cmd)
   ("b" "Build / Test (AI follow-up)" ai-code-build-or-test-project)
   ("K" "Create or open task file" ai-code-create-or-open-task-file)
@@ -479,6 +479,7 @@ Shows the current backend label to the right."
   ("o" "Open recent file (C-u: insert)" ai-code-git-repo-recent-modified-files)
   ("p" "Open prompt history file" ai-code-open-prompt-file)
   ("m" "Debug python MCP server" ai-code-debug-mcp)
+  (":" "Speech to text input" ai-code-speech-to-text-input)
   ("N" "Toggle notifications" ai-code-notifications-toggle))
 
 (transient-define-prefix ai-code-menu-default ()

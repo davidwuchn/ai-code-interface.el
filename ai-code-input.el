@@ -29,6 +29,20 @@
 (declare-function ai-code-backends-infra--terminal-send-backspace "ai-code-backends-infra" ())
 (declare-function ai-code--prompt-filepath-candidates "ai-code-prompt-mode" ())
 (declare-function ai-code--git-root "ai-code-file" (&optional dir))
+(declare-function ai-code--insert-prompt "ai-code-prompt-mode" (prompt))
+(declare-function whisper-run "whisper" ())
+
+(defvar whisper-after-transcription-hook nil
+  "Hook run by whisper.el after transcription finishes.")
+
+(defconst ai-code--speech-to-text-buffer-name "*whisper-stdout*"
+  "Buffer name used by whisper.el transcription output.")
+
+(defconst ai-code--speech-to-text-actions
+  '("Insert to current buffer"
+    "Send to AI coding session"
+    "Copy to clipboard")
+  "Completion choices for speech-to-text transcription handling.")
 
 ;;;###autoload
 (defun ai-code-plain-read-string (prompt &optional initial-input candidate-list)
@@ -117,6 +131,66 @@ PROMPT is the prompt string.
 INITIAL-INPUT is optional initial input string.
 CANDIDATE-LIST is an optional list of candidate strings to show before history."
   (ai-code-helm-read-string-with-history prompt "ai-code-helm-read-string-history.el" initial-input candidate-list))
+
+(defun ai-code--speech-to-text-apply-transcription (origin-buffer)
+  "Read transcription from current buffer and apply a chosen speech action.
+The transcription is obtained from the current buffer, then if
+ORIGIN-BUFFER is still live and the transcription is non-empty,
+prompt the user to choose an action (insert into ORIGIN-BUFFER,
+send to an AI coding session, or copy to the clipboard) and
+perform that action."
+  (let ((transcription
+         (string-trim
+          (buffer-substring-no-properties (point-min) (point-max)))))
+    (when (and (buffer-live-p origin-buffer)
+               (not (string-empty-p transcription)))
+      (ai-code--speech-to-text-handle-action
+       origin-buffer
+       transcription
+       (completing-read "Choose speech action: "
+                        ai-code--speech-to-text-actions
+                        nil t)))))
+
+(defun ai-code--speech-to-text-handle-action (origin-buffer transcription action)
+  "Handle speech ACTION for TRANSCRIPTION from ORIGIN-BUFFER."
+  (pcase action
+    ("Insert to current buffer"
+     (with-current-buffer origin-buffer
+       (insert transcription)))
+    ("Send to AI coding session"
+     (ai-code--speech-to-text-send-prompt origin-buffer transcription))
+    ("Copy to clipboard"
+     (kill-new transcription))))
+
+(defun ai-code--speech-to-text-send-prompt (origin-buffer transcription)
+  "Edit TRANSCRIPTION from ORIGIN-BUFFER and send the result to the AI session."
+  (when-let ((prompt (with-current-buffer origin-buffer
+                       (ai-code-read-string "Send to AI: " transcription))))
+    (require 'ai-code-prompt-mode)
+    (ai-code--insert-prompt prompt)))
+
+;;;###autoload
+(defun ai-code-speech-to-text-input ()
+  "Record audio with whisper.el, then choose how to use the transcription.
+
+After recording and transcription, you can insert the text at point in the
+original buffer, send it to an AI coding session, or copy it to the clipboard."
+  (interactive)
+  (unless (require 'whisper nil t)
+    (user-error "Whisper.el is not available, please install it first"))
+  (let ((origin-buffer (current-buffer)))
+    (with-current-buffer (get-buffer-create ai-code--speech-to-text-buffer-name)
+      (erase-buffer)
+      (setq-local whisper-after-transcription-hook nil)
+      (add-hook 'whisper-after-transcription-hook
+                (lambda ()
+                  (ai-code--speech-to-text-apply-transcription origin-buffer))
+                nil t)
+      (whisper-run)
+      (message "Recording audio. Press RET when you are done.")
+      (while (not (equal ?\r (read-char)))
+        (sit-for 0.5))
+      (whisper-run))))
 
 ;;;###autoload
 (when (featurep 'helm)

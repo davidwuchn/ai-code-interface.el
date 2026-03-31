@@ -377,7 +377,7 @@
         (delete-directory root t)))))
 
 (ert-deftest ai-code-session-link-test-linkify-session-region-uses-fixed-large-symbol-window ()
-  "Linkify later nearby symbols within the fixed 512-char and 8-line budget."
+  "Linkify later nearby symbols within the fixed 512-char and 3-line budget."
   (let* ((root (make-temp-file "ai-code-session-links-extended-symbols-" t))
          (lisp-dir (expand-file-name "lisp" root))
          (file (expand-file-name "feature.el" lisp-dir))
@@ -391,9 +391,9 @@
           (with-temp-buffer
             (setq-local ai-code-backends-infra--session-directory root)
             (insert "lisp/feature.el:1\n")
-            (dotimes (_ 6)
+            (dotimes (_ 1)
               (insert "plain prose words only\n"))
-            (insert (make-string 260 ?x))
+            (insert (make-string 80 ?x))
             (insert "\n")
             (insert later-symbol)
             (insert "\n")
@@ -476,6 +476,64 @@
               (should (equal (get-text-property symbol-pos 'ai-code-session-link)
                              "Builder.java:1")))
             (should (= project-files-count 1))))
+      (when (file-directory-p root)
+        (delete-directory root t)))))
+
+(ert-deftest ai-code-session-link-test-linkify-session-region-reuses-project-files-across-passes ()
+  "Repeated relinkify passes should reuse project file enumeration."
+  (let* ((root (make-temp-file "ai-code-session-links-project-cache-passes-" t))
+         (project-files-count 0)
+         (ai-code-session-link-enabled t))
+    (unwind-protect
+        (cl-letf (((symbol-function 'project-current)
+                   (lambda (&optional _maybe-prompt _dir)
+                     'mock-project))
+                  ((symbol-function 'project-root)
+                   (lambda (_project)
+                     root))
+                  ((symbol-function 'project-files)
+                   (lambda (_project &optional _dirs)
+                     (cl-incf project-files-count)
+                     '("src/UserService.java"))))
+          (with-temp-buffer
+            (setq-local ai-code-backends-infra--session-directory root)
+            (insert "UserService.java:1\n")
+            (ai-code-session-link--linkify-session-region (point-min) (point-max))
+            (ai-code-session-link--linkify-session-region (point-min) (point-max))
+            (should (= project-files-count 1))))
+      (when (file-directory-p root)
+        (delete-directory root t)))))
+
+(ert-deftest ai-code-session-link-test-linkify-session-region-skips-unchanged-property-churn ()
+  "Repeated linkify should not churn properties for unchanged session text."
+  (let* ((root (make-temp-file "ai-code-session-links-stable-region-" t))
+         (src-dir (expand-file-name "src" root))
+         (file (expand-file-name "FileABC.java" src-dir))
+         (ai-code-session-link-enabled t))
+    (unwind-protect
+        (progn
+          (make-directory src-dir t)
+          (with-temp-file file
+            (insert "class FileABC {}\n"))
+          (with-temp-buffer
+            (setq-local ai-code-backends-infra--session-directory root)
+            (insert "src/FileABC.java:42\n")
+            (ai-code-session-link--linkify-session-region (point-min) (point-max))
+            (let ((add-count 0)
+                  (remove-count 0)
+                  (orig-add (symbol-function 'add-text-properties))
+                  (orig-remove (symbol-function 'remove-text-properties)))
+              (cl-letf (((symbol-function 'add-text-properties)
+                         (lambda (start end props &optional object)
+                           (cl-incf add-count)
+                           (funcall orig-add start end props object)))
+                        ((symbol-function 'remove-text-properties)
+                         (lambda (start end props &optional object)
+                           (cl-incf remove-count)
+                           (funcall orig-remove start end props object))))
+                (ai-code-session-link--linkify-session-region (point-min) (point-max)))
+              (should (zerop add-count))
+              (should (zerop remove-count)))))
       (when (file-directory-p root)
         (delete-directory root t)))))
 
@@ -686,6 +744,18 @@
               (should (zerop ai-code-session-link--pending-tail-width)))))
       (when (file-directory-p root)
         (delete-directory root t)))))
+
+(ert-deftest ai-code-session-link-test-schedule-linkify-recent-output-skips-plain-prose ()
+  "Plain prose output should not schedule hot-path session relinkification."
+  (let ((ai-code-session-link-enabled t))
+    (with-temp-buffer
+      (setq ai-code-session-link--pending-tail-width 0
+            ai-code-session-link--linkify-timer nil)
+      (ai-code-session-link--schedule-linkify-recent-output
+       (current-buffer)
+       "Working on the next step now.\n")
+      (should-not ai-code-session-link--linkify-timer)
+      (should (zerop ai-code-session-link--pending-tail-width)))))
 
 (provide 'test_ai-code-session-link)
 
