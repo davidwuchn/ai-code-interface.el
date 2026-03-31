@@ -1478,13 +1478,21 @@ If PROMPT-TEXT already contains <user-prompt> tags, extracts content first."
 
 (defun ai-code--behaviors-meets-confidence-threshold-p (confidence)
   "Check if CONFIDENCE meets `ai-code-behaviors-reclassify-min-confidence'.
-CONFIDENCE should be `high', `medium', or `low'.
-Returns nil for unknown confidence values."
+CONFIDENCE should be `high', `medium', or `low' (or keywords :high, :medium, :low).
+Returns nil for unknown confidence values.
+
+ASSUMPTION: Confidence can be symbol (high) or keyword (:high)
+BEHAVIOR: Normalizes keyword to symbol, then compares positions in levels list
+EDGE CASE: Returns nil for nil or unknown confidence values
+TEST: Verify (ai-code--behaviors-meets-confidence-threshold-p :high) returns t"
   (let ((levels '(high medium low))
-        (min-level ai-code-behaviors-reclassify-min-confidence))
-    (and confidence
+        (min-level ai-code-behaviors-reclassify-min-confidence)
+        (normalized-confidence (if (keywordp confidence)
+                                   (intern (substring (symbol-name confidence) 1))
+                                 confidence)))
+    (and normalized-confidence
          min-level
-         (let ((conf-pos (cl-position confidence levels))
+         (let ((conf-pos (cl-position normalized-confidence levels))
                (min-pos (cl-position min-level levels)))
            (and conf-pos min-pos (<= conf-pos min-pos))))))
 
