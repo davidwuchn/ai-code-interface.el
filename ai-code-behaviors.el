@@ -2020,40 +2020,44 @@ EVENT is the mouse event."
       (popup-menu menu))))
 
 (defun ai-code--behaviors-mode-line-string ()
-  "Return propertized mode-line string for behaviors."
-  (when ai-code-behaviors-enabled
-    (let* ((state (ai-code--behaviors-get-state))
-           (preset (ai-code--behaviors-get-preset))
-           (active-bundle (ai-code--behaviors-get-active-bundle))
-           (mode (and state (plist-get state :mode)))
-           (modifiers (and state (plist-get state :modifiers)))
-           (constraints (and state (plist-get state :constraint-modifiers)))
-           (has-custom (and state (plist-get state :custom-suffix)))
-           (constraint-count (+ (length constraints) (if has-custom 1 0)))
-           (face (ai-code--behaviors-get-mode-face mode))
-           (text (cond
-                  ((and preset active-bundle)
-                   (format "[@%s @%s]" preset active-bundle))
-                  ((and preset (> constraint-count 0))
-                   (format "[@%s +%d]" preset constraint-count))
-                  (preset (format "[@%s]" preset))
-                  (active-bundle
-                   (format "[@%s +%d]" active-bundle constraint-count))
-                  ((or mode modifiers constraints has-custom)
-                   (concat "["
-                           (or mode "")
-                           (when (and mode modifiers) " ")
-                           (when modifiers (mapconcat #'identity modifiers " "))
-                           (when (> constraint-count 0)
-                             (format " +%d" constraint-count))
-                           "]"))
-                  (t "[○]")))
-           (tooltip (ai-code--behaviors-build-tooltip preset state)))
-      (propertize text
-                  'face face
-                  'mouse-face 'mode-line-highlight
-                  'help-echo tooltip
-                  'local-map ai-code--behaviors-mode-line-map))))
+  "Return propertized mode-line string for behaviors.
+Safe to call at any time - returns nil if called before fully loaded."
+  (condition-case err
+      (when (and (boundp 'ai-code-behaviors-enabled)
+                 ai-code-behaviors-enabled)
+        (let* ((state (ai-code--behaviors-get-state))
+               (preset (ai-code--behaviors-get-preset))
+               (active-bundle (ai-code--behaviors-get-active-bundle))
+               (mode (and state (plist-get state :mode)))
+               (modifiers (and state (plist-get state :modifiers)))
+               (constraints (and state (plist-get state :constraint-modifiers)))
+               (has-custom (and state (plist-get state :custom-suffix)))
+               (constraint-count (+ (length constraints) (if has-custom 1 0)))
+               (face (ai-code--behaviors-get-mode-face mode))
+               (text (cond
+                      ((and preset active-bundle)
+                       (format "[@%s @%s]" preset active-bundle))
+                      ((and preset (> constraint-count 0))
+                       (format "[@%s +%d]" preset constraint-count))
+                      (preset (format "[@%s]" preset))
+                      (active-bundle
+                       (format "[@%s +%d]" active-bundle constraint-count))
+                      ((or mode modifiers constraints has-custom)
+                       (concat "["
+                               (or mode "")
+                               (when (and mode modifiers) " ")
+                               (when modifiers (mapconcat #'identity modifiers " "))
+                               (when (> constraint-count 0)
+                                 (format " +%d" constraint-count))
+                               "]"))
+                      (t "[○]")))
+               (tooltip (ai-code--behaviors-build-tooltip preset state)))
+          (propertize text
+                      'face face
+                      'mouse-face 'mode-line-highlight
+                      'help-echo tooltip
+                      'local-map ai-code--behaviors-mode-line-map)))
+    (error nil)))
 
 (defun ai-code--behaviors-update-mode-line (&optional project-root)
   "Update mode-line with current behavior indicator.
