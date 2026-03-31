@@ -175,14 +175,6 @@ if the AI session buffer is not currently visible."
 
 (declare-function ai-code-notifications-response-ready "ai-code-notifications" (&optional backend-name))
 
-(defun ai-code-backends-infra--non-empty-string-p (str)
-  "Return non-nil when STR is a non-empty string.
-ASSUMPTION: STR may be nil, a string, or any other type.
-BEHAVIOR: Returns t only for strings with length > 0.
-EDGE CASE: Nil, empty strings, and non-strings all return nil.
-TEST: Verify with nil, \"\", \"text\", and non-string inputs."
-  (and (stringp str) (> (length str) 0)))
-
 (defun ai-code-backends-infra--output-meaningful-p (output)
   "Return non-nil when OUTPUT contains meaningful printable content."
   (let* ((str (or output ""))
@@ -194,7 +186,6 @@ TEST: Verify with nil, \"\", \"text\", and non-string inputs."
          (str (replace-regexp-in-string "[\x00-\x1f\x7f]" "" str)))
     (string-match-p "[^ \t\n\r]" str)))
 
-
 (defun ai-code-backends-infra--non-empty-string-p (str)
   "Return non-nil when STR is a non-empty string.
 ASSUMPTION: STR may be nil, a string, or any other type.
@@ -204,6 +195,7 @@ TEST: (ai-code-backends-infra--non-empty-string-p \"test\") => t
       (ai-code-backends-infra--non-empty-string-p \"\") => nil
       (ai-code-backends-infra--non-empty-string-p nil) => nil"
   (and (stringp str) (> (length str) 0)))
+
 (defun ai-code-backends-infra--buffer-user-visible-p (buffer)
   "Return non-nil when BUFFER is visible in any live window."
   (and (get-buffer-window-list buffer nil t) t))
