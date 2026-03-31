@@ -3434,8 +3434,18 @@ PROCESSED is the processed text, STATE is the behavior state."
 (defun ai-code--reconstruct-prompt-vec (prompt-vec processed-text params)
   "Reconstruct PROMPT-VEC with PROCESSED-TEXT.
 Preserves non-text blocks (images, files) in vector format.
-Updates PARAMS in-place."
-  (when (and params (or (hash-table-p params) (listp params)))
+Updates PARAMS in-place.
+
+ASSUMPTION: processed-text should be a non-empty string, params should be a valid map
+BEHAVIOR: Returns nil early if processed-text is empty or params is invalid
+EDGE CASE: Handles nil or empty processed-text, invalid params structure
+TEST: Call with nil/empty processed-text or invalid params - should return nil without error"
+  (when (and processed-text
+             (stringp processed-text)
+             (> (length processed-text) 0)
+             params
+             (or (hash-table-p params)
+                 (and (listp params) (listp (car params)))))
     (cond
      ;; Vector format: replace first text block, preserve non-text blocks
      ((vectorp prompt-vec)
