@@ -893,7 +893,14 @@ Called periodically by idle timer to prevent memory growth."
          (let ((timestamp (plist-get v :timestamp)))
            (when (and timestamp (> (- now timestamp) ai-code-behaviors-detection-cache-ttl))
              (remhash k ai-code--detection-cache))))
-       ai-code--detection-cache))))
+       ai-code--detection-cache))
+    (when (> ai-code-behaviors-detection-cache-ttl 0)
+      (maphash
+       (lambda (k v)
+         (let ((timestamp (plist-get v :timestamp)))
+           (when (and timestamp (> (- now timestamp) ai-code-behaviors-detection-cache-ttl))
+             (remhash k ai-code--constraints-cache))))
+       ai-code--constraints-cache))))
 
 (defun ai-code--behaviors-start-cleanup-timer ()
   "Start the idle timer for cache cleanup.
