@@ -2033,10 +2033,10 @@ EVENT is the mouse event."
 Safe to call at any time - returns empty string if called before fully loaded."
   (condition-case err
       (when (and (boundp 'ai-code-behaviors-enabled)
-                  ai-code-behaviors-enabled
-                  (fboundp 'ai-code--behaviors-get-state)
-                  (fboundp 'ai-code--behaviors-get-preset)
-                  (fboundp 'ai-code--behaviors-get-active-bundle))
+                 ai-code-behaviors-enabled
+                 (fboundp 'ai-code--behaviors-get-state)
+                 (fboundp 'ai-code--behaviors-get-preset)
+                 (fboundp 'ai-code--behaviors-get-active-bundle))
         (let* ((state (ai-code--behaviors-get-state))
                (preset (ai-code--behaviors-get-preset))
                (active-bundle (ai-code--behaviors-get-active-bundle))
@@ -3040,7 +3040,7 @@ Adds a transform function to `gptel-prompt-transform-functions' that
 processes behavior hashtags (#=code, @preset, etc.) and injects
 corresponding instructions into prompts sent via gptel-agent.
 Only injects when `gptel--preset' is `gptel-plan' or `gptel-agent'."
-:type 'boolean
+  :type 'boolean
   :group 'ai-code-behaviors)
 
 (when ai-code-behaviors-gptel-agent-integration
@@ -3103,7 +3103,12 @@ CONSTRAINTS is a list of constraint names."
 
 (defun ai-code--glob-to-regexp (glob)
   "Convert GLOB pattern to regexp.
-Handles * (matches anything) and ? (matches single char)."
+Handles * (matches anything) and ? (matches single char).
+
+ASSUMPTION: GLOB is a non-nil string
+BEHAVIOR: Escapes regex special characters, converts * to .* and ? to .
+EDGE CASE: Returns empty string for empty input
+TEST: Verify (ai-code--glob-to-regexp \"*.el\") returns \".*\\.el\""
   (mapconcat (lambda (char)
                (cond
                 ((eq char ?*) ".*")
