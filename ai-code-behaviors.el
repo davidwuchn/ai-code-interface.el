@@ -965,14 +965,14 @@ Shows * annotation for modify presets in gptel modes."
                  ((and gptel-mode-p
                        (assoc name ai-code--behavior-presets)
                        (not (ai-code--behaviors-preset-readonly-p name)))
-                  (let ((data (cdr (assoc name ai-code--behavior-presets))))
-                    (format "* %s" (plist-get data :description))))
-                 ((assoc name ai-code--constraint-bundles)
-                  (let ((data (cdr (assoc name ai-code--constraint-bundles))))
-                    (format " %s" (plist-get data :description))))
-                 ((assoc name ai-code--behavior-presets)
-                  (let ((data (cdr (assoc name ai-code--behavior-presets))))
-                    (format " %s" (plist-get data :description))))
+                  (let ((preset-data (cdr (assoc name ai-code--behavior-presets))))
+                    (format "* %s" (plist-get preset-data :description))))
+                 ((let ((bundle-data (cdr (assoc name ai-code--constraint-bundles))))
+                    (when bundle-data
+                      (format " %s" (plist-get bundle-data :description)))))
+                 ((let ((preset-data (cdr (assoc name ai-code--behavior-presets))))
+                    (when preset-data
+                      (format " %s" (plist-get preset-data :description)))))
                  (t ""))))))
       (list start end candidates
             :annotation-function annotation-fn
@@ -3494,10 +3494,12 @@ Note: # completions are handled by ai-code--agent-shell-hashtag-capf."
                   :annotation-function
                   (lambda (cand)
                     (let ((name (string-trim (substring cand 1))))
-                      (or (and (assoc name ai-code--constraint-bundles)
-                               (format " [bundle] %s" (plist-get (cdr (assoc name ai-code--constraint-bundles)) :description)))
-                          (and (assoc name ai-code--behavior-presets)
-                               (format " [preset] %s" (plist-get (cdr (assoc name ai-code--behavior-presets)) :description)))
+                      (or (let ((bundle-data (cdr (assoc name ai-code--constraint-bundles))))
+                            (when bundle-data
+                              (format " [bundle] %s" (plist-get bundle-data :description))))
+                          (let ((preset-data (cdr (assoc name ai-code--behavior-presets))))
+                            (when preset-data
+                              (format " [preset] %s" (plist-get preset-data :description))))
                           "")))
                   :exclusive 'no)))))))
 
