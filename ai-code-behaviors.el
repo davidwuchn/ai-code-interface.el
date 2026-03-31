@@ -1272,6 +1272,18 @@ TEST: Verify with valid JSON returns plist, invalid JSON returns nil"
       (json-read-from-string string)
     (error nil)))
 
+(defun ai-code--safe-call (fn &rest args)
+  "Safely call FN with ARGS, returning nil on any error.
+Extracts duplicate error handling pattern from session detection and other functions.
+
+ASSUMPTION: Any function may signal error during execution
+BEHAVIOR: Calls FN with ARGS and returns result, or nil on error
+EDGE CASE: Handles all error types uniformly without propagating
+TEST: Verify with valid function returns result, erroring function returns nil"
+  (condition-case nil
+      (apply fn args)
+    (error nil)))
+
 (defun ai-code--extract-json-from-code-block (text)
   "Extract JSON from markdown code block in TEXT.
 Returns parsed plist or nil if no valid JSON code block found."
@@ -2303,25 +2315,19 @@ Returns nil for non-CLI backends (ECA, agent-shell)."
    ((and (boundp 'ai-code-selected-backend)
          (eq ai-code-selected-backend 'eca))
     (and (fboundp 'eca-session)
-         (condition-case nil
-             (eca-session)
-           (error nil))))
+         (ai-code--safe-call #'eca-session)))
 
    ;; agent-shell backend - use agent-shell--shell-buffer
    ((and (boundp 'ai-code-selected-backend)
          (eq ai-code-selected-backend 'agent-shell))
     (and (fboundp 'agent-shell--shell-buffer)
-         (condition-case nil
-             (agent-shell--shell-buffer :no-create t :no-error t)
-           (error nil))))
+         (ai-code--safe-call #'agent-shell--shell-buffer :no-create t :no-error t)))
 
    ;; gptel-agent backend - use ai-code-gptel-agent--get-buffer
    ((and (boundp 'ai-code-selected-backend)
          (eq ai-code-selected-backend 'gptel-agent))
     (and (fboundp 'ai-code-gptel-agent--get-buffer)
-         (condition-case nil
-             (ai-code-gptel-agent--get-buffer)
-           (error nil))))
+         (ai-code--safe-call #'ai-code-gptel-agent--get-buffer)))
 
    ;; CLI backends - use terminal buffer detection
    ((ai-code--get-session-prefix)
