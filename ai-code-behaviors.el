@@ -166,6 +166,19 @@ Uses call-process instead of shell to avoid injection vulnerabilities."
     (when (zerop (apply #'call-process "git" nil t nil args))
       (string-trim (buffer-string)))))
 
+(defun ai-code--read-file-contents (file-path)
+  "Read FILE-PATH and return contents as string, or nil if file doesn't exist.
+Extracts duplicate file reading pattern from behavior loading functions.
+
+ASSUMPTION: file-exists-p checks file accessibility
+BEHAVIOR: Returns file contents as string or nil
+EDGE CASE: Returns nil for non-existent files
+TEST: Verify with existing file returns string, missing file returns nil"
+  (when (file-exists-p file-path)
+    (with-temp-buffer
+      (insert-file-contents file-path)
+      (buffer-string))))
+
 (defvar ai-code--behaviors-session-states (make-hash-table :test #'equal)
   "Hash table of behaviors per git repository.
 Key: git root directory (string)
@@ -933,10 +946,7 @@ Return the prompt content string, or nil if not found."
       (when (ai-code--ensure-behaviors-repo)
         (ai-code--behaviors-maybe-check-updates)
         (let* ((file-path (ai-code--behavior-file-path behavior-name))
-               (content (when (file-exists-p file-path)
-                          (with-temp-buffer
-                            (insert-file-contents file-path)
-                            (buffer-string)))))
+               (content (ai-code--read-file-contents file-path)))
           (when content
             (ai-code--behaviors-cache-put behavior-name content)))))))
 
@@ -1693,11 +1703,7 @@ Returns t on success, nil on failure."
 (defun ai-code--load-behavior-readme (behavior-name)
   "Load README.md content for BEHAVIOR-NAME.
 Return content string or nil if not found."
-  (let ((file-path (ai-code--behavior-readme-path behavior-name)))
-    (when (file-exists-p file-path)
-      (with-temp-buffer
-        (insert-file-contents file-path)
-        (buffer-string)))))
+  (ai-code--read-file-contents (ai-code--behavior-readme-path behavior-name)))
 
 (defun ai-code--extract-behavior-annotation (behavior-name)
   "Extract one-line annotation for BEHAVIOR-NAME from its README.md.
