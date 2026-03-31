@@ -787,7 +787,8 @@ Returns the selected buffer or nil if none exist."
 EXISTING-INSTANCE-NAMES is a list of existing instance names.
 If FORCE-PROMPT is nil and there are no existing instances, return \"default\"."
   (if (or existing-instance-names force-prompt)
-      (let ((proposed-name ""))
+      (let ((proposed-name "")
+            (last-attempt nil))
         (while (or (string= proposed-name "")
                    (member proposed-name existing-instance-names))
           (setq proposed-name
@@ -795,7 +796,11 @@ If FORCE-PROMPT is nil and there are no existing instances, return \"default\"."
                                  (format "Instance name (existing: %s): "
                                          (mapconcat #'identity existing-instance-names ", "))
                                "Instance name: ")
-                             nil nil (and (> (length proposed-name) 0) proposed-name)))
+                             nil nil
+                             (if (ai-code-backends-infra--non-empty-string-p last-attempt)
+                                 last-attempt
+                               proposed-name)))
+          (setq last-attempt proposed-name)
           (cond
            ((string= proposed-name "")
             (message "Instance name cannot be empty. Please enter a name.")
