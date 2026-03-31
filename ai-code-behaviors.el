@@ -1230,8 +1230,12 @@ Prompt:
                        (ai-code--extract-json-from-response response)))
                (mode (when data (plist-get data :mode)))
                (modifiers (when data (plist-get data :modifiers))))
-          (when mode
-            (let ((mode-name (concat "=" mode)))
+          (when (and mode (stringp mode))
+            ;; Normalize mode: ensure it has exactly one "=" prefix
+            (let* ((mode-without-prefix (if (string-prefix-p "=" mode)
+                                            (substring mode 1)
+                                          mode))
+                   (mode-name (concat "=" mode-without-prefix)))
               (when (member mode-name ai-code--behavior-operating-modes)
                 (list :mode mode-name
                       :modifiers (seq-filter
