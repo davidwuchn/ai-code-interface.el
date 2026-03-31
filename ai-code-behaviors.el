@@ -210,25 +210,26 @@ Returns nil if not in a project (prevents state leakage between projects)."
         (and (fboundp 'ai-code--behaviors-extract-project-from-buffer-name)
              (ai-code--behaviors-extract-project-from-buffer-name)))))
 
-(defmacro ai-code--with-project-root (root &rest body)
-  "Execute BODY with ROOT bound to project root, or return nil if not in project.
-ROOT is a symbol that will be bound to the project root directory.
+(defmacro ai-code--with-project-root (var &optional root-value &rest body)
+  "Execute BODY with VAR bound to project root, or return nil if not in project.
+VAR is a symbol that will be bound to the project root directory.
+ROOT-VALUE is an optional explicit root value; if nil, use current project root.
 If project root cannot be determined, BODY is not executed and nil is returned.
 
 ASSUMPTION: Most behavior operations require a valid project root
-BEHAVIOR: Binds ROOT to project root or returns nil
+BEHAVIOR: Binds VAR to project root or returns nil
 EDGE CASE: Returns nil gracefully when not in a project (prevents state leakage)
 TEST: Call with nil root outside a git repo, should return nil"
-  (declare (indent 1))
-  `(let ((,root (or ,root (ai-code--behaviors-project-root))))
-     (when ,root
+  (declare (indent 2))
+  `(let ((,var (or ,root-value (ai-code--behaviors-project-root))))
+     (when ,var
        ,@body)))
 
 (defun ai-code--behaviors--get (key &optional root)
   "Get entry KEY from session states for ROOT.
 If ROOT is nil, use current project root.
 Returns nil if not in a project."
-  (ai-code--with-project-root r
+  (ai-code--with-project-root r root
     (plist-get (or (gethash r ai-code--behaviors-session-states)
                    '(:state nil :preset nil))
                key)))
@@ -237,7 +238,7 @@ Returns nil if not in a project."
   "Set entry KEY to VALUE in session states for ROOT.
 If ROOT is nil, use current project root.
 Does nothing and returns nil if not in a project (prevents state leakage)."
-  (ai-code--with-project-root r
+  (ai-code--with-project-root r root
     (let ((entry (or (gethash r ai-code--behaviors-session-states)
                      '(:state nil :preset nil))))
       (puthash r (plist-put (copy-tree entry) key value)
@@ -263,43 +264,43 @@ Does nothing and returns nil if not in a project (prevents state leakage)."
 (defun ai-code--behaviors-clear-state (&optional root)
   "Clear behavior state for project ROOT, or current project if nil.
 Returns nil if not in a project (prevents state leakage)."
-  (ai-code--with-project-root r
+  (ai-code--with-project-root r root
     (remhash r ai-code--behaviors-session-states)))
 
 (defun ai-code--behaviors-set-pending-preset (preset &optional root)
   "Set pending PRESET for project ROOT.
 Returns nil if not in a project (prevents state leakage)."
-  (ai-code--with-project-root r
+  (ai-code--with-project-root r root
     (puthash r preset ai-code--behaviors-pending-presets)))
 
 (defun ai-code--behaviors-get-pending-preset (&optional root)
   "Get pending preset for project ROOT.
 Returns nil if not in a project."
-  (ai-code--with-project-root r
+  (ai-code--with-project-root r root
     (gethash r ai-code--behaviors-pending-presets)))
 
 (defun ai-code--behaviors-clear-pending-preset (&optional root)
   "Clear pending preset for project ROOT.
 Returns nil if not in a project (prevents state leakage)."
-  (ai-code--with-project-root r
+  (ai-code--with-project-root r root
     (remhash r ai-code--behaviors-pending-presets)))
 
 (defun ai-code--behaviors-get-active-bundle (&optional root)
   "Get active constraint bundle for project ROOT, or current project if nil.
 Returns nil if not in a project."
-  (ai-code--with-project-root r
+  (ai-code--with-project-root r root
     (gethash r ai-code--active-constraint-bundles)))
 
 (defun ai-code--behaviors-set-active-bundle (bundle &optional root)
   "Set active constraint BUNDLE for project ROOT, or current project if nil.
-Returns nil if not in a project (prevents state leakage)."
-  (ai-code--with-project-root r
+Does nothing and returns nil if not in a project (prevents state leakage)."
+  (ai-code--with-project-root r root
     (puthash r bundle ai-code--active-constraint-bundles)))
 
 (defun ai-code--behaviors-clear-active-bundle (&optional root)
   "Clear active constraint bundle for project ROOT.
 Returns nil if not in a project (prevents state leakage)."
-  (ai-code--with-project-root r
+  (ai-code--with-project-root r root
     (remhash r ai-code--active-constraint-bundles)))
 
 (defconst ai-code--behavior-operating-modes
