@@ -3384,13 +3384,20 @@ Handles three formats:
 
 (defun ai-code--extract-text-value (alist)
   "Extract text value from ALIST.
-Handles both 'text and \"text\" keys.
-Returns string, symbol name, or empty string."
-  (let* ((entry (or (assoc 'text alist) (assoc "text" alist)))
-         (val (when entry (cdr entry))))
-    (cond ((stringp val) val)
-          ((symbolp val) (symbol-name val))
-          (t ""))))
+Handles both \\='text and \"text\" keys.
+Returns string, symbol name, or empty string.
+
+ASSUMPTION: alist should be a valid alist or nil
+BEHAVIOR: Returns empty string for invalid input, extracts text value otherwise
+EDGE CASE: Handles nil, non-cons, and missing text key gracefully
+TEST: Call with nil, non-list, or alist without text key - should return \"\""
+  (if (and alist (consp alist))
+      (let* ((entry (or (assoc 'text alist) (assoc "text" alist)))
+             (val (when entry (cdr entry))))
+        (cond ((stringp val) val)
+              ((symbolp val) (symbol-name val))
+              (t "")))
+    ""))
 
 (defun ai-code--detect-agent-shell-project-root ()
   "Detect project root for agent-shell buffer.
