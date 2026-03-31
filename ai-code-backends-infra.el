@@ -175,6 +175,14 @@ if the AI session buffer is not currently visible."
 
 (declare-function ai-code-notifications-response-ready "ai-code-notifications" (&optional backend-name))
 
+(defun ai-code-backends-infra--non-empty-string-p (str)
+  "Return non-nil when STR is a non-empty string.
+ASSUMPTION: STR may be nil, a string, or any other type.
+BEHAVIOR: Returns t only for strings with length > 0.
+EDGE CASE: Nil, empty strings, and non-strings all return nil.
+TEST: Verify with nil, \"\", \"text\", and non-string inputs."
+  (and (stringp str) (> (length str) 0)))
+
 (defun ai-code-backends-infra--output-meaningful-p (output)
   "Return non-nil when OUTPUT contains meaningful printable content."
   (let* ((str (or output ""))
@@ -296,10 +304,12 @@ scrolling and copying are not disrupted by timer-driven redraws."
                                        (setq ai-code-backends-infra--vterm-render-timer nil)
                                        (when (and ai-code-backends-infra--vterm-render-queue
                                                   (not (bound-and-true-p vterm-copy-mode)))
-                                         (let ((inhibit-redisplay t)
+                                         (let ((proc (get-buffer-process buf))
+                                               (inhibit-redisplay t)
                                                (data ai-code-backends-infra--vterm-render-queue))
                                            (setq ai-code-backends-infra--vterm-render-queue nil)
-                                           (funcall orig-fun (get-buffer-process buf) data))))))
+                                           (when (and proc (process-live-p proc))
+                                             (funcall orig-fun proc data)))))))
                                  (current-buffer))))
           (funcall orig-fun process input))))))
 
@@ -581,8 +591,7 @@ TEST: (ai-code-backends-infra--display-buffer-in-side-window nil) => nil
   "Return file-session map key for PREFIX and SOURCE-BUFFER."
   (when (and prefix (buffer-live-p source-buffer))
     (with-current-buffer source-buffer
-      (when (and (stringp buffer-file-name)
-                 (> (length buffer-file-name) 0))
+      (when (ai-code-backends-infra--non-empty-string-p buffer-file-name)
         (cons prefix
               (ai-code-backends-infra--normalize-file-path buffer-file-name))))))
 
@@ -662,12 +671,10 @@ SOURCE-BUFFER unless FORCE-PROMPT is non-nil."
   (when (buffer-live-p buffer)
     (with-current-buffer buffer
       (cond
-       ((and (stringp ai-code-backends-infra--session-directory)
-             (> (length ai-code-backends-infra--session-directory) 0))
+       ((ai-code-backends-infra--non-empty-string-p ai-code-backends-infra--session-directory)
         (ai-code-backends-infra--normalize-session-directory
          ai-code-backends-infra--session-directory))
-       ((and (stringp default-directory)
-             (> (length default-directory) 0))
+       ((ai-code-backends-infra--non-empty-string-p default-directory)
         (ai-code-backends-infra--normalize-session-directory
          default-directory))
        (t nil)))))
@@ -676,8 +683,7 @@ SOURCE-BUFFER unless FORCE-PROMPT is non-nil."
   "Return a session buffer name for PREFIX in DIRECTORY.
 When INSTANCE-NAME is non-nil and not \"default\", include it in the name."
   (let* ((base (file-name-nondirectory (directory-file-name directory)))
-         (instance (and instance-name
-                        (not (string= instance-name ""))
+         (instance (and (ai-code-backends-infra--non-empty-string-p instance-name)
                         (not (string= instance-name "default"))
                         instance-name)))
     (format "*%s[%s%s]*"
