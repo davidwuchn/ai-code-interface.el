@@ -870,9 +870,14 @@ Returns content string or nil if expired/missing."
           nil)))))
 
 (defun ai-code--behaviors-cache-put (key value)
-  "Cache VALUE for KEY with current timestamp."
-  (puthash key (cons value (float-time)) ai-code--behaviors-cache)
-  value)
+  "Cache VALUE for KEY with current timestamp.
+ASSUMPTION: KEY is a non-nil string, VALUE is non-nil
+BEHAVIOR: Stores VALUE with timestamp, returns VALUE
+EDGE CASE: Returns nil if KEY or VALUE is nil (prevents invalid cache entries)
+TEST: Verify (ai-code--behaviors-cache-put nil \"x\") returns nil"
+  (when (and key value)
+    (puthash key (cons value (float-time)) ai-code--behaviors-cache)
+    value))
 
 (defvar ai-code--behaviors-cleanup-timer nil
   "Idle timer for periodic cache cleanup.")
