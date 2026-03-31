@@ -3423,27 +3423,28 @@ PROCESSED is the processed text, STATE is the behavior state."
   "Reconstruct PROMPT-VEC with PROCESSED-TEXT.
 Preserves non-text blocks (images, files) in vector format.
 Updates PARAMS in-place."
-  (cond
-   ;; Vector format: replace first text block, preserve non-text blocks
-   ((vectorp prompt-vec)
-    (let ((new-vec (vector `((type . "text") (text . ,processed-text))))
-          (non-text-blocks
-           (cl-remove-if
-            (lambda (elem)
-              (or (stringp elem)
-                  (and (consp elem)
-                       (or (assoc 'text elem) (assoc "text" elem)))))
-            prompt-vec)))
-      (when non-text-blocks
-        (setq new-vec (vconcat new-vec (vconcat non-text-blocks))))
-      (setf (map-elt params 'prompt) new-vec)))
-   ;; String format: replace params prompt
-   ((stringp prompt-vec)
-    (setf (map-elt params 'prompt) processed-text))
-   ;; Alist format: update the text field
-   ((and (consp prompt-vec) (or (assoc 'text prompt-vec) (assoc "text" prompt-vec)))
-    (let ((entry (or (assoc 'text prompt-vec) (assoc "text" prompt-vec))))
-      (setcdr entry processed-text)))))
+  (when (and params (or (hash-table-p params) (listp params)))
+    (cond
+     ;; Vector format: replace first text block, preserve non-text blocks
+     ((vectorp prompt-vec)
+      (let ((new-vec (vector `((type . "text") (text . ,processed-text))))
+            (non-text-blocks
+             (cl-remove-if
+              (lambda (elem)
+                (or (stringp elem)
+                    (and (consp elem)
+                         (or (assoc 'text elem) (assoc "text" elem)))))
+              prompt-vec)))
+        (when non-text-blocks
+          (setq new-vec (vconcat new-vec (vconcat non-text-blocks))))
+        (setf (map-elt params 'prompt) new-vec)))
+     ;; String format: replace params prompt
+     ((stringp prompt-vec)
+      (setf (map-elt params 'prompt) processed-text))
+     ;; Alist format: update the text field
+     ((and (consp prompt-vec) (or (assoc 'text prompt-vec) (assoc "text" prompt-vec)))
+      (let ((entry (or (assoc 'text prompt-vec) (assoc "text" prompt-vec))))
+        (setcdr entry processed-text))))))
 
 (defun ai-code-agent-shell-request-decorator (request)
   "Decorate agent-shell REQUEST with ai-code-behaviors.
@@ -3455,7 +3456,7 @@ Also handles auto-switching from plan to build mode for modify operations."
         (when (and (string= (map-elt request :method) "session/prompt")
                    ai-code-behaviors-enabled)
           (let* ((params (map-elt request :params))
-                 (prompt-vec (map-elt params 'prompt))
+                 (prompt-vec (when params (map-elt params 'prompt)))
                  (prompt-text (ai-code--extract-text-from-prompt-vec prompt-vec))
                  (project-root (ai-code--detect-agent-shell-project-root))
                  (result (when prompt-text
@@ -3467,7 +3468,7 @@ Also handles auto-switching from plan to build mode for modify operations."
             ;; Store last prompt for inspection (C-c P)
             (ai-code--store-last-prompt project-root prompt-text processed-text current-state)
             ;; Inject processed text when available
-            (when processed-text
+            (when (and processed-text params)
               (ai-code--reconstruct-prompt-vec prompt-vec processed-text params))
             ;; Handle mode switch if needed
             (when mode-switch-needed
