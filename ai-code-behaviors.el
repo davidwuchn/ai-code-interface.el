@@ -1302,10 +1302,11 @@ Returns parsed plist or nil if no valid JSON code block found."
 Returns parsed plist or nil if no valid JSON found or depth exceeds limit.
 ASSUMPTION: JSON object starts with { and ends with matching }
 BEHAVIOR: Counts braces while tracking string/escape state
+EDGE CASE: Returns nil for nil or non-string input
 EDGE CASE: Exits early if depth goes negative (unmatched closing brace)
 EDGE CASE: Exits early if depth exceeds max (prevents CPU exhaustion)
-TEST: Verify with valid JSON, malformed JSON, deeply nested JSON"
-  (when (string-match "{" text)
+TEST: Verify with valid JSON, malformed JSON, deeply nested JSON, nil input"
+  (when (and (stringp text) (string-match "{" text))
     (let ((start (match-beginning 0))
           (depth 0)
           (max-depth ai-code-behaviors-max-brace-depth)
