@@ -1278,18 +1278,15 @@ Returns parsed plist or nil if no valid JSON code block found."
   (when (string-match "```\\(?:json\\)?[[:space:]]*\n\\([[:space:][:print:]]*?\\)[[:space:]]*```" text)
     (ai-code--safe-json-read (match-string 1 text))))
 
-;; ASSUMPTION: JSON object starts with { and ends with matching }
-;; BEHAVIOR: Counts braces while tracking string/escape state
-;; EDGE CASE: Exits early if depth goes negative (unmatched closing brace)
-;; EDGE CASE: Exits early if depth exceeds max (prevents CPU exhaustion)
-;; TEST: Verify with valid JSON, malformed JSON, deeply nested JSON
 (defun ai-code--extract-json-balanced (text)
   "Extract JSON using balanced brace detection from TEXT.
-Returns parsed plist or nil if no valid JSON found or depth exceeds limit."
-  (cond
-   ((string-match-p "\\`[[:space:]]*{" text)
-    (ai-code--safe-json-read text))
-   ((string-match "{" text)
+Returns parsed plist or nil if no valid JSON found or depth exceeds limit.
+ASSUMPTION: JSON object starts with { and ends with matching }
+BEHAVIOR: Counts braces while tracking string/escape state
+EDGE CASE: Exits early if depth goes negative (unmatched closing brace)
+EDGE CASE: Exits early if depth exceeds max (prevents CPU exhaustion)
+TEST: Verify with valid JSON, malformed JSON, deeply nested JSON"
+  (when (string-match "{" text)
     (let ((start (match-beginning 0))
           (depth 0)
           (max-depth ai-code-behaviors-max-brace-depth)
@@ -1314,8 +1311,7 @@ Returns parsed plist or nil if no valid JSON found or depth exceeds limit."
         (unless found-end
           (setq i (1+ i))))
       (when (and found-end (= depth 0))
-        (ai-code--safe-json-read (substring text start (1+ i))))))
-   (t nil)))
+        (ai-code--safe-json-read (substring text start (1+ i)))))))
 
 (defun ai-code--classify-prompt-intent-keywords (prompt-text)
   "Classify PROMPT-TEXT intent using keyword matching.
@@ -3070,33 +3066,40 @@ Handles * (matches anything) and ? (matches single char)."
 (defun ai-code--constraints-detect-from-file (file-path &optional project-root)
   "Detect constraints from a single project config FILE-PATH.
 PROJECT-ROOT is used to compute relative paths for directory patterns.
-Returns list of detected constraint names."
-  (let* ((file-name (file-name-nondirectory file-path))
-         (relative-path (when project-root
-                          (file-relative-name file-path project-root)))
-         (entry (cl-find-if (lambda (e)
-                              (let ((pattern (car e)))
-                                (or (string= pattern file-name)
-                                    (and relative-path (string= pattern relative-path))
-                                    (string-match-p (concat (ai-code--glob-to-regexp pattern) "$") file-name)
-                                    (and relative-path
-                                         (string-match-p (concat (ai-code--glob-to-regexp pattern) "$") relative-path)))))
-                            ai-code--project-config-constraint-map)))
-    (when entry
-      (let ((base-constraints (plist-get (cdr entry) :constraints))
-            (patterns (plist-get (cdr entry) :patterns))
-            (detected nil))
-        (setq detected (or base-constraints '()))
-        (when (and patterns (file-exists-p file-path))
-          (with-temp-buffer
-            (insert-file-contents file-path)
-            (dolist (pattern-entry patterns)
-              (let ((pattern (car pattern-entry))
-                    (constraint (cdr pattern-entry)))
-                (goto-char (point-min))
-                (when (re-search-forward pattern nil t)
-                  (cl-pushnew constraint detected :test #'equal))))))
-        detected))))
+Returns list of detected constraint names.
+
+ASSUMPTION: file-path should be a non-nil string
+BEHAVIOR: Returns nil early if file-path is invalid, otherwise detects constraints
+EDGE CASE: Handles nil or non-string file-path gracefully
+TEST: Call with nil or non-string, should return nil without error"
+  (if (and file-path (stringp file-path))
+      (let* ((file-name (file-name-nondirectory file-path))
+             (relative-path (when project-root
+                              (file-relative-name file-path project-root)))
+             (entry (cl-find-if (lambda (e)
+                                  (let ((pattern (car e)))
+                                    (or (string= pattern file-name)
+                                        (and relative-path (string= pattern relative-path))
+                                        (string-match-p (concat (ai-code--glob-to-regexp pattern) "$") file-name)
+                                        (and relative-path
+                                             (string-match-p (concat (ai-code--glob-to-regexp pattern) "$") relative-path)))))
+                                ai-code--project-config-constraint-map)))
+        (when entry
+          (let ((base-constraints (plist-get (cdr entry) :constraints))
+                (patterns (plist-get (cdr entry) :patterns))
+                (detected nil))
+            (setq detected (or base-constraints '()))
+            (when (and patterns (file-exists-p file-path))
+              (with-temp-buffer
+                (insert-file-contents file-path)
+                (dolist (pattern-entry patterns)
+                  (let ((pattern (car pattern-entry))
+                        (constraint (cdr pattern-entry)))
+                    (goto-char (point-min))
+                    (when (re-search-forward pattern nil t)
+                      (cl-pushnew constraint detected :test #'equal))))))
+            detected)))
+    nil))
 
 (defun ai-code--glob-pattern-p (pattern)
   "Return non-nil if PATTERN contains glob wildcards (* or ?)."
