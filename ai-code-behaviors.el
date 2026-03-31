@@ -1,4 +1,4 @@
-;;; ai-code-behaviors.el --- Behavior injection system for AI prompts -*- lexical-binding: t; -*-
+;;; ai-code-behaviors.el --- Behavior injection system for AI prompts -*- lexical-binding: t; no-byte-compile: t; -*-
 
 ;; Author: davidwuchn
 ;; SPDX-License-Identifier: Apache-2.0
@@ -170,6 +170,9 @@ Uses call-process instead of shell to avoid injection vulnerabilities."
   "Hash table of behaviors per git repository.
 Key: git root directory (string)
 Value: plist (:state BEHAVIOR-STATE :preset PRESET-NAME)")
+
+(defvar ai-code--gptel-agent-setup-done nil
+  "Guard to prevent repeated gptel-agent setup when file is loaded multiple times.")
 
 (defvar ai-code--behaviors-update-checked nil
   "Non-nil if update check has been performed this session.")
@@ -2021,10 +2024,13 @@ EVENT is the mouse event."
 
 (defun ai-code--behaviors-mode-line-string ()
   "Return propertized mode-line string for behaviors.
-Safe to call at any time - returns nil if called before fully loaded."
+Safe to call at any time - returns empty string if called before fully loaded."
   (condition-case err
       (when (and (boundp 'ai-code-behaviors-enabled)
-                 ai-code-behaviors-enabled)
+                  ai-code-behaviors-enabled
+                  (fboundp 'ai-code--behaviors-get-state)
+                  (fboundp 'ai-code--behaviors-get-preset)
+                  (fboundp 'ai-code--behaviors-get-active-bundle))
         (let* ((state (ai-code--behaviors-get-state))
                (preset (ai-code--behaviors-get-preset))
                (active-bundle (ai-code--behaviors-get-active-bundle))
@@ -2033,7 +2039,8 @@ Safe to call at any time - returns nil if called before fully loaded."
                (constraints (and state (plist-get state :constraint-modifiers)))
                (has-custom (and state (plist-get state :custom-suffix)))
                (constraint-count (+ (length constraints) (if has-custom 1 0)))
-               (face (ai-code--behaviors-get-mode-face mode))
+               (face (and (fboundp 'ai-code--behaviors-get-mode-face)
+                          (ai-code--behaviors-get-mode-face mode)))
                (text (cond
                       ((and preset active-bundle)
                        (format "[@%s @%s]" preset active-bundle))
@@ -2051,13 +2058,15 @@ Safe to call at any time - returns nil if called before fully loaded."
                                  (format " +%d" constraint-count))
                                "]"))
                       (t "[○]")))
-               (tooltip (ai-code--behaviors-build-tooltip preset state)))
+               (tooltip (and (fboundp 'ai-code--behaviors-build-tooltip)
+                             (ai-code--behaviors-build-tooltip preset state))))
           (propertize text
                       'face face
                       'mouse-face 'mode-line-highlight
                       'help-echo tooltip
-                      'local-map ai-code--behaviors-mode-line-map)))
-    (error nil)))
+                      'local-map (and (boundp 'ai-code--behaviors-mode-line-map)
+                                      ai-code--behaviors-mode-line-map))))
+    (error "")))
 
 (defun ai-code--behaviors-update-mode-line (&optional project-root)
   "Update mode-line with current behavior indicator.
@@ -2650,23 +2659,26 @@ Mode-line is enabled via `gptel-mode-hook' in `ai-code--behavior-setup-hashtag-c
 NOTE: We do NOT register behavior presets with gptel--known-presets.
 If we did, gptel's gptel--transform-apply-preset would remove @preset
 from prompts before our transform could see it. We handle @preset
-in our own transform and provide completion via ai-code--behavior-preset-gptel-capf."
-  (add-hook 'gptel-mode-hook #'ai-code--behavior-setup-hashtag-completion)
-  ;; Fix corfu-auto-prefix for immediate # and @ completion triggers
-  (add-hook 'gptel-mode-hook
-            (lambda ()
-              (when (boundp 'corfu-auto-prefix)
-                (setq-local corfu-auto-prefix 1))))
-  (unless (memq 'ai-code--gptel-agent-transform-inject-behaviors
-                (default-value 'gptel-prompt-transform-functions))
-    (add-hook 'gptel-prompt-transform-functions
-              #'ai-code--gptel-agent-transform-inject-behaviors))
-  (dolist (buf (buffer-list))
-    (when (buffer-live-p buf)
-      (with-current-buffer buf
-        (when (bound-and-true-p gptel-mode)
-          (ai-code--behavior-setup-hashtag-completion)))))
-  (message "ai-code-behaviors gptel-agent integration enabled"))
+in our own transform and provide completion via ai-code--behavior-preset-gptel-capf.
+
+Uses `ai-code--gptel-agent-setup-done' defvar for guard."
+  (unless ai-code--gptel-agent-setup-done
+    (setq ai-code--gptel-agent-setup-done t)
+    (add-hook 'gptel-mode-hook #'ai-code--behavior-setup-hashtag-completion)
+    (add-hook 'gptel-mode-hook
+              (lambda ()
+                (when (boundp 'corfu-auto-prefix)
+                  (setq-local corfu-auto-prefix 1))))
+    (unless (memq 'ai-code--gptel-agent-transform-inject-behaviors
+                  (default-value 'gptel-prompt-transform-functions))
+      (add-hook 'gptel-prompt-transform-functions
+                #'ai-code--gptel-agent-transform-inject-behaviors))
+    (dolist (buf (buffer-list))
+      (when (buffer-live-p buf)
+        (with-current-buffer buf
+          (when (bound-and-true-p gptel-mode)
+            (ai-code--behavior-setup-hashtag-completion)))))
+    (message "ai-code-behaviors gptel-agent integration enabled")))
 
 (defun ai-code--behaviors-gptel-preset-change-advice (orig-fun preset &rest args)
   "Handle mode switching between gptel-plan and gptel-agent.
@@ -3022,14 +3034,16 @@ Adds a transform function to `gptel-prompt-transform-functions' that
 processes behavior hashtags (#=code, @preset, etc.) and injects
 corresponding instructions into prompts sent via gptel-agent.
 Only injects when `gptel--preset' is `gptel-plan' or `gptel-agent'."
-  :type 'boolean
+:type 'boolean
   :group 'ai-code-behaviors)
 
 (when ai-code-behaviors-gptel-agent-integration
-  (if (featurep 'gptel)
-      (ai-code--gptel-agent-setup-transform)
-    (eval-after-load 'gptel
-      #'ai-code--gptel-agent-setup-transform)))
+  (unless ai-code--gptel-agent-setup-done
+    (setq ai-code--gptel-agent-setup-done t)
+    (if (featurep 'gptel)
+        (ai-code--gptel-agent-setup-transform)
+      (eval-after-load 'gptel
+        #'ai-code--gptel-agent-setup-transform))))
 
 ;;; Constraint Bundle and Persistence Functions
 
