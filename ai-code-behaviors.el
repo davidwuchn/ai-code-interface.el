@@ -1336,37 +1336,43 @@ TEST: Verify with valid JSON, malformed JSON, deeply nested JSON, nil input"
 (defun ai-code--classify-prompt-intent-keywords (prompt-text)
   "Classify PROMPT-TEXT intent using keyword matching.
 Return plist with :mode, :modifiers, and :confidence.
-Confidence is high (2+ matches), medium (1 match), or low."
-  (let* ((lower-prompt (downcase prompt-text))
-         (mode-order (mapcar #'car ai-code--intent-classification-keywords))
-         (mode-scores
-          (delq nil
-                (mapcar
-                 (lambda (entry)
-                   (let ((score (cl-count-if
-                                 (lambda (kw) (string-match-p (regexp-quote kw) lower-prompt))
-                                 (cdr entry))))
-                     (when (> score 0)
-                       (cons (car entry) score))))
-                 ai-code--intent-classification-keywords)))
-         (best-entry (car (sort mode-scores
-                                (lambda (a b)
-                                  (or (> (cdr a) (cdr b))
-                                      (and (= (cdr a) (cdr b))
-                                           (< (cl-position (car a) mode-order)
-                                              (cl-position (car b) mode-order))))))))
-         (modifiers nil))
-    (when best-entry
-      (dolist (entry ai-code--modifier-trigger-keywords)
-        (let ((mod (car entry))
-              (keywords (cdr entry)))
-          (dolist (kw keywords)
-            (when (string-match-p (regexp-quote kw) lower-prompt)
-              (push (symbol-name mod) modifiers)))))
-      (let ((confidence (if (>= (cdr best-entry) 2) 'high 'medium)))
-        (list :mode (symbol-name (car best-entry))
-              :modifiers (delete-dups modifiers)
-              :confidence confidence)))))
+Confidence is high (2+ matches), medium (1 match), or low.
+
+ASSUMPTION: prompt-text should be a non-nil string
+BEHAVIOR: Returns nil early if prompt-text is invalid, otherwise classifies intent
+EDGE CASE: Handles nil or non-string input gracefully without error
+TEST: Call with nil or non-string, should return nil without error"
+  (when (and prompt-text (stringp prompt-text))
+    (let* ((lower-prompt (downcase prompt-text))
+           (mode-order (mapcar #'car ai-code--intent-classification-keywords))
+           (mode-scores
+            (delq nil
+                  (mapcar
+                   (lambda (entry)
+                     (let ((score (cl-count-if
+                                   (lambda (kw) (string-match-p (regexp-quote kw) lower-prompt))
+                                   (cdr entry))))
+                       (when (> score 0)
+                         (cons (car entry) score))))
+                   ai-code--intent-classification-keywords)))
+           (best-entry (car (sort mode-scores
+                                  (lambda (a b)
+                                    (or (> (cdr a) (cdr b))
+                                        (and (= (cdr a) (cdr b))
+                                             (< (cl-position (car a) mode-order)
+                                                (cl-position (car b) mode-order))))))))
+           (modifiers nil))
+      (when best-entry
+        (dolist (entry ai-code--modifier-trigger-keywords)
+          (let ((mod (car entry))
+                (keywords (cdr entry)))
+            (dolist (kw keywords)
+              (when (string-match-p (regexp-quote kw) lower-prompt)
+                (push (symbol-name mod) modifiers)))))
+        (let ((confidence (if (>= (cdr best-entry) 2) 'high 'medium)))
+          (list :mode (symbol-name (car best-entry))
+                :modifiers (delete-dups modifiers)
+                :confidence confidence))))))
 
 (defun ai-code--extract-clean-user-prompt (text)
   "Extract clean user prompt from TEXT for classification.
@@ -3068,22 +3074,15 @@ CONSTRAINTS is a list of constraint names."
 (defun ai-code--glob-to-regexp (glob)
   "Convert GLOB pattern to regexp.
 Handles * (matches anything) and ? (matches single char)."
-  (let ((result "")
-        (i 0)
-        (len (length glob)))
-    (while (< i len)
-      (let ((char (aref glob i)))
-        (cond
-         ((eq char ?*)
-          (setq result (concat result ".*")))
-         ((eq char ??)
-          (setq result (concat result ".")))
-         ((memq char '(?. ?^ ?$ ?+ ?\\ ?\[ ?\] ?\( ?\) ?\{ ?\} ?\|))
-          (setq result (concat result "\\" (string char))))
-         (t
-          (setq result (concat result (string char))))))
-      (setq i (1+ i)))
-    result))
+  (mapconcat (lambda (char)
+               (cond
+                ((eq char ?*) ".*")
+                ((eq char ??) ".")
+                ((memq char '(?. ?^ ?$ ?+ ?\\ ?\[ ?\] ?\( ?\) ?\{ ?\} ?\|))
+                 (concat "\\" (string char)))
+                (t (string char))))
+             glob
+             ""))
 
 (defun ai-code--constraints-detect-from-file (file-path &optional project-root)
   "Detect constraints from a single project config FILE-PATH.
