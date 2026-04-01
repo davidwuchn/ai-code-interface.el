@@ -179,6 +179,19 @@ TEST: Verify with existing file returns string, missing file returns nil"
       (insert-file-contents file-path)
       (buffer-string))))
 
+
+(defun ai-code--with-behaviors-repo (fn &rest args)
+  "Execute FN with ARGS in ai-behaviors repository directory.
+Sets default-directory to `ai-code-behaviors-repo-path' for the duration of FN call.
+Returns result of FN, or nil if repo not available.
+
+ASSUMPTION: ai-code-behaviors-repo-path is a valid directory path
+BEHAVIOR: Temporarily sets default-directory and calls FN with ARGS
+EDGE CASE: Returns nil if repo is not available
+TEST: Verify function executes in correct directory, returns nil when repo unavailable"
+  (when (ai-code--behaviors-repo-available-p)
+    (let ((default-directory (expand-file-name ai-code-behaviors-repo-path)))
+      (apply fn args))))
 (defvar ai-code--behaviors-session-states (make-hash-table :test #'equal)
   "Hash table of behaviors per git repository.
 Key: git root directory (string)
@@ -635,9 +648,8 @@ if repo is not available."
 (defun ai-code--behaviors-get-current-commit ()
   "Get current commit hash of ai-behaviors repository.
 Returns short commit hash or nil if repo not available."
-  (when (ai-code--behaviors-repo-available-p)
-    (let ((default-directory (expand-file-name ai-code-behaviors-repo-path)))
-      (ai-code--git-command-output "rev-parse" "--short" "HEAD"))))
+  (ai-code--with-behaviors-repo (lambda ()
+                                  (ai-code--git-command-output "rev-parse" "--short" "HEAD"))))
 
 (defconst ai-code--behavior-presets
   '(("frame-problem" . (:mode "=frame" :modifiers ("subtract" "challenge")
@@ -847,20 +859,19 @@ Return non-nil if repo is available after this call."
 Fetches from remote first (with 5s timeout), then compares.
 Return one of: `up-to-date', `updates-available', `no-remote', `no-repo', or `error'.
 Note: This performs network I/O; use sparingly."
-  (cond
-   ((not (ai-code--behaviors-repo-available-p)) 'no-repo)
-   (t
-    (let ((default-directory (expand-file-name ai-code-behaviors-repo-path)))
-      (condition-case nil
-          (progn
-            (call-process "git" nil nil nil "fetch" "--quiet")
-            (let* ((remote-head (ai-code--git-command-output "rev-parse" "@{u}"))
-                   (local-head (ai-code--git-command-output "rev-parse" "HEAD")))
-              (cond
-               ((or (null remote-head) (string-empty-p remote-head)) 'no-remote)
-               ((string= local-head remote-head) 'up-to-date)
-               (t 'updates-available))))
-        (error 'error))))))
+  (if (not (ai-code--behaviors-repo-available-p))
+      'no-repo
+    (ai-code--with-behaviors-repo (lambda ()
+                                    (condition-case nil
+                                        (progn
+                                          (call-process "git" nil nil nil "fetch" "--quiet")
+                                          (let* ((remote-head (ai-code--git-command-output "rev-parse" "@{u}"))
+                                                 (local-head (ai-code--git-command-output "rev-parse" "HEAD")))
+                                            (cond
+                                             ((or (null remote-head) (string-empty-p remote-head)) 'no-remote)
+                                             ((string= local-head remote-head) 'up-to-date)
+                                             (t 'updates-available))))
+                                      (error 'error))))))
 
 (defun ai-code--behaviors-maybe-check-updates ()
   "Check for updates once per session and message if available."
@@ -872,12 +883,11 @@ Note: This performs network I/O; use sparingly."
 (defun ai-code--behaviors-commit-info ()
   "Return plist with current commit info for ai-behaviors repo.
 Returns nil if repo not available."
-  (when (ai-code--behaviors-repo-available-p)
-    (let ((default-directory (expand-file-name ai-code-behaviors-repo-path)))
-      (let ((commit (ai-code--git-command-output "rev-parse" "--short" "HEAD"))
-            (date (ai-code--git-command-output "log" "-1" "--format=%ci" "HEAD")))
-        (when (and commit date)
-          (list :commit commit :date date))))))
+  (ai-code--with-behaviors-repo (lambda ()
+                                  (let ((commit (ai-code--git-command-output "rev-parse" "--short" "HEAD"))
+                                        (date (ai-code--git-command-output "log" "-1" "--format=%ci" "HEAD")))
+                                    (when (and commit date)
+                                      (list :commit commit :date date))))))
 
 (defun ai-code--behavior-file-path (behavior-name)
   "Return path to prompt.md for BEHAVIOR-NAME."
@@ -1683,36 +1693,36 @@ Call this after updating the ai-behaviors repository."
 Returns t on success, nil on failure."
   (interactive)
   (if (ai-code--behaviors-repo-available-p)
-      (let* ((default-directory (expand-file-name ai-code-behaviors-repo-path))
-             (before-info (ai-code--behaviors-commit-info))
-             (before-commit (plist-get before-info :commit))
-             (update-status (ai-code--behaviors-check-for-updates)))
-        (cond
-         ((eq update-status 'up-to-date)
-          (message "ai-behaviors already up to date (commit %s)" before-commit)
-          t)
-         ((eq update-status 'updates-available)
-          (message "Updating ai-behaviors from commit %s..." before-commit)
-          (let ((result (call-process "git" nil nil nil "pull")))
-            (if (eq result 0)
-                (progn
-                  (ai-code--behaviors-clear-all-caches)
-                  (let ((after-info (ai-code--behaviors-commit-info)))
-                    (message "ai-behaviors updated to commit %s"
-                             (plist-get after-info :commit)))
-                  t)
-              (message "Failed to update ai-behaviors (git pull exited %s)" result)
-              nil)))
-         (t
-          (message "Updating ai-behaviors repository...")
-          (let ((result (call-process "git" nil nil nil "pull")))
-            (if (eq result 0)
-                (progn
-                  (ai-code--behaviors-clear-all-caches)
-                  (message "ai-behaviors repository updated")
-                  t)
-              (message "Failed to update ai-behaviors (git pull exited %s)" result)
-              nil)))))
+      (ai-code--with-behaviors-repo (lambda ()
+                                      (let* ((before-info (ai-code--behaviors-commit-info))
+                                             (before-commit (plist-get before-info :commit))
+                                             (update-status (ai-code--behaviors-check-for-updates)))
+                                        (cond
+                                         ((eq update-status 'up-to-date)
+                                          (message "ai-behaviors already up to date (commit %s)" before-commit)
+                                          t)
+                                         ((eq update-status 'updates-available)
+                                          (message "Updating ai-behaviors from commit %s..." before-commit)
+                                          (let ((result (call-process "git" nil nil nil "pull")))
+                                            (if (eq result 0)
+                                                (progn
+                                                  (ai-code--behaviors-clear-all-caches)
+                                                  (let ((after-info (ai-code--behaviors-commit-info)))
+                                                    (message "ai-behaviors updated to commit %s"
+                                                             (plist-get after-info :commit)))
+                                                  t)
+                                              (message "Failed to update ai-behaviors (git pull exited %s)" result)
+                                              nil)))
+                                         (t
+                                          (message "Updating ai-behaviors repository...")
+                                          (let ((result (call-process "git" nil nil nil "pull")))
+                                            (if (eq result 0)
+                                                (progn
+                                                  (ai-code--behaviors-clear-all-caches)
+                                                  (message "ai-behaviors repository updated")
+                                                  t)
+                                              (message "Failed to update ai-behaviors (git pull exited %s)" result)
+                                              nil)))))))
     (if (ai-code--ensure-behaviors-repo)
         (progn
           (message "ai-behaviors repository installed at %s" ai-code-behaviors-repo-path)
