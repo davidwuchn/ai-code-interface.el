@@ -1143,7 +1143,7 @@ Return list (BEHAVIORS CLEANED-PROMPT SWITCH-NEEDED BUNDLE-NAME) where:
 Callers should set the bundle using the correct project root via
 `ai-code--behaviors-set-active-bundle'."
   (cl-block ai-code--extract-and-remove-hashtags
-    (unless (stringp prompt-text)
+    (unless (ai-code--ensure-string prompt-text)
       (cl-return-from ai-code--extract-and-remove-hashtags (list nil prompt-text nil nil)))
     (let ((mode nil)
           (modifiers nil)
@@ -1227,14 +1227,15 @@ Callers should set the bundle using the correct project root via
 (defun ai-code--classify-prompt-intent-gptel (prompt-text)
   "Classify PROMPT-TEXT intent using GPTel.
 Return list suitable for behavior injection."
-  (condition-case err
-      (when (featurep 'gptel)
-        (let* ((modes-string (mapconcat #'identity
-                                        (mapcar (lambda (m) (substring m 1))
-                                                ai-code--behavior-operating-modes)
-                                        ", "))
-               (prompt (format
-                        "Classify this user prompt's intent for an AI coding assistant.
+  (ai-code--with-error-logging
+   (lambda ()
+     (when (featurep 'gptel)
+       (let* ((modes-string (mapconcat #'identity
+                                       (mapcar (lambda (m) (substring m 1))
+                                               ai-code--behavior-operating-modes)
+                                       ", "))
+              (prompt (format
+                       "Classify this user prompt's intent for an AI coding assistant.
 
 Reply with a JSON object: {\"mode\": \"MODE\", \"modifiers\": [\"MOD1\", ...]}
 
@@ -1260,31 +1261,27 @@ Add modifiers:
 
 Prompt:
 %s"
-                        modes-string
-                        (mapconcat #'identity ai-code--behavior-modifiers ", ")
-                        prompt-text))
-               (response (ai-code-call-gptel-sync prompt))
-               (data (when (stringp response)
-                       (ai-code--extract-json-from-response response)))
-               (mode (when data (plist-get data :mode)))
-               (modifiers (when data (plist-get data :modifiers))))
-          (when (and mode (stringp mode))
-            ;; Normalize mode: ensure it has exactly one "=" prefix
-            (let* ((mode-without-prefix (if (string-prefix-p "=" mode)
-                                            (substring mode 1)
-                                          mode))
-                   (mode-name (concat "=" mode-without-prefix)))
-              (when (member mode-name ai-code--behavior-operating-modes)
-                (list :mode mode-name
-                      :modifiers (seq-filter
-                                  (lambda (m) (member m ai-code--behavior-modifiers))
-                                  (when (listp modifiers) modifiers))))))))
-    (error
-     (display-warning 'ai-code-behaviors
-                      (format "GPTel classification failed: %s\nFalling back to keyword matching."
-                              (error-message-string err))
-                      :warning)
-     nil)))
+                       modes-string
+                       (mapconcat #'identity ai-code--behavior-modifiers ", ")
+                       prompt-text))
+              (response (ai-code-call-gptel-sync prompt))
+              (data (when (stringp response)
+                      (ai-code--extract-json-from-response response)))
+              (mode (when data (plist-get data :mode)))
+              (modifiers (when data (plist-get data :modifiers))))
+         (when (and mode (stringp mode))
+           ;; Normalize mode: ensure it has exactly one "=" prefix
+           (let* ((mode-without-prefix (if (string-prefix-p "=" mode)
+                                           (substring mode 1)
+                                         mode))
+                  (mode-name (concat "=" mode-without-prefix)))
+             (when (member mode-name ai-code--behavior-operating-modes)
+               (list :mode mode-name
+                     :modifiers (seq-filter
+                                 (lambda (m) (member m ai-code--behavior-modifiers))
+                                 (when (listp modifiers) modifiers)))))))))
+   "GPTel classification failed: %s\nFalling back to keyword matching."
+   nil))
 
 (defun ai-code--extract-json-from-response (response)
   "Extract first JSON object from RESPONSE string.
@@ -1322,6 +1319,34 @@ TEST: Verify with valid function returns result, erroring function returns nil"
       (apply fn args)
     (error nil)))
 
+(defun ai-code--with-error-logging (fn error-msg &optional default-value &rest args)
+  "Call FN with ARGS, logging ERROR-MSG on failure.
+ERROR-MSG is a format string that receives the error message as argument.
+DEFAULT-VALUE is returned on error (defaults to nil).
+Returns result of FN on success, DEFAULT-VALUE on error.
+
+ASSUMPTION: FN may signal error during execution
+BEHAVIOR: Calls FN with ARGS, logs error with display-warning, returns DEFAULT-VALUE on error
+EDGE CASE: Handles all error types uniformly with consistent logging
+TEST: Verify with valid function returns result, erroring function logs warning and returns default"
+  (condition-case err
+      (apply fn args)
+    (error
+     (display-warning 'ai-code-behaviors (format error-msg (error-message-string err)) :warning)
+     default-value)))
+
+(defun ai-code--ensure-string (value &optional default)
+  "Validate VALUE is a non-nil string, return DEFAULT or nil otherwise.
+Extracts duplicate string validation pattern from multiple functions.
+
+ASSUMPTION: Callers need to validate string input before processing
+BEHAVIOR: Returns VALUE if it's a non-nil string, DEFAULT (or nil) otherwise
+EDGE CASE: Handles nil, non-string, and empty string inputs uniformly
+TEST: Verify (ai-code--ensure-string \"test\") returns \"test\", (ai-code--ensure-string nil) returns nil"
+  (if (and value (stringp value))
+      value
+    default))
+
 (defun ai-code--extract-json-from-code-block (text)
   "Extract JSON from markdown code block in TEXT.
 Returns parsed plist or nil if no valid JSON code block found.
@@ -1331,9 +1356,10 @@ BEHAVIOR: Matches code block content including newlines, parses as JSON
 EDGE CASE: Returns nil for no code block, invalid JSON, or nil input
 EDGE CASE: Handles both ```json and ``` code block formats
 TEST: Verify with single-line JSON, multi-line JSON, invalid JSON, nil input"
-  (when (and (stringp text)
-             (string-match "```\\(?:json\\)?[[:space:]]*\n\\([^\000]*?\\)\n?[[:space:]]*```" text))
-    (ai-code--safe-json-read (match-string 1 text))))
+  (let ((validated (ai-code--ensure-string text)))
+    (when (and validated
+               (string-match "```\\(?:json\\)?[[:space:]]*\n\\([^\000]*?\\)\n?[[:space:]]*```" validated))
+      (ai-code--safe-json-read (match-string 1 validated)))))
 
 (defun ai-code--extract-json-balanced (text)
   "Extract JSON using balanced brace detection from TEXT.
@@ -1344,32 +1370,33 @@ EDGE CASE: Returns nil for nil or non-string input
 EDGE CASE: Exits early if depth goes negative (unmatched closing brace)
 EDGE CASE: Exits early if depth exceeds max (prevents CPU exhaustion)
 TEST: Verify with valid JSON, malformed JSON, deeply nested JSON, nil input"
-  (when (and (stringp text) (string-match "{" text))
-    (let ((start (match-beginning 0))
-          (depth 0)
-          (max-depth ai-code-behaviors-max-brace-depth)
-          (i (match-beginning 0))
-          (len (length text))
-          (in-string nil)
-          (escape-next nil)
-          (found-end nil))
-      (while (and (not found-end) (< i len) (>= depth 0) (<= depth max-depth))
-        (let ((ch (aref text i)))
-          (cond
-           (escape-next (setq escape-next nil))
-           ((eq ch ?\\) (setq escape-next t))
-           (in-string (when (eq ch ?\") (setq in-string nil)))
-           ((eq ch ?\") (setq in-string t))
-           ((not in-string)
-            (cond ((eq ch ?{) (setq depth (1+ depth)))
-                  ((eq ch ?})
-                   (setq depth (1- depth))
-                   (when (= depth 0)
-                     (setq found-end t)))))))
-        (unless found-end
-          (setq i (1+ i))))
-      (when (and found-end (= depth 0))
-        (ai-code--safe-json-read (substring text start (1+ i)))))))
+  (let ((validated (ai-code--ensure-string text)))
+    (when (and validated (string-match "{" validated))
+      (let ((start (match-beginning 0))
+            (depth 0)
+            (max-depth ai-code-behaviors-max-brace-depth)
+            (i (match-beginning 0))
+            (len (length validated))
+            (in-string nil)
+            (escape-next nil)
+            (found-end nil))
+        (while (and (not found-end) (< i len) (>= depth 0) (<= depth max-depth))
+          (let ((ch (aref validated i)))
+            (cond
+             (escape-next (setq escape-next nil))
+             ((eq ch ?\\) (setq escape-next t))
+             (in-string (when (eq ch ?\") (setq in-string nil)))
+             ((eq ch ?\") (setq in-string t))
+             ((not in-string)
+              (cond ((eq ch ?{) (setq depth (1+ depth)))
+                    ((eq ch ?})
+                     (setq depth (1- depth))
+                     (when (= depth 0)
+                       (setq found-end t)))))))
+          (unless found-end
+            (setq i (1+ i))))
+        (when (and found-end (= depth 0))
+          (ai-code--safe-json-read (substring validated start (1+ i))))))))
 
 (defun ai-code--classify-prompt-intent-keywords (prompt-text)
   "Classify PROMPT-TEXT intent using keyword matching.
@@ -1380,8 +1407,9 @@ ASSUMPTION: prompt-text should be a non-nil string
 BEHAVIOR: Returns nil early if prompt-text is invalid, otherwise classifies intent
 EDGE CASE: Handles nil or non-string input gracefully without error
 TEST: Call with nil or non-string, should return nil without error"
-  (when (and prompt-text (stringp prompt-text))
-    (let* ((lower-prompt (downcase prompt-text))
+  (let ((validated (ai-code--ensure-string prompt-text)))
+    (when validated
+      (let* ((lower-prompt (downcase validated))
            (mode-order (mapcar #'car ai-code--intent-classification-keywords))
            (mode-scores
             (delq nil
@@ -1416,16 +1444,14 @@ TEST: Call with nil or non-string, should return nil without error"
   "Extract clean user prompt from TEXT for classification.
 Strips behavior injection blocks and extracts content within <user-prompt> tags.
 Returns TEXT unchanged if no special structure found."
-  (let ((result text))
-    (when (stringp result)
-      (when (string-match "<user-prompt>\\s-*\\(\\(?:.\\|\n\\)*?\\)\\s-*</user-prompt>" result)
-        (setq result (match-string 1 result)))
-      (when (string-match "^AdditionalContext:" result)
-        (setq result (replace-regexp-in-string
-                      "^AdditionalContext:\\(?:.\\|\n\\)*?\\(<user-prompt>\\|\\'\\)"
-                      "" result)))
-      (setq result (string-trim result)))
-    result))
+  (let ((result (ai-code--ensure-string text "")))
+    (when (string-match "<user-prompt>\\s-*\\(\\(?:.\\|\n\\)*?\\)\\s-*</user-prompt>" result)
+      (setq result (match-string 1 result)))
+    (when (string-match "^AdditionalContext:" result)
+      (setq result (replace-regexp-in-string
+                    "^AdditionalContext:\\(?:.\\|\n\\)*?\\(<user-prompt>\\|\\'\\)"
+                    "" result)))
+    (string-trim result)))
 
 (defun ai-code--classify-prompt-intent (prompt-text)
   "Classify PROMPT-TEXT intent for behavior injection.
@@ -3364,7 +3390,7 @@ Returns list (PROCESSED-TEXT MODE-SWITCH-NEEDED).
 PROCESSED-TEXT is the prompt with behaviors injected.
 MODE-SWITCH-NEEDED is t when session should switch from plan to build mode."
   (cl-block ai-code--agent-shell-process-behaviors
-    (unless (stringp prompt-text)
+    (unless (ai-code--ensure-string prompt-text)
       (cl-return-from ai-code--agent-shell-process-behaviors (list prompt-text nil)))
     (let* ((extracted (ai-code--extract-and-remove-hashtags prompt-text))
            (explicit-behaviors (nth 0 extracted))
