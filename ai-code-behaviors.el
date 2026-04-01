@@ -804,10 +804,22 @@ Note: Go projects are detected via filename patterns (_test.go), not project str
     (concise . ("briefly" "short" "summary" "tldr" "quickly")))
   "Keywords that trigger automatic modifier suggestions.")
 
+(defun ai-code--behaviors-repo-dir ()
+  "Return expanded path to ai-behaviors repository directory.
+Centralizes path expansion for maintainability.
+
+ASSUMPTION: ai-code-behaviors-repo-path is a valid directory path
+BEHAVIOR: Returns fully expanded repository root directory
+EDGE CASE: Returns nil if path doesn't exist
+TEST: Verify returns expanded path string when repo exists"
+  (let ((path (expand-file-name ai-code-behaviors-repo-path)))
+    (when (file-directory-p path)
+      path)))
+
 (defun ai-code--behaviors-repo-available-p ()
   "Return non-nil if ai-behaviors repository exists."
-  (let ((path (expand-file-name ai-code-behaviors-repo-path)))
-    (and (file-directory-p path)
+  (let ((path (ai-code--behaviors-repo-dir)))
+    (and path
          (file-directory-p (expand-file-name "behaviors" path)))))
 
 (defun ai-code--ensure-behaviors-repo ()
@@ -816,7 +828,7 @@ Clone it if missing and `ai-code-behaviors-auto-clone' is non-nil.
 Return non-nil if repo is available after this call."
   (when (and (not (ai-code--behaviors-repo-available-p))
              ai-code-behaviors-auto-clone)
-    (let* ((repo-path (directory-file-name (expand-file-name ai-code-behaviors-repo-path)))
+    (let* ((repo-path (directory-file-name (ai-code--behaviors-repo-dir)))
            (parent-dir (file-name-directory repo-path))
            (repo-name (file-name-nondirectory repo-path)))
       (unless (file-directory-p parent-dir)
@@ -3716,9 +3728,9 @@ Safe to call multiple times - guards prevent duplicate advice/hooks."
                      :shell-buffer buf
                      :event 'prompt-ready
                      :on-event (lambda (_event)
-                                 (when (buffer-live-p buf)
-                                   (with-current-buffer buf
-                                     (ai-code-behaviors-mode-line-enable))))))))))
+                                  (when (buffer-live-p buf)
+                                    (with-current-buffer buf
+                                      (ai-code-behaviors-mode-line-enable))))))))))
   (message "ai-code-behaviors: agent-shell integration enabled (auto mode-line on ready)"))
 
 (provide 'ai-code-behaviors)
