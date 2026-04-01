@@ -246,20 +246,20 @@ TEST: Call with nil root outside a git repo, should return nil"
 If ROOT is nil, use current project root.
 Returns nil if not in a project."
   (ai-code--with-project-root r root
-    (plist-get (or (gethash r ai-code--behaviors-session-states)
-                   '(:state nil :preset nil))
-               key)))
+                              (plist-get (or (gethash r ai-code--behaviors-session-states)
+                                             '(:state nil :preset nil))
+                                         key)))
 
 (defun ai-code--behaviors--set (key value &optional root)
   "Set entry KEY to VALUE in session states for ROOT.
 If ROOT is nil, use current project root.
 Does nothing and returns nil if not in a project (prevents state leakage)."
   (ai-code--with-project-root r root
-    (let ((entry (or (gethash r ai-code--behaviors-session-states)
-                     '(:state nil :preset nil))))
-      (puthash r (plist-put (copy-tree entry) key value)
-               ai-code--behaviors-session-states)
-      value)))
+                              (let ((entry (or (gethash r ai-code--behaviors-session-states)
+                                               '(:state nil :preset nil))))
+                                (puthash r (plist-put (copy-tree entry) key value)
+                                         ai-code--behaviors-session-states)
+                                value)))
 
 (defun ai-code--behaviors-get-state (&optional root)
   "Get behavior state for project ROOT, or current project if nil."
@@ -281,43 +281,43 @@ Does nothing and returns nil if not in a project (prevents state leakage)."
   "Clear behavior state for project ROOT, or current project if nil.
 Returns nil if not in a project (prevents state leakage)."
   (ai-code--with-project-root r root
-    (remhash r ai-code--behaviors-session-states)))
+                              (remhash r ai-code--behaviors-session-states)))
 
 (defun ai-code--behaviors-set-pending-preset (preset &optional root)
   "Set pending PRESET for project ROOT.
 Returns nil if not in a project (prevents state leakage)."
   (ai-code--with-project-root r root
-    (puthash r preset ai-code--behaviors-pending-presets)))
+                              (puthash r preset ai-code--behaviors-pending-presets)))
 
 (defun ai-code--behaviors-get-pending-preset (&optional root)
   "Get pending preset for project ROOT.
 Returns nil if not in a project."
   (ai-code--with-project-root r root
-    (gethash r ai-code--behaviors-pending-presets)))
+                              (gethash r ai-code--behaviors-pending-presets)))
 
 (defun ai-code--behaviors-clear-pending-preset (&optional root)
   "Clear pending preset for project ROOT.
 Returns nil if not in a project (prevents state leakage)."
   (ai-code--with-project-root r root
-    (remhash r ai-code--behaviors-pending-presets)))
+                              (remhash r ai-code--behaviors-pending-presets)))
 
 (defun ai-code--behaviors-get-active-bundle (&optional root)
   "Get active constraint bundle for project ROOT, or current project if nil.
 Returns nil if not in a project."
   (ai-code--with-project-root r root
-    (gethash r ai-code--active-constraint-bundles)))
+                              (gethash r ai-code--active-constraint-bundles)))
 
 (defun ai-code--behaviors-set-active-bundle (bundle &optional root)
   "Set active constraint BUNDLE for project ROOT, or current project if nil.
 Does nothing and returns nil if not in a project (prevents state leakage)."
   (ai-code--with-project-root r root
-    (puthash r bundle ai-code--active-constraint-bundles)))
+                              (puthash r bundle ai-code--active-constraint-bundles)))
 
 (defun ai-code--behaviors-clear-active-bundle (&optional root)
   "Clear active constraint bundle for project ROOT.
 Returns nil if not in a project (prevents state leakage)."
   (ai-code--with-project-root r root
-    (remhash r ai-code--active-constraint-bundles)))
+                              (remhash r ai-code--active-constraint-bundles)))
 
 (defconst ai-code--behavior-operating-modes
   '("=frame" "=research" "=design" "=spec" "=code" "=debug"
@@ -1324,8 +1324,15 @@ TEST: Verify with valid function returns result, erroring function returns nil"
 
 (defun ai-code--extract-json-from-code-block (text)
   "Extract JSON from markdown code block in TEXT.
-Returns parsed plist or nil if no valid JSON code block found."
-  (when (string-match "```\\(?:json\\)?[[:space:]]*\n\\([[:space:][:print:]]*?\\)[[:space:]]*```" text)
+Returns parsed plist or nil if no valid JSON code block found.
+
+ASSUMPTION: JSON may span multiple lines within code block
+BEHAVIOR: Matches code block content including newlines, parses as JSON
+EDGE CASE: Returns nil for no code block, invalid JSON, or nil input
+EDGE CASE: Handles both ```json and ``` code block formats
+TEST: Verify with single-line JSON, multi-line JSON, invalid JSON, nil input"
+  (when (and (stringp text)
+             (string-match "```\\(?:json\\)?[[:space:]]*\n\\([^\000]*?\\)\n?[[:space:]]*```" text))
     (ai-code--safe-json-read (match-string 1 text))))
 
 (defun ai-code--extract-json-balanced (text)
@@ -3728,9 +3735,9 @@ Safe to call multiple times - guards prevent duplicate advice/hooks."
                      :shell-buffer buf
                      :event 'prompt-ready
                      :on-event (lambda (_event)
-                                  (when (buffer-live-p buf)
-                                    (with-current-buffer buf
-                                      (ai-code-behaviors-mode-line-enable))))))))))
+                                 (when (buffer-live-p buf)
+                                   (with-current-buffer buf
+                                     (ai-code-behaviors-mode-line-enable))))))))))
   (message "ai-code-behaviors: agent-shell integration enabled (auto mode-line on ready)"))
 
 (provide 'ai-code-behaviors)
