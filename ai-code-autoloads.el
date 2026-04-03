@@ -907,7 +907,6 @@ Navigate using the clickable symbol clicked by mouse EVENT.
 
 (fn EVENT)" t)
 (register-definition-prefixes "ai-code-session-link" '("ai-code-"))
-
 
 ;;; Generated autoloads from ai-code-onboarding.el
 
