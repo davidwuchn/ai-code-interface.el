@@ -1448,7 +1448,7 @@ TEST: Call with nil or non-string, should return nil without error"
         (let ((confidence (if (>= (cdr best-entry) 2) 'high 'medium)))
           (list :mode (symbol-name (car best-entry))
                 :modifiers (delete-dups modifiers)
-                :confidence confidence))))))
+                :confidence confidence)))))))
 
 (defun ai-code--extract-clean-user-prompt (text)
   "Extract clean user prompt from TEXT for classification.
