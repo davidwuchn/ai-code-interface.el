@@ -247,10 +247,8 @@ typically in your Emacs configuration with:
 (autoload 'ai-code-behaviors-agent-shell-setup "ai-code-behaviors" "\
 Set up ai-code-behaviors integration with agent-shell.
 Adds the request decorator to inject behaviors into agent-shell prompts.
-Merges preset names with file completion (both show in same popup).
-Adds hashtag completion (triggers on #).
-Adds mode-line indicator to agent-shell buffers.
-Safe to call multiple times - guards prevent duplicate advice/hooks." t)
+Also advises file completion to skip when @preset is typed.
+Adds preset completion to agent-shell buffers." t)
 (register-definition-prefixes "ai-code-behaviors" '("ai-code-"))
 
 
@@ -740,11 +738,6 @@ Read a string from the user with PROMPT and optional INITIAL-INPUT.
 CANDIDATE-LIST provides additional completion options if provided.
 
 (fn PROMPT &optional INITIAL-INPUT CANDIDATE-LIST)")
-(autoload 'ai-code-speech-to-text-input "ai-code-input" "\
-Record audio with whisper.el, then choose how to use the transcription.
-
-After recording and transcription, you can insert the text at point in the
-original buffer, send it to an AI coding session, or copy it to the clipboard." t)
 (when (featurep 'helm) (setq ai-code--read-string-fn #'ai-code-helm-read-string))
 (autoload 'ai-code-insert-function-at-point "ai-code-input" "\
 Insert a function name selected from current windows' prog-mode buffers." t)
@@ -779,7 +772,7 @@ disabled.
 Toggle @ file completion in comments and AI sessions across all buffers." t)
 (autoload 'ai-code-session-navigate-link-at-point "ai-code-input" "\
 Navigate to the file or URL session link at point." t)
-(register-definition-prefixes "ai-code-input" '("ai-code-" "whisper-after-transcription-hook"))
+(register-definition-prefixes "ai-code-input" '("ai-code-"))
 
 
 ;;; Generated autoloads from ai-code-kiro-cli.el
@@ -914,7 +907,6 @@ Navigate using the clickable symbol clicked by mouse EVENT.
 
 (fn EVENT)" t)
 (register-definition-prefixes "ai-code-session-link" '("ai-code-"))
-
 
 ;;; End of scraped data
 
