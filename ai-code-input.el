@@ -505,6 +505,10 @@ INSERT-FN is called with the text to insert."
   (message "Filepath @ completion is %s"
            (if ai-code-prompt-filepath-completion-mode "enabled" "disabled")))
 
+;; Keep @ filepath completion available out of the box.
+(unless ai-code-prompt-filepath-completion-mode
+  (ai-code-prompt-filepath-completion-mode 1))
+
 ;;; Code Link Navigation
 
 (defconst ai-code--session-link-file-base-regexp
