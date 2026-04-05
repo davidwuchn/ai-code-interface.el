@@ -2,6 +2,11 @@
 * Release history
 
 ** Main branch change
+- Chore: Size side windows by body width and add test
+- Chore: Limit auto-test modes to Ask and Off
+- Fix: Prompt new files before binding remembered session
+- Cfg: Enable @ filepath completion by default
+- Fix: vterm flickered a lot when using gemini cli as backend
 - Chore: Improve code refactoring auto-suggestion, user can select from several refactoring goal
 - Doc: Add Awesome Codex CLI badge to README
 - Feat: Add whisper speech-to-text input command with post-transcription actions for insert, editable send-to-session, and clipboard copy
