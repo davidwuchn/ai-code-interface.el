@@ -65,6 +65,49 @@
     (should (string-match-p "SHARED_EACH_STAGE_TEST_INSTRUCTION"
                             (ai-code--test-after-code-change--resolve-tdd-suffix)))))
 
+(ert-deftest ai-code-test-resolve-test-after-change-suffix-includes-diagnostics-for-mcp-backend ()
+  "Test that test-after-change suffix adds diagnostics for supported MCP backends."
+  (let ((ai-code-auto-test-type 'test-after-change)
+        (ai-code-selected-backend 'codex))
+    (let ((suffix (ai-code--resolve-auto-test-suffix-for-send)))
+      (should (string-match-p "get_diagnostics" suffix))
+      (should (string-match-p "baseline" suffix))
+      (should (string-match-p "no new diagnostics" suffix)))))
+
+(ert-deftest ai-code-test-resolve-test-after-change-suffix-omits-diagnostics-for-non-mcp-backend ()
+  "Test that test-after-change suffix omits diagnostics for unsupported backends."
+  (let ((ai-code-auto-test-type 'test-after-change)
+        (ai-code-selected-backend 'gemini))
+    (let ((suffix (ai-code--resolve-auto-test-suffix-for-send)))
+      (should-not (string-match-p "get_diagnostics" suffix))
+      (should-not (string-match-p "no new diagnostics" suffix)))))
+
+(ert-deftest ai-code-test-resolve-tdd-suffix-includes-diagnostics-first-loop ()
+  "Test that TDD suffix requires diagnostics checks before completion."
+  (let ((ai-code--tdd-test-pattern-instruction "")
+        (case-fold-search nil)
+        (ai-code-selected-backend 'codex))
+    (let ((suffix (ai-code--test-after-code-change--resolve-tdd-suffix)))
+      (should (string-match-p "get_diagnostics" suffix))
+      (should (string-match-p "get_diagnostics MCP tool" suffix))
+      (should (string-match-p "baseline" suffix))
+      (should (string-match-p "no new diagnostics" suffix)))))
+
+(ert-deftest ai-code-test-resolve-tdd-suffix-omits-diagnostics-for-non-mcp-backend ()
+  "Test that TDD suffix omits diagnostics for unsupported backends."
+  (let ((ai-code--tdd-test-pattern-instruction "")
+        (ai-code-selected-backend 'gemini))
+    (let ((suffix (ai-code--test-after-code-change--resolve-tdd-suffix)))
+      (should-not (string-match-p "get_diagnostics" suffix))
+      (should-not (string-match-p "no new diagnostics" suffix)))))
+
+(ert-deftest ai-code-test-maybe-append-diagnostics-harness-instruction-preserves-nil-suffix ()
+  "Test that diagnostics harness logic preserves a nil suffix."
+  (let ((ai-code-selected-backend 'codex)
+        (ai-code-mcp-agent-enabled-backends '(codex)))
+    (should-not (ai-code--maybe-append-diagnostics-harness-instruction nil))
+    (should-not (ai-code--maybe-append-diagnostics-harness-instruction nil t))))
+
 (ert-deftest ai-code-test-resolve-auto-test-type-for-send-off ()
   "Test that off mode never resolves a send-time auto test type."
   (let ((ai-code-auto-test-type nil))

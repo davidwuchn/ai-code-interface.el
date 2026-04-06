@@ -128,6 +128,8 @@
 (declare-function ai-code-open-backend-config "ai-code-backends")
 (declare-function ai-code-open-backend-agent-file "ai-code-backends")
 (declare-function ai-code-upgrade-backend "ai-code-backends")
+
+(defvar ai-code-mcp-agent-enabled-backends)
 (declare-function ai-code-install-backend-skills "ai-code-backends")
 (declare-function ai-code-backends-infra--session-buffer-p "ai-code-backends-infra" (buffer))
 
@@ -158,6 +160,15 @@ with a newline separator."
   :type 'boolean
   :group 'ai-code)
 
+(defconst ai-code--diagnostics-first-harness-instruction
+  "Record a diagnostics baseline with the get_diagnostics MCP tool before editing. After each edit, re-run get_diagnostics for the touched files and do not finish until they have no new diagnostics compared with the baseline."
+  "Shared diagnostics-first harness guidance for code-change prompts.")
+
+(defun ai-code--diagnostics-first-harness-instruction-inline ()
+  "Return diagnostics-first guidance formatted for inline prompt text."
+  (concat (downcase (substring ai-code--diagnostics-first-harness-instruction 0 1))
+          (substring ai-code--diagnostics-first-harness-instruction 1)))
+
 ;;;###autoload
 (defcustom ai-code-test-after-code-change-suffix
   "If any program code changes, run unit-tests and follow up on the test-result (fix code if there is an error)."
@@ -173,20 +184,47 @@ with a newline separator."
   "Forward declaration for `ai-code-auto-test-type'.
 See the later `defcustom' for user-facing documentation and default.")
 
+(defun ai-code--auto-test-backend ()
+  "Return the backend symbol used for auto-test prompt decisions."
+  (if (fboundp 'ai-code--effective-backend)
+      (or (ai-code--effective-backend) ai-code-selected-backend)
+    ai-code-selected-backend))
+
+(defun ai-code--diagnostics-harness-enabled-p ()
+  "Return non-nil when the current backend should get diagnostics guidance."
+  (memq (ai-code--auto-test-backend)
+        ai-code-mcp-agent-enabled-backends))
+
+(defun ai-code--maybe-append-diagnostics-harness-instruction (suffix &optional inline)
+  "Append diagnostics harness guidance to SUFFIX when the backend supports it.
+When INLINE is non-nil, use the inline-formatted diagnostics instruction."
+  (if (and (stringp suffix)
+           (> (length suffix) 0)
+           (ai-code--diagnostics-harness-enabled-p))
+      (let ((instruction (if inline
+                             (ai-code--diagnostics-first-harness-instruction-inline)
+                           ai-code--diagnostics-first-harness-instruction)))
+        (concat suffix
+                (if inline " " "")
+                instruction))
+    suffix))
+
 (defun ai-code--test-after-code-change--resolve-tdd-suffix ()
   "Return the TDD-style suffix for test-after-code-change prompt text."
-  (concat ai-code--tdd-red-green-base-instruction
-          ai-code--tdd-red-green-tail-instruction
-          ai-code--tdd-run-test-after-each-stage-instruction
-          ai-code--tdd-test-pattern-instruction))
+  (ai-code--maybe-append-diagnostics-harness-instruction
+   (concat ai-code--tdd-red-green-base-instruction
+           ai-code--tdd-red-green-tail-instruction
+           ai-code--tdd-run-test-after-each-stage-instruction
+           ai-code--tdd-test-pattern-instruction)))
 
 (defun ai-code--test-after-code-change--resolve-tdd-with-refactoring-suffix ()
   "Return the TDD+refactoring suffix for test-after-code-change prompt text."
-  (concat ai-code--tdd-red-green-base-instruction
-          ai-code--tdd-with-refactoring-extension-instruction
-          ai-code--tdd-red-green-tail-instruction
-          ai-code--tdd-run-test-after-each-stage-instruction
-          ai-code--tdd-test-pattern-instruction))
+  (ai-code--maybe-append-diagnostics-harness-instruction
+   (concat ai-code--tdd-red-green-base-instruction
+           ai-code--tdd-with-refactoring-extension-instruction
+           ai-code--tdd-red-green-tail-instruction
+           ai-code--tdd-run-test-after-each-stage-instruction
+           ai-code--tdd-test-pattern-instruction)))
 
 (defconst ai-code--auto-test-type-ask-choices
   '(("Run tests after code change" . test-after-change)
@@ -268,7 +306,9 @@ Return one of: `code-change`, `non-code-change`, or `unknown`."
 (defun ai-code--auto-test-suffix-for-type (type)
   "Return prompt suffix for auto test TYPE."
   (pcase type
-    ('test-after-change ai-code-test-after-code-change-suffix)
+    ('test-after-change
+     (ai-code--maybe-append-diagnostics-harness-instruction
+      ai-code-test-after-code-change-suffix t))
     ('tdd (ai-code--test-after-code-change--resolve-tdd-suffix))
     ('tdd-with-refactoring (ai-code--test-after-code-change--resolve-tdd-with-refactoring-suffix))
     ('no-test "Do not write or run any test.")
@@ -458,7 +498,7 @@ Shows the current backend label to the right."
   ("t" "Test Driven Development" ai-code-tdd-cycle)
   ("v" "GitHub PR AI Action" ai-code-pull-or-review-diff-file)
   ("!" "Run Current File or Command" ai-code-run-current-file-or-shell-cmd)
-  ("b" "Build / Test (AI follow-up)" ai-code-build-or-test-project)
+  ("b" "Build/Test/Lint (AI follow-up)" ai-code-build-or-test-project)
   ("K" "Create or open task file" ai-code-create-or-open-task-file)
   ("n" "Take notes from AI session region" ai-code-take-notes))
 
