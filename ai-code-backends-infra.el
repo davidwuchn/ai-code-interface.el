@@ -192,6 +192,16 @@ updates are handled separately via carriage return counting.")
          (str (replace-regexp-in-string "[\x00-\x1f\x7f]" "" str)))
     (string-match-p "[^ \t\n\r]" str)))
 
+(defun ai-code-backends-infra--non-empty-string-p (str)
+  "Return non-nil when STR is a non-empty string.
+ASSUMPTION: STR may be nil, a string, or any other type.
+BEHAVIOR: Validates both type and content in a single check.
+EDGE CASE: Nil, empty strings, and non-strings all return nil.
+TEST: (ai-code-backends-infra--non-empty-string-p \"test\") => t
+      (ai-code-backends-infra--non-empty-string-p \"\") => nil
+      (ai-code-backends-infra--non-empty-string-p nil) => nil"
+  (and (stringp str) (> (length str) 0)))
+
 (defun ai-code-backends-infra--buffer-user-visible-p (buffer)
   "Return non-nil when BUFFER is visible in any live window."
   (and (get-buffer-window-list buffer nil t) t))
@@ -294,10 +304,12 @@ scrolling and copying are not disrupted by timer-driven redraws."
                                        (setq ai-code-backends-infra--vterm-render-timer nil)
                                        (when (and ai-code-backends-infra--vterm-render-queue
                                                   (not (bound-and-true-p vterm-copy-mode)))
-                                         (let ((inhibit-redisplay t)
+                                         (let ((proc (get-buffer-process buf))
+                                               (inhibit-redisplay t)
                                                (data ai-code-backends-infra--vterm-render-queue))
                                            (setq ai-code-backends-infra--vterm-render-queue nil)
-                                           (funcall orig-fun (get-buffer-process buf) data))))))
+                                           (when (and proc (process-live-p proc))
+                                             (funcall orig-fun proc data)))))))
                                  (current-buffer))))
           (funcall orig-fun process input))))))
 
@@ -396,20 +408,27 @@ returns to normal terminal interaction."
                #'ai-code-backends-infra--sync-terminal-cursor nil t))))
 
 (defun ai-code-backends-infra--terminal-dispatch (vterm-fn eat-fn)
-  "Run VTERM-FN or EAT-FN based on selected terminal backend."
-  (pcase (ai-code-backends-infra--current-terminal-backend)
-    ('vterm (funcall vterm-fn))
-    ('eat (funcall eat-fn))
-    (_ (error "Unknown terminal backend: %s"
-              (ai-code-backends-infra--current-terminal-backend)))))
+  "Run VTERM-FN or EAT-FN based on selected terminal backend.
+ASSUMPTION: VTERM-FN and EAT-FN are callable functions.
+BEHAVIOR: Dispatches to appropriate backend function based on current terminal backend.
+EDGE CASE: Unknown backend signals an error with the backend value for debugging.
+TEST: Verify error message includes the unknown backend value."
+  (let ((backend (ai-code-backends-infra--current-terminal-backend)))
+    (pcase backend
+      ('vterm (funcall vterm-fn))
+      ('eat (funcall eat-fn))
+      (_ (error "Unknown terminal backend: %s" backend)))))
 
 (defun ai-code-backends-infra--terminal-send-string (string)
-  "Send STRING to the terminal in the current buffer."
-  (ai-code-backends-infra--terminal-dispatch
-   (lambda () (vterm-send-string string))
-   (lambda ()
-     (when (bound-and-true-p eat-terminal)
-       (eat-term-send-string eat-terminal string)))))
+  "Send STRING to the terminal in the current buffer.
+ASSUMPTION: STRING is a non-empty string to be sent to the terminal.
+EDGE CASE: Nil or empty strings are ignored to prevent terminal errors."
+  (when (ai-code-backends-infra--non-empty-string-p string)
+    (ai-code-backends-infra--terminal-dispatch
+     (lambda () (vterm-send-string string))
+     (lambda ()
+       (when (bound-and-true-p eat-terminal)
+         (eat-term-send-string eat-terminal string))))))
 
 (defun ai-code-backends-infra--terminal-send-escape ()
   "Send escape key to the terminal in the current buffer."
@@ -458,13 +477,18 @@ SEQUENCE is the terminal sequence sent for `S-<return>' and `C-<return>'."
                                                          multiline-input-sequence)
   "Configure BUFFER with shared session keybindings.
 ESCAPE-FN is bound to `C-<escape>' when non-nil.
-MULTILINE-INPUT-SEQUENCE configures `S-<return>' and `C-<return>' when non-nil."
-  (with-current-buffer buffer
-    (when escape-fn
-      (local-set-key (kbd "C-<escape>") escape-fn))
-    (ai-code-backends-infra--configure-multiline-input
-     multiline-input-sequence)
-    (ai-code-session-link--linkify-session-region (point-min) (point-max))))
+MULTILINE-INPUT-SEQUENCE configures `S-<return>' and `C-<return>' when non-nil.
+ASSUMPTION: BUFFER is a live buffer object.
+EDGE CASE: Nil or dead buffers are silently ignored to prevent errors.
+TEST: (ai-code-backends-infra--configure-session-buffer nil) => nil
+      (ai-code-backends-infra--configure-session-buffer (get-buffer-create \"*test*\")) => configures buffer"
+  (when (buffer-live-p buffer)
+    (with-current-buffer buffer
+      (when escape-fn
+        (local-set-key (kbd "C-<escape>") escape-fn))
+      (ai-code-backends-infra--configure-multiline-input
+       multiline-input-sequence)
+      (ai-code-session-link--linkify-session-region (point-min) (point-max)))))
 
 ;;; Reflow and Window Management
 
@@ -519,28 +543,34 @@ MULTILINE-INPUT-SEQUENCE configures `S-<return>' and `C-<return>' when non-nil."
                   :test #'eq))))
 
 (defun ai-code-backends-infra--display-buffer-in-side-window (buffer)
-  "Display BUFFER in a side window."
-  (let ((window
-         (if ai-code-backends-infra-use-side-window
-             (let* ((side ai-code-backends-infra-window-side)
-                    (display-buffer-alist
-                     `((,(regexp-quote (buffer-name buffer))
-                        (display-buffer-in-side-window)
-                        (side . ,side)
-                        (slot . 0)
-                        ,@(when (memq side '(left right))
-                            `((window-width
-                               . ,#'ai-code-backends-infra--fit-side-window-body-width)))
-                        ,@(when (memq side '(top bottom))
-                            `((window-height . ,ai-code-backends-infra-window-height)))
-                        (window-parameters . ((no-delete-other-windows . t)))))))
-               (display-buffer buffer))
-           (display-buffer buffer))))
-    (setq ai-code-backends-infra--last-accessed-buffer buffer)
-    (when (and window ai-code-backends-infra-focus-on-open)
-      (select-window window))
-    window))
-
+  "Display BUFFER in a side window.
+ASSUMPTION: BUFFER is a buffer object or buffer name string.
+BEHAVIOR: Displays buffer in side window if use-side-window is enabled.
+EDGE CASE: Nil or dead buffers return nil without error.
+TEST: (ai-code-backends-infra--display-buffer-in-side-window nil) => nil
+      (ai-code-backends-infra--display-buffer-in-side-window \"*nonexistent*\") => nil"
+  (when (and buffer (or (buffer-live-p buffer)
+                        (and (stringp buffer) (get-buffer buffer))))
+    (let ((window
+           (if ai-code-backends-infra-use-side-window
+               (let* ((side ai-code-backends-infra-window-side)
+                      (display-buffer-alist
+                       `((,(regexp-quote (buffer-name (get-buffer buffer)))
+                          (display-buffer-in-side-window)
+                          (side . ,side)
+                          (slot . 0)
+                          ,@(when (memq side '(left right))
+                              `((window-width
+                                 . ,#'ai-code-backends-infra--fit-side-window-body-width)))
+                          ,@(when (memq side '(top bottom))
+                              `((window-height . ,ai-code-backends-infra-window-height)))
+                          (window-parameters . ((no-delete-other-windows . t)))))))
+                 (display-buffer buffer))
+             (display-buffer buffer))))
+      (setq ai-code-backends-infra--last-accessed-buffer buffer)
+      (when (and window ai-code-backends-infra-focus-on-open)
+        (select-window window))
+      window)))
 (defun ai-code-backends-infra--fit-side-window-body-width (window)
   "Resize WINDOW so its body width matches `ai-code-backends-infra-window-width'."
   (let ((delta (- ai-code-backends-infra-window-width
@@ -568,8 +598,7 @@ MULTILINE-INPUT-SEQUENCE configures `S-<return>' and `C-<return>' when non-nil."
   "Return file-session map key for PREFIX and SOURCE-BUFFER."
   (when (and prefix (buffer-live-p source-buffer))
     (with-current-buffer source-buffer
-      (when (and (stringp buffer-file-name)
-                 (> (length buffer-file-name) 0))
+      (when (ai-code-backends-infra--non-empty-string-p buffer-file-name)
         (cons prefix
               (ai-code-backends-infra--normalize-file-path buffer-file-name))))))
 
@@ -604,7 +633,7 @@ Return a cons of (BUFFER . MISSING-P)."
           (cons nil nil)))))))
 
 (defun ai-code-backends-infra--resolve-session-buffer (buffer-name missing-message prefix working-dir
-                                                                  force-prompt source-buffer)
+                                                                   force-prompt source-buffer)
   "Resolve session buffer using BUFFER-NAME or selection rules.
 MISSING-MESSAGE is used when no target session exists.
 When PREFIX and WORKING-DIR are present, prefer the attached session for
@@ -659,12 +688,10 @@ SOURCE-BUFFER unless FORCE-PROMPT is non-nil."
   (when (buffer-live-p buffer)
     (with-current-buffer buffer
       (cond
-       ((and (stringp ai-code-backends-infra--session-directory)
-             (> (length ai-code-backends-infra--session-directory) 0))
+       ((ai-code-backends-infra--non-empty-string-p ai-code-backends-infra--session-directory)
         (ai-code-backends-infra--normalize-session-directory
          ai-code-backends-infra--session-directory))
-       ((and (stringp default-directory)
-             (> (length default-directory) 0))
+       ((ai-code-backends-infra--non-empty-string-p default-directory)
         (ai-code-backends-infra--normalize-session-directory
          default-directory))
        (t nil)))))
@@ -673,8 +700,7 @@ SOURCE-BUFFER unless FORCE-PROMPT is non-nil."
   "Return a session buffer name for PREFIX in DIRECTORY.
 When INSTANCE-NAME is non-nil and not \"default\", include it in the name."
   (let* ((base (file-name-nondirectory (directory-file-name directory)))
-         (instance (and instance-name
-                        (not (string= instance-name ""))
+         (instance (and (ai-code-backends-infra--non-empty-string-p instance-name)
                         (not (string= instance-name "default"))
                         instance-name)))
     (format "*%s[%s%s]*"
@@ -689,8 +715,12 @@ When INSTANCE-NAME is non-nil and not \"default\", include it in the name."
     "default"))
 
 (defun ai-code-backends-infra--session-key (directory instance-name)
-  "Return a session key for DIRECTORY and INSTANCE-NAME."
-  (cons directory (ai-code-backends-infra--normalize-instance-name instance-name)))
+  "Return a session key for DIRECTORY and INSTANCE-NAME.
+ASSUMPTION: DIRECTORY may be relative or absolute path.
+BEHAVIOR: Normalizes directory to absolute path for consistent session matching.
+EDGE CASE: Nil directory is passed through to avoid errors in callers."
+  (cons (if directory (expand-file-name directory) directory)
+        (ai-code-backends-infra--normalize-instance-name instance-name)))
 
 (defun ai-code-backends-infra--session-map-key (prefix directory)
   "Return a map key for PREFIX and DIRECTORY."
@@ -782,7 +812,8 @@ Returns the selected buffer or nil if none exist."
 EXISTING-INSTANCE-NAMES is a list of existing instance names.
 If FORCE-PROMPT is nil and there are no existing instances, return \"default\"."
   (if (or existing-instance-names force-prompt)
-      (let ((proposed-name ""))
+      (let ((proposed-name "")
+            (last-attempt nil))
         (while (or (string= proposed-name "")
                    (member proposed-name existing-instance-names))
           (setq proposed-name
@@ -790,7 +821,11 @@ If FORCE-PROMPT is nil and there are no existing instances, return \"default\"."
                                  (format "Instance name (existing: %s): "
                                          (mapconcat #'identity existing-instance-names ", "))
                                "Instance name: ")
-                             nil nil (and (> (length proposed-name) 0) proposed-name)))
+                             nil nil
+                             (if (ai-code-backends-infra--non-empty-string-p last-attempt)
+                                 last-attempt
+                               proposed-name)))
+          (setq last-attempt proposed-name)
           (cond
            ((string= proposed-name "")
             (message "Instance name cannot be empty. Please enter a name.")
@@ -804,7 +839,14 @@ If FORCE-PROMPT is nil and there are no existing instances, return \"default\"."
 (defun ai-code-backends-infra--resolve-start-command (program switches arg &optional prompt-label)
   "Build command string for PROGRAM and SWITCHES.
 When ARG is non-nil, prompt for CLI args using SWITCHES as default input.
-PROMPT-LABEL is used in the minibuffer prompt."
+PROMPT-LABEL is used in the minibuffer prompt.
+ASSUMPTION: PROGRAM is a non-empty string, SWITCHES is a list of strings.
+EDGE CASE: Nil or empty PROGRAM signals an error to prevent invalid command construction.
+EDGE CASE: Non-list SWITCHES is normalized to empty list to prevent mapconcat errors."
+  (unless (ai-code-backends-infra--non-empty-string-p program)
+    (user-error "Cannot resolve start command with nil or empty program"))
+  (unless (listp switches)
+    (setq switches nil))
   (let* ((default-args (mapconcat #'identity switches " "))
          (prompt (format "%s args: " (or prompt-label "CLI")))
          (prompt-args (when arg
@@ -1026,7 +1068,7 @@ session starts successfully."
            process-table))))))
 
 (defun ai-code-backends-infra--switch-to-session-buffer (buffer-name missing-message
-                                                                    &optional prefix working-dir force-prompt)
+                                                                     &optional prefix working-dir force-prompt)
   "Switch to BUFFER-NAME or signal MISSING-MESSAGE.
 When PREFIX and WORKING-DIR are provided, select from multiple sessions."
   (let* ((source-buffer (current-buffer))
@@ -1042,9 +1084,13 @@ When PREFIX and WORKING-DIR are provided, select from multiple sessions."
       (ai-code-backends-infra--display-buffer-in-side-window buffer))))
 
 (defun ai-code-backends-infra--send-line-to-session (buffer-name missing-message line
-                                                                &optional prefix working-dir force-prompt)
+                                                                 &optional prefix working-dir force-prompt)
   "Send LINE to BUFFER-NAME or signal MISSING-MESSAGE.
-When PREFIX and WORKING-DIR are provided, select from multiple sessions."
+When PREFIX and WORKING-DIR are provided, select from multiple sessions.
+ASSUMPTION: LINE is a non-nil string to send to the session.
+EDGE CASE: Nil or empty LINE signals an error to prevent silent failures."
+  (unless (ai-code-backends-infra--non-empty-string-p line)
+    (user-error "Cannot send nil or empty line to session"))
   (let* ((source-buffer (current-buffer))
          (buffer (ai-code-backends-infra--resolve-session-buffer
                   buffer-name
@@ -1056,7 +1102,7 @@ When PREFIX and WORKING-DIR are provided, select from multiple sessions."
     (with-current-buffer buffer
       (ai-code-backends-infra--remember-session-buffer prefix working-dir buffer)
       (ai-code-backends-infra--terminal-send-string line)
-      (sit-for 0.5) ;; 0.1 might be too low for some cli backends such as github copilot cli
+      (sit-for 0.5)
       (ai-code-backends-infra--terminal-send-return))))
 
 ;;; Generic Session Creation
@@ -1066,13 +1112,24 @@ When PREFIX and WORKING-DIR are provided, select from multiple sessions."
 BUFFER-NAME is the name for the buffer.
 WORKING-DIR is the directory.
 COMMAND is the shell command to run.
-ENV-VARS is a list of environment variables."
+ENV-VARS is a list of environment variables.
+ASSUMPTION: BUFFER-NAME, WORKING-DIR, and COMMAND are non-nil strings.
+EDGE CASE: Nil or empty required parameters signal an error.
+TEST: Verify with nil/empty inputs that user-error is signaled."
+  (unless (ai-code-backends-infra--non-empty-string-p buffer-name)
+    (user-error "Cannot create terminal session with nil or empty buffer-name"))
+  (unless (ai-code-backends-infra--non-empty-string-p working-dir)
+    (user-error "Cannot create terminal session with nil or empty working-dir"))
+  (unless (ai-code-backends-infra--non-empty-string-p command)
+    (user-error "Cannot create terminal session with nil or empty command"))
+  (unless (listp env-vars)
+    (user-error "ENV-VARS must be a list, got %s" (type-of env-vars)))
   (ai-code-backends-infra--terminal-ensure-backend)
   (let ((default-directory working-dir))
     (cond
      ((eq ai-code-backends-infra-terminal-backend 'vterm)
       (let* ((vterm-shell command)
-             (vterm-kill-buffer-on-exit nil)  ; Keep buffer alive to show errors
+             (vterm-kill-buffer-on-exit nil)
              (vterm-environment (append env-vars (bound-and-true-p vterm-environment))))
         (let ((buffer (save-window-excursion (vterm buffer-name))))
           (ai-code-backends-infra--set-session-directory buffer working-dir)
@@ -1086,6 +1143,8 @@ ENV-VARS is a list of environment variables."
              (parts (split-string-shell-command command))
              (program (car parts))
              (args (cdr parts)))
+        (unless (ai-code-backends-infra--non-empty-string-p program)
+          (user-error "Cannot parse command '%s' for eat backend" command))
         (ai-code-backends-infra--set-session-directory buffer working-dir)
         (with-current-buffer buffer
           (setq-local ai-code-backends-infra--session-terminal-backend 'eat)
@@ -1097,21 +1156,18 @@ ENV-VARS is a list of environment variables."
           (ai-code-backends-infra--install-navigation-cursor-sync)
           (setq-local process-environment (append env-vars process-environment))
           (eat-exec buffer buffer-name program nil args)
-          ;; Add process filter to track activity for notifications
           (when-let ((proc (get-buffer-process buffer)))
             (let ((orig-filter (process-filter proc)))
               (set-process-filter
                proc
                (lambda (process output)
-                 ;; Call original filter first
                  (when orig-filter
                    (funcall orig-filter process output))
-                 ;; Then track activity for notifications
                  (with-current-buffer (process-buffer process)
                    (when (ai-code-backends-infra--output-meaningful-p output)
                      (ai-code-backends-infra--note-meaningful-output))
                    (ai-code-session-link--linkify-recent-output output))))))
-           (cons buffer (get-buffer-process buffer)))))
+          (cons buffer (get-buffer-process buffer)))))
      (t (error "Unknown backend")))))
 
 (defun ai-code-backends-infra--cleanup-dead-processes (table)

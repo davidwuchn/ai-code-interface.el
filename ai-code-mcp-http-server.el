@@ -91,7 +91,6 @@ When nil, an available port is selected automatically."
   "Parse DATA when it contains a full HTTP request."
   (when (string-match "\r\n\r\n" data)
     (let* ((separator-start (match-beginning 0))
-           (body-start (match-end 0))
            (header-text (substring data 0 separator-start))
            (lines (split-string header-text "\r\n" t))
            (request-line (car lines))
@@ -99,14 +98,16 @@ When nil, an available port is selected automatically."
                                       (cdr lines))))
            (content-length (string-to-number
                             (or (cdr (assoc "content-length" headers))
-                                "0"))))
-      (when (<= (+ body-start content-length) (string-bytes data))
+                                "0")))
+           (body-start (match-end 0))
+           (body-end (+ body-start content-length)))
+      (when (<= body-end (string-bytes data))
         (pcase-let ((`(,method ,path)
                      (ai-code-mcp-http-server--parse-request-line request-line)))
           (list :method method
                 :path path
                 :headers headers
-                :body (substring data body-start (+ body-start content-length))))))))
+                :body (substring data body-start body-end)))))))
 
 (defun ai-code-mcp-http-server--parse-request-line (line)
   "Parse HTTP request LINE."
