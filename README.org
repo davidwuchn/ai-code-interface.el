@@ -72,6 +72,10 @@ First 60 seconds:
 - `C-c a q`: Ask question only (no code change)
 - `C-c a z`: Jump back to AI session buffer
 
+The first time you open `C-c a`, AI Code also shows a small quickstart buffer
+with these core actions. You can reopen it later from `C-c a h`
+(`Help / Quick Start`).
+
 ** Installation
 
 Enable installation of packages from MELPA by adding an entry to package-archives after (require 'package) and before the call to package-initialize in your init.el or .emacs file:
@@ -306,6 +310,10 @@ With the built-in =get_diagnostics= MCP tool, the loop can move further left:
 - treat completion as /no new diagnostics/ on the touched files relative to the baseline, instead of requiring the entire project to be clean
 - use tests as the next sensor in the loop, not the first one
 
+Screenshot:
+
+[[file:./emacs_mcp_tool_diagnosis.png]]
+
 The benefit is practical:
 
 - faster feedback after each AI code change
@@ -314,6 +322,12 @@ The benefit is practical:
 - easier to let the AI continue with the next step after a failed or passing test
 
 This is why features such as `ai-code-auto-test-type` and `ai-code-tdd-cycle` fit the idea of harness engineering: they turn testing and follow-up into part of the system, not an afterthought in each prompt.
+
+Nit: During using auto test feature, I prefer to turn off the approval request from AI, it will make the whole process more smooth. Eg. for Codex CLI, it is
+
+#+begin_src emacs-lisp
+(setq ai-code-codex-cli-program-switches '("-a" "never"))
+#+end_src
 
 - Relevant article: [[https://martinfowler.com/articles/exploring-gen-ai/harness-engineering.html][Harness Engineering]]
 

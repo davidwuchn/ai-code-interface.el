@@ -14,6 +14,17 @@
 (require 'ai-code-prompt-mode)
 (require 'ai-code-discussion)
 
+(defun ai-code-test--gitignore-required-entries ()
+  "Return the default ignore entries expected from `ai-code-update-git-ignore'."
+  (list (concat ai-code-files-dir-name "/")
+        ".projectile"
+        "GTAGS"
+        "GRTAGS"
+        "GPATH"
+        "__pycache__/"
+        "*.elc"
+        "flycheck_*"))
+
 (ert-deftest ai-code-test-ai-code-gitignore-regex-pattern ()
   "Test that the regex pattern correctly matches entries in .gitignore.
 This is a unit test for the regex pattern used in ai-code-update-git-ignore."
@@ -94,12 +105,7 @@ When .gitignore already contains the required entries, they should
 not be added again."
   (let* ((temp-dir (file-truename (make-temp-file "ai-code-test-" t)))
          (gitignore-path (expand-file-name ".gitignore" temp-dir))
-         (required-entries (list (concat ai-code-files-dir-name "/")
-                                ".projectile"
-                                "GTAGS"
-                                "GRTAGS"
-                                "GPATH"
-                                "__pycache__/")))
+         (required-entries (ai-code-test--gitignore-required-entries)))
     (unwind-protect
         (progn
           ;; Initialize git repository
@@ -171,12 +177,8 @@ When .gitignore is missing some entries, they should be added."
                                    (insert-file-contents gitignore-path)
                                    (buffer-string))))
             ;; All required entries should be present
-            (should (string-match-p (regexp-quote (concat ai-code-files-dir-name "/")) updated-content))
-            (should (string-match-p (regexp-quote ".projectile") updated-content))
-            (should (string-match-p (regexp-quote "GTAGS") updated-content))
-            (should (string-match-p (regexp-quote "GRTAGS") updated-content))
-            (should (string-match-p (regexp-quote "GPATH") updated-content))
-            (should (string-match-p (regexp-quote "__pycache__/") updated-content))))
+            (dolist (entry (ai-code-test--gitignore-required-entries))
+              (should (string-match-p (regexp-quote entry) updated-content)))))
       ;; Cleanup
       (delete-directory temp-dir t))))
 
@@ -252,6 +254,13 @@ When .gitignore is missing some entries, they should be added."
     (should (eq (ai-code--pull-or-review-pr-mode-choice)
                 'prepare-pr-description))))
 
+(ert-deftest ai-code-test-pull-or-review-pr-mode-choice-review-ci-checks ()
+  "Choosing CI checks mode should return `review-ci-checks'."
+  (cl-letf (((symbol-function 'completing-read)
+             (lambda (&rest _args) "Review GitHub CI checks")))
+    (should (eq (ai-code--pull-or-review-pr-mode-choice)
+                'review-ci-checks))))
+
 (ert-deftest ai-code-test-pull-or-review-diff-file-prepare-pr-description-github-mcp ()
   "When choosing PR description mode, prompt should ask AI to draft a PR description."
   (pcase-let ((`(,captured-prompt ,diff-called)
@@ -263,7 +272,23 @@ When .gitignore is missing some entries, they should be added."
     (should (string-match-p "https://github.com/acme/demo/pull/791" captured-prompt))
     (should (string-match-p "prepare a pull request description" (downcase captured-prompt)))
     (should (string-match-p "summary" (downcase captured-prompt)))
+    (should (string-match-p "author" (downcase captured-prompt)))
+    (should (string-match-p "maintainer" (downcase captured-prompt)))
     (should (string-match-p "testing" (downcase captured-prompt)))
+    (should-not diff-called)))
+
+(ert-deftest ai-code-test-pull-or-review-diff-file-review-ci-checks-github-mcp ()
+  "When choosing CI checks mode, prompt should ask for root-cause analysis only."
+  (pcase-let ((`(,captured-prompt ,diff-called)
+               (ai-code-test--run-pull-or-review-diff-file "Use GitHub MCP server"
+                                                           "https://github.com/acme/demo/pull/792"
+                                                           "Review GitHub CI checks")))
+    (let ((case-fold-search nil))
+      (should (string-match-p "Use GitHub MCP server" captured-prompt)))
+    (should (string-match-p "https://github.com/acme/demo/pull/792" captured-prompt))
+    (should (string-match-p "review github ci checks" (downcase captured-prompt)))
+    (should (string-match-p "root cause" (downcase captured-prompt)))
+    (should (string-match-p "no need to make code change" (downcase captured-prompt)))
     (should-not diff-called)))
 
 (ert-deftest ai-code-test-build-pr-review-init-prompt-uses-fallback-for-unknown-source ()

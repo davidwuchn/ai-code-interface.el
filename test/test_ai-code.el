@@ -258,6 +258,44 @@
     (should (eq #'ai-code-menu-2-columns
                 (ai-code--menu-prefix-command)))))
 
+(ert-deftest ai-code-test-menu-includes-quickstart-entry ()
+  "Test that the default menu exposes a quickstart entry."
+  (should (transient-get-suffix 'ai-code--menu-other-tools
+                                'ai-code-onboarding-open-quickstart)))
+
+(ert-deftest ai-code-test-menu-calls-onboarding-gate-before-opening-transient ()
+  "Test that `ai-code-menu' runs the onboarding gate before opening the menu."
+  (let ((gate-called nil)
+        (called-prefix nil)
+        (ai-code-menu-layout 'default))
+    (cl-letf (((symbol-function 'ai-code-onboarding-maybe-show-quickstart)
+               (lambda ()
+                 (setq gate-called t)))
+              ((symbol-function 'call-interactively)
+               (lambda (command &rest _args)
+                 (setq called-prefix command))))
+      (ai-code-menu)
+      (should gate-called)
+      (should (eq called-prefix #'ai-code-menu-default)))))
+
+(ert-deftest ai-code-test-menu-keeps-source-buffer-selected-when-auto-showing-quickstart ()
+  "Auto-showing quickstart should not change the source buffer for the menu."
+  (let ((ai-code-menu-layout 'default)
+        (ai-code-onboarding-auto-show t)
+        (ai-code-onboarding-seen nil)
+        selected-buffer
+        source-buffer)
+    (with-temp-buffer
+      (setq source-buffer (current-buffer))
+      (cl-letf (((symbol-function 'pop-to-buffer)
+                 (lambda (buffer &rest _args)
+                   (set-buffer (get-buffer buffer))))
+                ((symbol-function 'call-interactively)
+                 (lambda (_command &rest _args)
+                   (setq selected-buffer (current-buffer)))))
+        (ai-code-menu)
+        (should (eq selected-buffer source-buffer))))))
+
 (ert-deftest ai-code-test-menu-prefix-command-fallback-to-default-layout ()
   "Test that unknown menu layout values still fall back to the default transient."
   (let ((ai-code-menu-layout 'unexpected-layout))
