@@ -29,7 +29,38 @@
 
 (require 'ai-code)
 
-(defvar ai-code--tdd-run-test-after-each-stage-instruction)
+(ert-deftest ai-code-test-require-ai-code-loads-harness-module ()
+  "Test that loading `ai-code` also loads the harness module."
+  (should (featurep 'ai-code-harness)))
+
+(ert-deftest ai-code-test-autoloads-load-with-harness-custom-unbound ()
+  "Test that loading autoloads works before harness custom is defined."
+  (let* ((autoload-file (expand-file-name "ai-code-autoloads.el" default-directory))
+         (symbols '(ai-code-auto-test-suffix
+                    ai-code-test-after-code-change-suffix))
+         (saved-states
+          (mapcar (lambda (symbol)
+                    (list symbol
+                          (boundp symbol)
+                          (when (boundp symbol)
+                            (symbol-value symbol))))
+                  symbols)))
+    (unwind-protect
+        (progn
+          (mapc #'makunbound symbols)
+          (should
+           (eq 'loaded
+               (condition-case nil
+                   (progn
+                     (load autoload-file nil t)
+                     'loaded)
+                 (error 'failed))))
+          (should (boundp 'ai-code-test-after-code-change-suffix)))
+      (dolist (state saved-states)
+        (pcase-let ((`(,symbol ,was-bound ,value) state))
+          (if was-bound
+              (set symbol value)
+            (makunbound symbol)))))))
 
 (ert-deftest ai-code-test-set-auto-test-type-ask-me-clears-persistent-suffix ()
   "Test that setting auto test type to ask-me clears the persistent suffix."
@@ -48,65 +79,42 @@
     (should-not ai-code-auto-test-type)
     (should-not ai-code-auto-test-suffix)))
 
-(ert-deftest ai-code-test-resolve-tdd-suffix-includes-strict-stage-contract ()
-  "Test that TDD suffix names Red and Green stages and forbids skipping."
-  (let ((ai-code--tdd-test-pattern-instruction ""))
-    (let ((suffix (ai-code--test-after-code-change--resolve-tdd-suffix)))
-      (should (string-match-p "Do not skip stages" suffix))
-      (should (string-match-p "Stage 1 - Red" suffix))
-      (should (string-match-p "Stage 2 - Green" suffix))
-      (should (string-match-p "Do not refactor during Green" suffix)))))
-
-(ert-deftest ai-code-test-resolve-tdd-suffix-reuses-shared-each-stage-instruction ()
-  "Test that TDD suffix can reuse shared each-stage instruction when available."
-  (let ((ai-code--tdd-test-pattern-instruction "")
-        (ai-code--tdd-run-test-after-each-stage-instruction
-         " SHARED_EACH_STAGE_TEST_INSTRUCTION"))
-    (should (string-match-p "SHARED_EACH_STAGE_TEST_INSTRUCTION"
-                            (ai-code--test-after-code-change--resolve-tdd-suffix)))))
-
 (ert-deftest ai-code-test-resolve-test-after-change-suffix-includes-diagnostics-for-mcp-backend ()
-  "Test that test-after-change suffix adds diagnostics for supported MCP backends."
-  (let ((ai-code-auto-test-type 'test-after-change)
-        (ai-code-selected-backend 'codex))
-    (let ((suffix (ai-code--resolve-auto-test-suffix-for-send)))
-      (should (string-match-p "get_diagnostics" suffix))
-      (should (string-match-p "baseline" suffix))
-      (should (string-match-p "no new diagnostics" suffix)))))
+  "Test that test-after-change suffix points to the diagnostics harness file."
+  (let* ((temp-root (make-temp-file "ai-code-harness-root-" t))
+         (ai-files-dir (expand-file-name ".ai.code.files/" temp-root))
+         (ai-code-auto-test-type 'test-after-change)
+         (ai-code-auto-test-harness-cache-directory nil)
+         (ai-code-selected-backend 'codex))
+    (unwind-protect
+        (cl-letf (((symbol-function 'ai-code--ensure-files-directory)
+                   (lambda () ai-files-dir))
+                  ((symbol-function 'ai-code--git-root)
+                   (lambda (&optional _dir) temp-root)))
+          (let ((suffix (ai-code--resolve-auto-test-suffix-for-send)))
+            (should (string-match-p
+                     (regexp-quote "@.ai.code.files/harness/test-after-change-diagnostics.v1.md")
+                     suffix))))
+      (delete-directory temp-root t))))
 
 (ert-deftest ai-code-test-resolve-test-after-change-suffix-omits-diagnostics-for-non-mcp-backend ()
-  "Test that test-after-change suffix omits diagnostics for unsupported backends."
-  (let ((ai-code-auto-test-type 'test-after-change)
-        (ai-code-selected-backend 'gemini))
-    (let ((suffix (ai-code--resolve-auto-test-suffix-for-send)))
-      (should-not (string-match-p "get_diagnostics" suffix))
-      (should-not (string-match-p "no new diagnostics" suffix)))))
-
-(ert-deftest ai-code-test-resolve-tdd-suffix-includes-diagnostics-first-loop ()
-  "Test that TDD suffix requires diagnostics checks before completion."
-  (let ((ai-code--tdd-test-pattern-instruction "")
-        (case-fold-search nil)
-        (ai-code-selected-backend 'codex))
-    (let ((suffix (ai-code--test-after-code-change--resolve-tdd-suffix)))
-      (should (string-match-p "get_diagnostics" suffix))
-      (should (string-match-p "get_diagnostics MCP tool" suffix))
-      (should (string-match-p "baseline" suffix))
-      (should (string-match-p "no new diagnostics" suffix)))))
-
-(ert-deftest ai-code-test-resolve-tdd-suffix-omits-diagnostics-for-non-mcp-backend ()
-  "Test that TDD suffix omits diagnostics for unsupported backends."
-  (let ((ai-code--tdd-test-pattern-instruction "")
-        (ai-code-selected-backend 'gemini))
-    (let ((suffix (ai-code--test-after-code-change--resolve-tdd-suffix)))
-      (should-not (string-match-p "get_diagnostics" suffix))
-      (should-not (string-match-p "no new diagnostics" suffix)))))
-
-(ert-deftest ai-code-test-maybe-append-diagnostics-harness-instruction-preserves-nil-suffix ()
-  "Test that diagnostics harness logic preserves a nil suffix."
-  (let ((ai-code-selected-backend 'codex)
-        (ai-code-mcp-agent-enabled-backends '(codex)))
-    (should-not (ai-code--maybe-append-diagnostics-harness-instruction nil))
-    (should-not (ai-code--maybe-append-diagnostics-harness-instruction nil t))))
+  "Test that unsupported backends use the non-diagnostics harness variant."
+  (let* ((temp-root (make-temp-file "ai-code-harness-root-" t))
+         (ai-files-dir (expand-file-name ".ai.code.files/" temp-root))
+         (ai-code-auto-test-type 'test-after-change)
+         (ai-code-auto-test-harness-cache-directory nil)
+         (ai-code-selected-backend 'gemini))
+    (unwind-protect
+        (cl-letf (((symbol-function 'ai-code--ensure-files-directory)
+                   (lambda () ai-files-dir))
+                  ((symbol-function 'ai-code--git-root)
+                   (lambda (&optional _dir) temp-root)))
+          (let ((suffix (ai-code--resolve-auto-test-suffix-for-send)))
+            (should (string-match-p
+                     (regexp-quote "@.ai.code.files/harness/test-after-change.v1.md")
+                     suffix))
+            (should-not (string-match-p "diagnostics.v1.md" suffix))))
+      (delete-directory temp-root t))))
 
 (ert-deftest ai-code-test-resolve-auto-test-type-for-send-off ()
   "Test that off mode never resolves a send-time auto test type."
@@ -207,16 +215,25 @@
                  ai-code--auto-test-type-persistent-choices)))
 
 (ert-deftest ai-code-test-resolve-auto-test-suffix-for-send-ask-me-tdd-with-refactoring ()
-  "Test that ask-me can resolve to refactoring TDD suffix."
-  (let ((ai-code-auto-test-type 'ask-me)
-        (ai-code--tdd-test-pattern-instruction ""))
-    (cl-letf (((symbol-function 'ai-code--read-auto-test-type-choice)
-               (lambda () 'tdd-with-refactoring)))
-      (let ((suffix (ai-code--resolve-auto-test-suffix-for-send)))
-        (should (string-match-p
-                 (regexp-quote ai-code--tdd-with-refactoring-extension-instruction)
-                 suffix))
-        (should (string-match-p "highest-impact cleanup" suffix))))))
+  "Test that ask-me resolves to the repo-local TDD harness reference."
+  (let* ((temp-root (make-temp-file "ai-code-harness-root-" t))
+         (ai-files-dir (expand-file-name ".ai.code.files/" temp-root))
+         (ai-code-auto-test-harness-cache-directory nil)
+         (ai-code-auto-test-type 'ask-me)
+         (ai-code-selected-backend 'codex)
+         (ai-code--tdd-test-pattern-instruction ""))
+    (unwind-protect
+        (cl-letf (((symbol-function 'ai-code--ensure-files-directory)
+                   (lambda () ai-files-dir))
+                  ((symbol-function 'ai-code--git-root)
+                   (lambda (&optional _dir) temp-root))
+                  ((symbol-function 'ai-code--read-auto-test-type-choice)
+                   (lambda () 'tdd-with-refactoring)))
+          (let ((suffix (ai-code--resolve-auto-test-suffix-for-send)))
+            (should (string-match-p
+                     (regexp-quote "@.ai.code.files/harness/tdd-with-refactoring-diagnostics.v1.md")
+                     suffix))))
+      (delete-directory temp-root t))))
 
 (ert-deftest ai-code-test-resolve-auto-test-suffix-for-send-ask-me-no-test ()
   "Test that ask-me can resolve to explicit no-test suffix."
