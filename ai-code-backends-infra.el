@@ -263,13 +263,13 @@ The timer is reset only after meaningful output is observed."
   (if (not (bound-and-true-p vterm-copy-mode))
       (funcall render-fn)
     (let ((point-marker (copy-marker (point) t))
-          ;; Use an advancing marker so output inserted at the saved point
-          ;; keeps the restored position aligned with the user's viewport.
+          ;; Use advancing markers so output inserted at saved positions
+          ;; keeps the restored viewport aligned with the same content.
           (window-states
            (mapcar (lambda (window)
                      (list window
-                           (window-start window)
-                           (window-point window)))
+                           (copy-marker (window-start window) t)
+                           (copy-marker (window-point window) t)))
                    (get-buffer-window-list (current-buffer) nil t))))
       (unwind-protect
           ;; Suppress intermediate redisplay until restoring the captured
@@ -277,10 +277,12 @@ The timer is reset only after meaningful output is observed."
           (let ((inhibit-redisplay t))
             (funcall render-fn))
         (dolist (state window-states)
-          (pcase-let ((`(,window ,start ,window-point) state))
+          (pcase-let ((`(,window ,start-marker ,window-point-marker) state))
             (when (window-live-p window)
-              (set-window-start window start t)
-              (set-window-point window window-point))))
+              (set-window-start window start-marker t)
+              (set-window-point window window-point-marker))
+            (set-marker start-marker nil)
+            (set-marker window-point-marker nil)))
         (goto-char point-marker)
         (set-marker point-marker nil)))))
 

@@ -1208,6 +1208,41 @@
       (when (buffer-live-p buffer)
         (kill-buffer buffer)))))
 
+(ert-deftest test-ai-code-backends-infra-vterm-render-preserving-copy-mode-view-tracks-head-deletions ()
+  "Copy-mode rendering should preserve viewport content after head deletions."
+  (let ((buffer (generate-new-buffer " *ai-code-vterm-copy-mode-trim*")))
+    (unwind-protect
+        (save-window-excursion
+          (switch-to-buffer buffer)
+          (with-current-buffer buffer
+            (setq-local vterm-copy-mode t)
+            (dotimes (line 80)
+              (insert (format "line %02d\n" line)))
+            (cl-labels ((line-at (position)
+                          (save-excursion
+                            (goto-char position)
+                            (buffer-substring-no-properties
+                             (line-beginning-position)
+                             (line-end-position)))))
+              (goto-char (point-min))
+              (forward-line 25)
+              (set-window-start (selected-window) (point))
+              (forward-line 4)
+              (set-window-point (selected-window) (point))
+              (let ((original-start-line (line-at (window-start)))
+                    (original-window-point-line (line-at (window-point))))
+                (ai-code-backends-infra--vterm-render-preserving-copy-mode-view
+                 (lambda ()
+                   (goto-char (point-min))
+                   (forward-line 10)
+                   (delete-region (point-min) (point))))
+                (should (equal (line-at (window-start))
+                               original-start-line))
+                (should (equal (line-at (window-point))
+                               original-window-point-line))))))
+      (when (buffer-live-p buffer)
+        (kill-buffer buffer)))))
+
 (ert-deftest test-ai-code-backends-infra-vterm-render-queued-output-skips-dead-process ()
   "Queued output should be dropped when the buffer has no live process."
   (with-temp-buffer
