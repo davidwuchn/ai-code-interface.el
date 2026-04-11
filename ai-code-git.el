@@ -177,22 +177,31 @@ CI Checks Review Steps:
     "Pull request URL: "))
 
 (defun ai-code--pull-or-review-pr-with-source (review-source)
-  "Ask for a target URL and send a prompt for REVIEW-SOURCE to AI."
+  "Prompt for a mode and send a prompt for REVIEW-SOURCE to AI.
+If the selected mode is `send-current-branch-pr', ask for the target
+branch for the current branch PR.  Otherwise, ask for the relevant pull
+request or issue URL."
   (let* ((review-mode (ai-code--pull-or-review-pr-mode-choice))
          (init-prompt
           (if (eq review-mode 'send-current-branch-pr)
-              (let* ((current-branch (ai-code--require-current-branch))
-                     (default-target-branch
-                      (ai-code--default-pr-target-branch current-branch))
-                     (target-branch
-                      (ai-code-read-string "Target branch to merge into: "
-                                           default-target-branch)))
-                (ai-code--build-send-current-branch-pr-init-prompt
-                 review-source current-branch target-branch))
+              (progn
+                (unless (magit-toplevel)
+                  (user-error "Not inside a Git repository"))
+                (let* ((current-branch (ai-code--require-current-branch))
+                       (default-target-branch
+                        (ai-code--default-pr-target-branch current-branch))
+                       (target-branch
+                        (ai-code-read-string "Target branch to merge into: "
+                                             default-target-branch)))
+                  (ai-code--build-send-current-branch-pr-init-prompt
+                   review-source current-branch target-branch)))
             (let* ((url-prompt (ai-code--pull-or-review-url-prompt review-mode))
                    (target-url (ai-code-read-string url-prompt)))
               (ai-code--build-pr-init-prompt review-source target-url review-mode))))
-         (prompt (ai-code-read-string "Enter review prompt: " init-prompt)))
+         (prompt-label (if (eq review-mode 'send-current-branch-pr)
+                           "Enter PR creation prompt: "
+                         "Enter review prompt: "))
+         (prompt (ai-code-read-string prompt-label init-prompt)))
     (ai-code--insert-prompt prompt)))
 
 (defun ai-code--pull-or-review-pr-mode-choice ()
@@ -238,6 +247,12 @@ CI Checks Review Steps:
      ""
      branch)))
 
+(defun ai-code--remote-default-branch ()
+  "Return the normalized default branch for origin, or nil when unavailable."
+  (ai-code--normalize-branch-name
+   (ignore-errors
+     (magit-git-string "symbolic-ref" "--quiet" "--short" "refs/remotes/origin/HEAD"))))
+
 (defun ai-code--default-pr-target-branch (current-branch)
   "Return the default PR target branch for CURRENT-BRANCH."
   (let* ((upstream-branch
@@ -246,6 +261,8 @@ CI Checks Review Steps:
                               "--abbrev-ref"
                               "--symbolic-full-name"
                               "@{upstream}")))
+         (remote-default-branch
+          (ai-code--remote-default-branch))
          (normalized-upstream
           (ai-code--normalize-branch-name upstream-branch)))
     (cond
@@ -253,16 +270,38 @@ CI Checks Review Steps:
            (not (string-empty-p normalized-upstream))
            (not (string= normalized-upstream current-branch)))
       normalized-upstream)
+     ((and remote-default-branch
+           (not (string-empty-p remote-default-branch))
+           (not (string= remote-default-branch current-branch)))
+      remote-default-branch)
      ((or (magit-branch-p "main") (magit-branch-p "origin/main"))
       "main")
      ((or (magit-branch-p "master") (magit-branch-p "origin/master"))
       "master")
-     (t "main"))))
+     (t nil))))
+
+(defun ai-code--send-current-branch-pr-source-instruction (review-source)
+  "Return PR creation instructions for REVIEW-SOURCE."
+  (pcase review-source
+    ('gh-cli
+     (concat
+      "Use GitHub CLI to create the pull request. "
+      "Run `gh pr create` with the current branch as the head branch, "
+      "target the requested base branch, and include the final title and body."))
+    ('github-mcp
+     (concat
+      "Use GitHub MCP tools to create the pull request directly. "
+      "Do not fetch review comments before the PR exists; "
+      "create the PR first, then return the resulting PR URL."))
+    (_
+     (concat
+      "Create the pull request using the backend's PR creation capability. "
+      "Do not treat this as a PR review flow before the PR exists."))))
 
 (defun ai-code--build-send-current-branch-pr-init-prompt (review-source current-branch target-branch)
   "Build a PR creation prompt for REVIEW-SOURCE, CURRENT-BRANCH, and TARGET-BRANCH."
   (let ((source-instruction
-         (ai-code--pull-or-review-source-instruction review-source)))
+         (ai-code--send-current-branch-pr-source-instruction review-source)))
     (format "Create a pull request from branch %s into %s.
 
 %s
