@@ -1,5 +1,11 @@
 ;;; test_ai-code-eca.el --- Tests for ECA backend -*- lexical-binding: t; -*-
 
+;;; Commentary:
+
+;; ERT coverage for the ai-code ECA backend integration.
+
+;;; Code:
+
 (require 'ert)
 (require 'cl-lib)
 (require 'ai-code-backends)
@@ -74,19 +80,34 @@ This test verifies the actual layout exposes the expected suffixes."
         (ai-code-eca--menu-group-added nil))
     (ai-code-eca--add-menu-group)
     (unwind-protect
-        (dolist (prefix '(ai-code-menu-default ai-code-menu-2-columns))
+        (progn
+          ;; The default layout already uses "F" for an infix in Other Tools.
+          ;; The narrower two-column layout still exposes the ECA file-context
+          ;; command directly, so assert the actual behavior for both layouts.
           (dolist (expected '(("E" . ai-code-eca-create-session-for-workspace)
                               ("W" . ai-code-eca-switch-session)
                               ("D" . eca-workspaces)
                               ("A" . ai-code-eca-add-workspace-folder)
                               ("X" . ai-code-eca-remove-workspace-folder)
-                              ("F" . ai-code-eca-share-file-context)
                               ("M" . ai-code-eca-share-repo-map-context)
                               ("B" . ai-code-eca-chat-add-clipboard-context-now)
                               ("Y" . ai-code-eca-clear-shared-context)))
-            (let ((suffix (transient-get-suffix prefix (car expected))))
-              (should suffix)
-              (should (eq (plist-get (cdr suffix) :command) (cdr expected))))))
+            (dolist (prefix '(ai-code-menu-default ai-code-menu-2-columns))
+              (let ((suffix (transient-get-suffix prefix (car expected))))
+                (should suffix)
+                (should (eq (plist-get (cdr suffix) :command) (cdr expected))))))
+          (let ((default-f-suffix (transient-get-suffix 'ai-code-menu-default "F"))
+                (two-column-f-suffix (transient-get-suffix 'ai-code-menu-2-columns "F"))
+                (eca-menu-f-suffix (transient-get-suffix 'ai-code-eca-menu "F")))
+            (should default-f-suffix)
+            (should (eq (plist-get (cdr default-f-suffix) :command)
+                        'ai-code--infix-toggle-auto-follow-up))
+            (should two-column-f-suffix)
+            (should (eq (plist-get (cdr two-column-f-suffix) :command)
+                        'ai-code-eca-share-file-context))
+            (should eca-menu-f-suffix)
+            (should (eq (plist-get (cdr eca-menu-f-suffix) :command)
+                        'ai-code-eca-share-file-context))))
       (setq ai-code-eca--menu-group-added nil))))
 
 ;;; ==============================================================================
@@ -99,7 +120,7 @@ This test verifies the actual layout exposes the expected suffixes."
   (should (string-match-p "^[0-9]+\\.[0-9]+\\.[0-9]+$" ai-code-eca-upgrade--pinned-version)))
 
 (ert-deftest ai-code-test-eca-upgrade/parse-semver-extracts-version ()
-  "parse-semver extracts X.Y.Z from various version strings."
+  "Parse semver extracts X.Y.Z from various version strings."
   (cl-flet ((parse-semver (raw)
               (and (stringp raw)
                    (string-match "\\([0-9]+\\.[0-9]+\\.[0-9]+\\)" raw)
