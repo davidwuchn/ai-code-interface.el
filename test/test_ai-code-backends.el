@@ -297,6 +297,13 @@
       (should (string-match-p "superpowers" sent-command))
       (should (string-match-p "uninstall" sent-command)))))
 
+(ert-deftest ai-code-test-install-backend-skills-docstring-covers-uninstall ()
+  "Docstring should describe install and uninstall behavior."
+  (let ((doc (documentation #'ai-code-install-backend-skills)))
+    (should (string-match-p "Install or uninstall skills" doc))
+    (should (string-match-p "install-skills property" doc))
+    (should (string-match-p "uninstall" doc))))
+
 (ert-deftest ai-code-test-manage-backend-skills-fallback-errors-on-invalid-action ()
   "Fallback helper should reject invalid backend skills actions."
   (cl-letf (((symbol-function 'read-string)
@@ -380,11 +387,10 @@
                     :type 'user-error))))
 
 (ert-deftest ai-code-test-claude-code-backend-has-install-skills ()
-  "Claude Code backend spec should have :install-skills set to the dedicated function."
+  "Claude Code backend spec should use the generic skills fallback."
   (let ((spec (ai-code--backend-spec 'claude-code)))
     (should spec)
-    (should (eq (plist-get (cdr spec) :install-skills)
-                'ai-code-claude-code-install-skills))))
+    (should-not (plist-get (cdr spec) :install-skills))))
 
 (provide 'test_ai-code-backends)
 
