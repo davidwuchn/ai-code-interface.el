@@ -13,7 +13,12 @@
 (require 'ai-code-backends-infra)
 (require 'ai-code-notifications)
 
+(declare-function ghostel--window-adjust-process-window-size "ghostel" (process windows))
+
 (defvar vterm-copy-mode-hook)
+(defvar ghostel-enable-title-tracking)
+(defvar ghostel--copy-mode-active)
+(defvar ghostel--process)
 
 (ert-deftest test-ai-code-backends-infra-output-meaningful-p-noise ()
   "Ensure terminal noise is not considered meaningful output."
@@ -276,6 +281,15 @@
     (should-not ai-code-backends-infra--navigation-cursor-active)
     (should (eq cursor-type 'bar))))
 
+(ert-deftest test-ai-code-backends-infra-terminal-navigation-mode-p-ghostel-copy-mode ()
+  "Ghostel copy mode should count as terminal navigation mode."
+  (with-temp-buffer
+    (setq-local ai-code-backends-infra--session-terminal-backend 'ghostel)
+    (setq-local ghostel--copy-mode-active t)
+    (should (ai-code-backends-infra--terminal-navigation-mode-p))
+    (setq-local ghostel--copy-mode-active nil)
+    (should-not (ai-code-backends-infra--terminal-navigation-mode-p))))
+
 (ert-deftest test-ai-code-backends-infra-configure-vterm-buffer-installs-cursor-sync-hook ()
   "Configuring a vterm buffer should install copy-mode cursor synchronization."
   (with-temp-buffer
@@ -324,6 +338,160 @@
             (setq-local ai-code-backends-infra--session-terminal-backend 'vterm)
             (ai-code-backends-infra--terminal-send-string "hello"))
           (should (equal calls '(vterm))))
+      (when (buffer-live-p buffer)
+        (kill-buffer buffer)))))
+
+(ert-deftest test-ai-code-backends-infra-terminal-send-string-ghostel-sends-to-process ()
+  "Ghostel sessions should send input through the terminal process."
+  (let ((calls nil))
+    (cl-letf (((symbol-function 'process-live-p)
+               (lambda (_process) t))
+              ((symbol-function 'process-send-string)
+               (lambda (process string)
+                 (push (list process string) calls))))
+      (with-temp-buffer
+        (setq-local ai-code-backends-infra--session-terminal-backend 'ghostel)
+        (setq-local ghostel--process 'ghostel-proc)
+        (ai-code-backends-infra--terminal-send-string "hello"))
+      (should (equal calls '((ghostel-proc "hello")))))))
+
+(ert-deftest test-ai-code-backends-infra-terminal-resize-handler-supports-ghostel ()
+  "Ghostel backend should expose its resize handler."
+  (let ((ai-code-backends-infra-terminal-backend 'ghostel))
+    (should (eq (ai-code-backends-infra--terminal-resize-handler)
+                #'ghostel--window-adjust-process-window-size))))
+
+(ert-deftest test-ai-code-backends-infra-create-terminal-session-ghostel ()
+  "Ghostel backend should create and configure a session buffer."
+  (let* ((buffer-name "*test-ai-code-ghostel*")
+         (buffer (get-buffer-create buffer-name))
+         (process 'ghostel-proc)
+         (ai-code-backends-infra-terminal-backend 'ghostel))
+    (unwind-protect
+        (cl-letf (((symbol-function 'ai-code-backends-infra--terminal-ensure-backend)
+                   (lambda () nil))
+                  ((symbol-function 'ghostel-mode)
+                   (lambda () nil))
+                  ((symbol-function 'ghostel--new)
+                   (lambda (&rest _args) 'ghostel-term))
+                  ((symbol-function 'ghostel--start-process)
+                   (lambda ()
+                     (with-current-buffer buffer
+                       (setq-local ghostel--process process))
+                     process))
+                  ((symbol-function 'get-buffer-process)
+                   (lambda (target-buffer)
+                     (with-current-buffer target-buffer
+                       ghostel--process))))
+          (ai-code-backends-infra--create-terminal-session
+           buffer-name
+           default-directory
+           "echo hi"
+           '("FOO=1"))
+          (with-current-buffer buffer
+            (should (eq ai-code-backends-infra--session-terminal-backend 'ghostel))
+            (should (equal ai-code-backends-infra--session-directory
+                           (file-name-as-directory
+                            (expand-file-name default-directory))))
+            (should (eq ghostel--process process))))
+      (when (buffer-live-p buffer)
+        (kill-buffer buffer)))))
+
+(ert-deftest test-ai-code-backends-infra-configure-ghostel-buffer-defers-init-until-displayed ()
+  "Ghostel should wait for a live window before creating terminal state."
+  (let ((hook-calls nil)
+        (ghostel-new-calls nil))
+    (cl-letf (((symbol-function 'ghostel-mode)
+               (lambda () nil))
+              ((symbol-function 'ghostel--new)
+               (lambda (&rest args)
+                 (push args ghostel-new-calls)
+                 'ghostel-term))
+              ((symbol-function 'get-buffer-window)
+               (lambda (&rest _args) nil))
+              ((symbol-function 'add-hook)
+               (lambda (hook function &optional append local)
+                 (push (list hook function append local) hook-calls))))
+      (with-temp-buffer
+        (setq-local ai-code-backends-infra--session-terminal-backend 'ghostel)
+        (ai-code-backends-infra--configure-ghostel-buffer)))
+    (should-not ghostel-new-calls)
+    (should (member '(window-configuration-change-hook
+                      ai-code-backends-infra--initialize-ghostel-when-displayed
+                      nil t)
+                    hook-calls))))
+
+(ert-deftest test-ai-code-backends-infra-configure-ghostel-buffer-disables-title-tracking ()
+  "Ghostel AI session buffers should keep their original buffer names."
+  (let ((saved-default (default-value 'ghostel-enable-title-tracking)))
+    (unwind-protect
+        (progn
+          (setq-default ghostel-enable-title-tracking t)
+          (cl-letf (((symbol-function 'ghostel-mode)
+                     (lambda () nil))
+                    ((symbol-function 'get-buffer-window)
+                     (lambda (&rest _args) nil))
+                    ((symbol-function 'add-hook)
+                     (lambda (&rest _args) nil)))
+            (with-temp-buffer
+              (ai-code-backends-infra--configure-ghostel-buffer)
+              (should-not ghostel-enable-title-tracking)
+              (should (eq (default-value 'ghostel-enable-title-tracking) t)))))
+      (setq-default ghostel-enable-title-tracking saved-default))))
+
+(ert-deftest test-ai-code-backends-infra-create-terminal-session-ghostel-wraps-output-filter ()
+  "Ghostel session creation should track meaningful output and linkify output."
+  (let* ((buffer-name "*test-ai-code-ghostel-output*")
+         (buffer (get-buffer-create buffer-name))
+         (proc (make-process :name "ai-code-ghostel-output"
+                             :buffer buffer
+                             :command '("sleep" "10")
+                             :noquery t))
+         (orig-outputs nil)
+         (meaningful-outputs nil)
+         (linkify-outputs nil)
+         (ai-code-backends-infra-terminal-backend 'ghostel)
+         (note-advice (lambda (&rest _args)
+                        (push 'noted meaningful-outputs)))
+         (linkify-advice (lambda (orig-fun output)
+                           (push output linkify-outputs)
+                           (funcall orig-fun output))))
+    (unwind-protect
+        (progn
+          (set-process-filter
+           proc
+           (lambda (_process output)
+             (push output orig-outputs)))
+          (advice-add 'ai-code-backends-infra--note-meaningful-output
+                      :before note-advice)
+          (advice-add 'ai-code-session-link--linkify-recent-output
+                      :around linkify-advice)
+          (cl-letf (((symbol-function 'ai-code-backends-infra--terminal-ensure-backend)
+                     (lambda () nil))
+                    ((symbol-function 'ghostel-mode)
+                     (lambda () nil))
+                    ((symbol-function 'ghostel--new)
+                     (lambda (&rest _args) 'ghostel-term))
+                    ((symbol-function 'ghostel--start-process)
+                     (lambda ()
+                       (with-current-buffer buffer
+                         (setq-local ghostel--process proc))
+                       proc))
+                    ((symbol-function 'process-send-string)
+                     (lambda (&rest _args) nil)))
+            (ai-code-backends-infra--create-terminal-session
+             buffer-name
+             default-directory
+             "echo hi"
+             nil))
+          (funcall (process-filter proc) proc "src/foo.el:12\n")
+          (should (equal orig-outputs '("src/foo.el:12\n")))
+          (should (equal meaningful-outputs '(noted)))
+          (should (equal linkify-outputs '("src/foo.el:12\n"))))
+      (advice-remove 'ai-code-backends-infra--note-meaningful-output note-advice)
+      (advice-remove 'ai-code-session-link--linkify-recent-output linkify-advice)
+      (when (process-live-p proc)
+        (delete-process proc))
       (when (buffer-live-p buffer)
         (kill-buffer buffer)))))
 
@@ -524,7 +692,7 @@
         (kill-buffer buf)))))
 
 (ert-deftest test-ai-code-backends-infra-find-session-buffers-legacy-default-directory-fallback ()
-  "Use buffer default-directory when explicit session directory metadata is absent."
+  "Use buffer `default-directory' when explicit session metadata is absent."
   (let* ((prefix "codex")
          (base (format "ai-code-legacy-%d" (random 1000000)))
          (dir-a (format "/tmp/a/%s/" base))
@@ -653,6 +821,83 @@
       (dolist (buf (list source session-a session-b))
         (when (buffer-live-p buf)
           (kill-buffer buf))))))
+
+(ert-deftest test-ai-code-backends-infra-send-line-uses-remembered-renamed-session ()
+  "Sending should reuse a remembered session even if Ghostel renamed its buffer."
+  (let* ((prefix "opencode")
+         (working-dir "/tmp/ai-code-ghostel-renamed/")
+         (source (generate-new-buffer " *ai-code-source-renamed-session*"))
+         (session (get-buffer-create "*opencode[ghostel-renamed]*"))
+         (send-targets nil))
+    (unwind-protect
+        (progn
+          (clrhash ai-code-backends-infra--directory-buffer-map)
+          (when (boundp 'ai-code-backends-infra--file-session-map)
+            (clrhash ai-code-backends-infra--file-session-map))
+
+          (with-current-buffer source
+            (setq buffer-file-name "/tmp/ai-code-ghostel-renamed/main.el")
+            (setq default-directory working-dir))
+          (with-current-buffer session
+            (setq-local ai-code-backends-infra--session-directory working-dir))
+          (ai-code-backends-infra--remember-session-buffer prefix working-dir session)
+          (with-current-buffer session
+            (rename-buffer "*ghostel: opencode*" t))
+
+          (cl-letf (((symbol-function 'ai-code-backends-infra--terminal-send-string)
+                     (lambda (&rest _args)
+                       (push (buffer-name (current-buffer)) send-targets)))
+                    ((symbol-function 'ai-code-backends-infra--terminal-send-return)
+                     (lambda () nil))
+                    ((symbol-function 'sit-for)
+                     (lambda (&rest _args) nil)))
+            (with-current-buffer source
+              (ai-code-backends-infra--send-line-to-session
+               nil "missing" "line-1" prefix working-dir)))
+
+          (should (equal (nreverse send-targets)
+                         (list "*ghostel: opencode*"))))
+      (dolist (buf (list source session))
+        (when (buffer-live-p buf)
+          (kill-buffer buf))))))
+
+(ert-deftest test-ai-code-backends-infra-select-session-buffer-skips-renamed-remembered-on-force-prompt ()
+  "Force prompt should not offer renamed remembered buffers as completion candidates."
+  (let* ((prefix "codex")
+         (working-dir "/tmp/ai-code-force-prompt-renamed/")
+         (remembered (get-buffer-create "*ghostel: codex*"))
+         (session-a (get-buffer-create "*codex[force-prompt-renamed:a]*"))
+         (session-b (get-buffer-create "*codex[force-prompt-renamed:b]*"))
+         (captured-collection nil))
+    (unwind-protect
+        (progn
+          (clrhash ai-code-backends-infra--directory-buffer-map)
+          (dolist (buf (list remembered session-a session-b))
+            (with-current-buffer buf
+              (setq-local ai-code-backends-infra--session-directory working-dir)))
+          (ai-code-backends-infra--remember-session-buffer prefix working-dir remembered)
+          (cl-letf (((symbol-function 'completing-read)
+                     (lambda (_prompt collection _predicate _require-match
+                              &optional _initial-input _hist _def &rest _)
+                       (setq captured-collection collection)
+                       "b")))
+            (should (eq (ai-code-backends-infra--select-session-buffer
+                         prefix working-dir t)
+                        session-b)))
+          (should (equal captured-collection '("a" "b"))))
+      (dolist (buf (list remembered session-a session-b))
+        (when (buffer-live-p buf)
+          (kill-buffer buf))))))
+
+(ert-deftest test-readme-dependencies-mention-ghostel-as-backend-option ()
+  "README should list Ghostel in the native terminal backend dependency note."
+  (with-temp-buffer
+    (insert-file-contents
+     (expand-file-name "README.org" default-directory))
+    (should (re-search-forward
+             "One of vterm (default), eat, or .*ghostel.* needs to be installed"
+             nil
+             t))))
 
 (ert-deftest test-ai-code-backends-infra-switch-force-prompt-rebinds-file-session ()
   "Force switching should rebind the current file to the newly selected session."
