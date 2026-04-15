@@ -29,17 +29,17 @@ with a newline separator.")
 (defvar ai-code-use-prompt-suffix t "\
 When non-nil, append `ai-code-prompt-suffix` where supported.")
 (custom-autoload 'ai-code-use-prompt-suffix "ai-code" t)
-(defvar ai-code-test-after-code-change-suffix "If any program code changes, run unit-tests and follow up on the test-result (fix code if there is an error)." "\
-User-provided prompt suffix for test-after-code-change.")
-(custom-autoload 'ai-code-test-after-code-change-suffix "ai-code" t)
-(defvar ai-code-auto-test-suffix ai-code-test-after-code-change-suffix "\
-Default prompt suffix to request running tests after code changes.")
 (defvar ai-code-use-gptel-classify-prompt nil "\
-Whether to use GPTel to classify prompts in `ask-me` auto test mode.
-When non-nil and `ai-code-auto-test-type` is not nil, classify whether
-the current prompt is about code changes.  If not, skip test type selection
-and do not append auto test suffix.")
+Whether to use GPTel to classify prompts before send-time suffix routing.
+When non-nil and `ai-code-auto-test-type` or
+`ai-code-discussion-auto-follow-up-enabled` is non-nil, classify whether
+the current prompt is about code changes.  This lets code-change prompts
+skip discussion follow-up suggestions, and discussion prompts skip auto
+test suffixes.")
 (custom-autoload 'ai-code-use-gptel-classify-prompt "ai-code" t)
+(defvar ai-code-next-step-suggestion-suffix (concat "At the end of your response, provide 3-4 numbered candidate next\n" "steps. Keep each option to one sentence. At least 2 candidates must\n" "be AI-actionable items as follow up: either a code change or tool usage. Mark the\n" "single best option with \"(Recommended)\". If the user replies with\n" "only a number such as 1, 2, 3, or 4, treat that as selecting the\n" "corresponding next step from your previous answer. The user may also\n" "ignore these options and send a different follow-up request instead.") "\
+Prompt suffix for numbered next-step suggestions in discussion prompts.")
+(custom-autoload 'ai-code-next-step-suggestion-suffix "ai-code" t)
 (defvar ai-code-cli "claude" "\
 The command-line AI tool to use for `ai-code-apply-prompt-on-current-file`.")
 (custom-autoload 'ai-code-cli "ai-code" t)
@@ -193,7 +193,7 @@ When called interactively, prompts for the command.
 When called from Lisp code, sends CMD directly without prompting.
 
 (fn CMD)" t)
-(defvar ai-code-backends '((claude-code :label "Claude Code" :require ai-code-claude-code :start ai-code-claude-code :switch ai-code-claude-code-switch-to-buffer :send ai-code-claude-code-send-command :resume ai-code-claude-code-resume :config "~/.claude.json" :agent-file "CLAUDE.md" :upgrade "npm install -g @anthropic-ai/claude-code@latest" :install-skills ai-code-claude-code-install-skills :cli "claude") (gemini :label "Gemini CLI" :require ai-code-gemini-cli :start ai-code-gemini-cli :switch ai-code-gemini-cli-switch-to-buffer :send ai-code-gemini-cli-send-command :resume ai-code-gemini-cli-resume :config "~/.gemini/settings.json" :agent-file "GEMINI.md" :upgrade "npm install -g @google/gemini-cli" :install-skills nil :cli "gemini") (github-copilot-cli :label "GitHub Copilot CLI" :require ai-code-github-copilot-cli :start ai-code-github-copilot-cli :switch ai-code-github-copilot-cli-switch-to-buffer :send ai-code-github-copilot-cli-send-command :resume ai-code-github-copilot-cli-resume :config "~/.copilot/mcp-config.json" :agent-file nil :upgrade "npm install -g @github/copilot" :install-skills nil :cli "copilot") (codex :label "OpenAI Codex CLI" :require ai-code-codex-cli :start ai-code-codex-cli :switch ai-code-codex-cli-switch-to-buffer :send ai-code-codex-cli-send-command :resume ai-code-codex-cli-resume :config "~/.codex/config.toml" :agent-file "AGENTS.md" :upgrade "npm install -g @openai/codex@latest" :install-skills nil :cli "codex") (opencode :label "Opencode" :require ai-code-opencode :start ai-code-opencode :switch ai-code-opencode-switch-to-buffer :send ai-code-opencode-send-command :resume ai-code-opencode-resume :config "~/.config/opencode/opencode.jsonc" :agent-file nil :upgrade "npm i -g opencode-ai@latest" :install-skills nil :cli "opencode") (grok :label "Grok CLI" :require ai-code-grok-cli :start ai-code-grok-cli :switch ai-code-grok-cli-switch-to-buffer :send ai-code-grok-cli-send-command :resume ai-code-grok-cli-resume :config "~/.config/grok/config.json" :agent-file nil :upgrade "bun add -g @vibe-kit/grok-cli" :install-skills nil :cli "grok") (cursor :label "Cursor CLI" :require ai-code-cursor-cli :start ai-code-cursor-cli :switch ai-code-cursor-cli-switch-to-buffer :send ai-code-cursor-cli-send-command :resume ai-code-cursor-cli-resume :config "~/.cursor" :agent-file nil :upgrade "cursor-agent update" :install-skills nil :cli "cursor-agent") (kiro :label "Kiro CLI" :require ai-code-kiro-cli :start ai-code-kiro-cli :switch ai-code-kiro-cli-switch-to-buffer :send ai-code-kiro-cli-send-command :resume ai-code-kiro-cli-resume :config "~/.kiro/settings/cli.json" :agent-file nil :upgrade "kiro-cli update" :install-skills nil :cli "kiro-cli") (codebuddy :label "CodeBuddy Code" :require ai-code-codebuddy-cli :start ai-code-codebuddy-cli :switch ai-code-codebuddy-cli-switch-to-buffer :send ai-code-codebuddy-cli-send-command :resume ai-code-codebuddy-cli-resume :config "~/.codebuddy" :agent-file nil :upgrade "codebuddy update" :install-skills nil :cli "codebuddy") (aider :label "Aider CLI" :require ai-code-aider-cli :start ai-code-aider-cli :switch ai-code-aider-cli-switch-to-buffer :send ai-code-aider-cli-send-command :resume nil :config "~/.aider.conf.yml" :agent-file nil :upgrade nil :install-skills nil :cli "aider") (eca :label "ECA (Editor Code Assistant)" :require ai-code-eca :start ai-code-eca-start :switch ai-code-eca-switch :send ai-code-eca-send :resume ai-code-eca-resume :config "~/.config/eca/config.json" :agent-file "AGENTS.md" :upgrade ai-code-eca-upgrade :install-skills ai-code-eca-install-skills :cli nil) (agent-shell :label "agent-shell" :require ai-code-agent-shell :start ai-code-agent-shell :switch ai-code-agent-shell-switch-to-buffer :send ai-code-agent-shell-send-command :resume ai-code-agent-shell-resume :config nil :agent-file nil :upgrade nil :install-skills nil :cli "agent-shell") (gptel-agent :label "GPTel Agent" :require ai-code-gptel-agent :start ai-code-gptel-agent :switch ai-code-gptel-agent-switch-to-buffer :send ai-code-gptel-agent-send-command :resume nil :config nil :agent-file nil :upgrade nil :install-skills nil :cli nil) (claude-code-ide :label "claude-code-ide.el" :require claude-code-ide :start claude-code-ide--start-if-no-session :switch claude-code-ide-switch-to-buffer :send claude-code-ide-send-prompt :resume claude-code-ide-resume :config "~/.claude.json" :agent-file "CLAUDE.md" :upgrade "npm install -g @anthropic-ai/claude-code@latest" :install-skills nil :cli "claude") (claude-code-el :label "claude-code.el" :require claude-code :start claude-code :switch claude-code-switch-to-buffer :send ai-code-claude-code-el-send-command :resume claude-code-resume :config "~/.claude.json" :agent-file "CLAUDE.md" :upgrade "npm install -g @anthropic-ai/claude-code@latest" :install-skills nil :cli "claude")) "\
+(defvar ai-code-backends '((claude-code :label "Claude Code" :require ai-code-claude-code :start ai-code-claude-code :switch ai-code-claude-code-switch-to-buffer :send ai-code-claude-code-send-command :resume ai-code-claude-code-resume :config "~/.claude.json" :agent-file "CLAUDE.md" :upgrade "npm install -g @anthropic-ai/claude-code@latest" :install-skills nil :cli "claude") (gemini :label "Gemini CLI" :require ai-code-gemini-cli :start ai-code-gemini-cli :switch ai-code-gemini-cli-switch-to-buffer :send ai-code-gemini-cli-send-command :resume ai-code-gemini-cli-resume :config "~/.gemini/settings.json" :agent-file "GEMINI.md" :upgrade "npm install -g @google/gemini-cli" :install-skills nil :cli "gemini") (github-copilot-cli :label "GitHub Copilot CLI" :require ai-code-github-copilot-cli :start ai-code-github-copilot-cli :switch ai-code-github-copilot-cli-switch-to-buffer :send ai-code-github-copilot-cli-send-command :resume ai-code-github-copilot-cli-resume :config "~/.copilot/mcp-config.json" :agent-file nil :upgrade "npm install -g @github/copilot" :install-skills nil :cli "copilot") (codex :label "OpenAI Codex CLI" :require ai-code-codex-cli :start ai-code-codex-cli :switch ai-code-codex-cli-switch-to-buffer :send ai-code-codex-cli-send-command :resume ai-code-codex-cli-resume :config "~/.codex/config.toml" :agent-file "AGENTS.md" :upgrade "npm install -g @openai/codex@latest" :install-skills nil :cli "codex") (opencode :label "Opencode" :require ai-code-opencode :start ai-code-opencode :switch ai-code-opencode-switch-to-buffer :send ai-code-opencode-send-command :resume ai-code-opencode-resume :config "~/.config/opencode/opencode.jsonc" :agent-file nil :upgrade "npm i -g opencode-ai@latest" :install-skills nil :cli "opencode") (grok :label "Grok CLI" :require ai-code-grok-cli :start ai-code-grok-cli :switch ai-code-grok-cli-switch-to-buffer :send ai-code-grok-cli-send-command :resume ai-code-grok-cli-resume :config "~/.config/grok/config.json" :agent-file nil :upgrade "bun add -g @vibe-kit/grok-cli" :install-skills nil :cli "grok") (cursor :label "Cursor CLI" :require ai-code-cursor-cli :start ai-code-cursor-cli :switch ai-code-cursor-cli-switch-to-buffer :send ai-code-cursor-cli-send-command :resume ai-code-cursor-cli-resume :config "~/.cursor" :agent-file nil :upgrade "cursor-agent update" :install-skills nil :cli "cursor-agent") (kiro :label "Kiro CLI" :require ai-code-kiro-cli :start ai-code-kiro-cli :switch ai-code-kiro-cli-switch-to-buffer :send ai-code-kiro-cli-send-command :resume ai-code-kiro-cli-resume :config "~/.kiro/settings/cli.json" :agent-file nil :upgrade "kiro-cli update" :install-skills nil :cli "kiro-cli") (codebuddy :label "CodeBuddy Code" :require ai-code-codebuddy-cli :start ai-code-codebuddy-cli :switch ai-code-codebuddy-cli-switch-to-buffer :send ai-code-codebuddy-cli-send-command :resume ai-code-codebuddy-cli-resume :config "~/.codebuddy" :agent-file nil :upgrade "codebuddy update" :install-skills nil :cli "codebuddy") (aider :label "Aider CLI" :require ai-code-aider-cli :start ai-code-aider-cli :switch ai-code-aider-cli-switch-to-buffer :send ai-code-aider-cli-send-command :resume nil :config "~/.aider.conf.yml" :agent-file nil :upgrade nil :install-skills nil :cli "aider") (eca :label "ECA (Editor Code Assistant)" :require ai-code-eca :start ai-code-eca-start :switch ai-code-eca-switch :send ai-code-eca-send :resume ai-code-eca-resume :config "~/.config/eca/config.json" :agent-file "AGENTS.md" :upgrade ai-code-eca-upgrade :install-skills ai-code-eca-install-skills :cli nil) (agent-shell :label "agent-shell" :require ai-code-agent-shell :start ai-code-agent-shell :switch ai-code-agent-shell-switch-to-buffer :send ai-code-agent-shell-send-command :resume ai-code-agent-shell-resume :config nil :agent-file nil :upgrade nil :install-skills nil :cli "agent-shell") (gptel-agent :label "GPTel Agent" :require ai-code-gptel-agent :start ai-code-gptel-agent :switch ai-code-gptel-agent-switch-to-buffer :send ai-code-gptel-agent-send-command :resume nil :config nil :agent-file nil :upgrade nil :install-skills nil :cli nil) (claude-code-ide :label "claude-code-ide.el" :require claude-code-ide :start claude-code-ide--start-if-no-session :switch claude-code-ide-switch-to-buffer :send claude-code-ide-send-prompt :resume claude-code-ide-resume :config "~/.claude.json" :agent-file "CLAUDE.md" :upgrade "npm install -g @anthropic-ai/claude-code@latest" :install-skills nil :cli "claude") (claude-code-el :label "claude-code.el" :require claude-code :start claude-code :switch claude-code-switch-to-buffer :send ai-code-claude-code-el-send-command :resume claude-code-resume :config "~/.claude.json" :agent-file "CLAUDE.md" :upgrade "npm install -g @anthropic-ai/claude-code@latest" :install-skills nil :cli "claude")) "\
 Available AI backends and how to integrate with them.
 Each entry is (KEY :label STRING :require FEATURE :start FN :switch FN
 :send FN :resume FN-or-nil :upgrade STRING-or-nil :cli STRING
@@ -222,12 +222,13 @@ ARG is the prefix argument to pass to the upgrade function.
 
 (fn &optional ARG)" t)
 (autoload 'ai-code-install-backend-skills "ai-code-backends" "\
-Install skills for the currently selected backend.
-If the backend defines an :install-skills property, use it:
+Install or uninstall skills for the currently selected backend.
+Prompt for whether to install or uninstall first.
+When installing, if the backend defines an :install-skills property, use it:
   - string: run as a shell command via `compile'.
   - symbol: call the function.
-Otherwise fall back to prompting the AI session to install from a
-skills repository URL." t)
+Otherwise, or when uninstalling, fall back to prompting the AI session
+to manage skills from a skills repository URL." t)
 (register-definition-prefixes "ai-code-backends" '("ai-code-"))
 
 
@@ -239,7 +240,7 @@ This function configures SPC key binding in Evil normal state for
 AI session buffers.  Call this function after Evil is loaded,
 typically in your Emacs configuration with:
   (with-eval-after-load \\='evil (ai-code-backends-infra-evil-setup))" t)
-(register-definition-prefixes "ai-code-backends-infra" '("ai-code-"))
+(register-definition-prefixes "ai-code-backends-infra" '("ai-code-" "ghostel-"))
 
 
 ;;; Generated autoloads from ai-code-behaviors.el
@@ -247,8 +248,10 @@ typically in your Emacs configuration with:
 (autoload 'ai-code-behaviors-agent-shell-setup "ai-code-behaviors" "\
 Set up ai-code-behaviors integration with agent-shell.
 Adds the request decorator to inject behaviors into agent-shell prompts.
-Also advises file completion to skip when @preset is typed.
-Adds preset completion to agent-shell buffers." t)
+Merges preset names with file completion (both show in same popup).
+Adds hashtag completion (triggers on #).
+Adds mode-line indicator to agent-shell buffers.
+Safe to call multiple times - guards prevent duplicate advice/hooks." t)
 (register-definition-prefixes "ai-code-behaviors" '("ai-code-"))
 
 
@@ -622,7 +625,7 @@ PREFIX is the prefix argument.
 
 (fn PREFIX)" t)
 (autoload 'ai-code-update-git-ignore "ai-code-git" "\
-Ensure repository .gitignore contains AI Code related entries.
+Ensure repository .gitignore has AI Code-related entries.
 If not inside a Git repository, do nothing." t)
 (autoload 'ai-code--git-repo-recent-modified-files "ai-code-git" "\
 Return up to LIMIT most recently modified files under BASE-DIR.
@@ -630,7 +633,7 @@ If BASE-DIR is in a Git repository, use `git ls-files' to enumerate files.
 
 (fn BASE-DIR LIMIT)")
 (autoload 'ai-code-git-repo-recent-modified-files "ai-code-git" "\
-Open or insert one of the most recently modified files in the repo or current dir.
+Open or insert a recently modified file in the repo or current dir.
 With no PREFIX argument, prompt for a recently modified file and open it
 with `find-file'.
 
@@ -641,14 +644,15 @@ buffer from which this command was invoked, instead of visiting the file.
 (fn PREFIX)" t)
 (autoload 'ai-code-git-worktree-branch "ai-code-git" "\
 Create BRANCH and check it out in a new centralized worktree.
-The worktree path is
+The worktree path for START-POINT is
 `ai-code-git-worktree-root/REPO-NAME/BRANCH'.
 
 (fn BRANCH START-POINT)" t)
 (autoload 'ai-code-git-worktree-action "ai-code-git" "\
 Dispatch worktree action by PREFIX.
 Without PREFIX, call `ai-code-git-worktree-branch'.
-With PREFIX (for example C-u), call `magit-worktree-status'.
+With PREFIX (for example \\[universal-argument]), call
+`magit-worktree-status'.
 
 (fn &optional PREFIX)" t)
 (register-definition-prefixes "ai-code-git" '("ai-code-"))
@@ -893,7 +897,10 @@ based on the task name. Otherwise, use cleaned-up task name directly.")
 Create or open an AI task file.
 Prompts for a task name. If empty, opens the task directory.
 If non-empty, optionally prompts for a URL, generates a filename
-using GPTel, and creates the task file." t)
+using GPTel, and creates the task file.
+With prefix ARG, prompt AI to search org file content under a target directory.
+
+(fn &optional ARG)" t)
 (add-to-list 'auto-mode-alist '("/\\.ai\\.code\\.files/.*\\.org\\'" . ai-code-prompt-mode))
 (register-definition-prefixes "ai-code-prompt-mode" '("ai-code-"))
 
