@@ -207,7 +207,7 @@ When .gitignore is missing some entries, they should be added."
 (ert-deftest ai-code-test-pull-or-review-diff-file-generate-diff-option ()
   "When user chooses diff generation in non-diff buffer, keep existing logic."
   (pcase-let ((`(,captured-prompt ,diff-called)
-               (ai-code-test--run-pull-or-review-diff-file "Generate diff file" nil)))
+               (ai-code-test--run-pull-or-review-diff-file "Use GitHub MCP server" nil "Generate diff file")))
     (should diff-called)
     (should-not captured-prompt)))
 
@@ -495,6 +495,76 @@ Return (CAPTURED-PROMPT DIFF-CALLED)."
                  (lambda () (setq diff-called t))))
         (ai-code-pull-or-review-diff-file)))
     (list captured-prompt diff-called)))
+
+(ert-deftest ai-code-test-pull-or-review-pr-mode-choice-generate-diff-file ()
+  "Choosing generate diff file mode should return `generate-diff-file'."
+  (cl-letf (((symbol-function 'completing-read)
+             (lambda (&rest _args) "Generate diff file")))
+    (should (eq (ai-code--pull-or-review-pr-mode-choice)
+                'generate-diff-file))))
+
+(ert-deftest ai-code-test-pull-or-review-pr-with-source-generate-diff-file-calls-diff-generation ()
+  "When mode is generate-diff-file, call diff generation instead of building a prompt."
+  (let (diff-called)
+    (cl-letf (((symbol-function 'completing-read)
+               (lambda (&rest _args) "Generate diff file"))
+              ((symbol-function 'ai-code--magit-generate-feature-branch-diff-file)
+               (lambda () (setq diff-called t))))
+      (ai-code--pull-or-review-pr-with-source 'github-mcp)
+      (should diff-called))))
+
+(ert-deftest ai-code-test-pull-or-review-pr-mode-choice-resolve-merge-conflict ()
+  "Choosing resolve merge conflict mode should return `resolve-merge-conflict'."
+  (cl-letf (((symbol-function 'completing-read)
+             (lambda (&rest _args) "Resolve merge conflict")))
+    (should (eq (ai-code--pull-or-review-pr-mode-choice)
+                'resolve-merge-conflict))))
+
+(ert-deftest ai-code-test-pull-or-review-diff-file-resolve-merge-conflict-github-mcp ()
+  "When choosing resolve merge conflict mode with GitHub MCP, prompt should target merge conflicts."
+  (pcase-let ((`(,captured-prompt ,diff-called)
+               (ai-code-test--run-pull-or-review-diff-file "Use GitHub MCP server"
+                                                           "https://github.com/acme/demo/pull/999"
+                                                           "Resolve merge conflict")))
+    (let ((case-fold-search nil))
+      (should (string-match-p "Use GitHub MCP server" captured-prompt)))
+    (should (string-match-p "https://github.com/acme/demo/pull/999" captured-prompt))
+    (should (string-match-p "merge" (downcase captured-prompt)))
+    (should (string-match-p "conflict" (downcase captured-prompt)))
+    (should-not diff-called)))
+
+(ert-deftest ai-code-test-action-choice-returns-github-mcp-when-default-set ()
+  "When `ai-code-default-review-source' is `github-mcp', return it directly."
+  (let ((ai-code-default-review-source 'github-mcp)
+        (completing-read-called nil))
+    (cl-letf (((symbol-function 'completing-read)
+               (lambda (&rest _args)
+                 (setq completing-read-called t)
+                 "Use GitHub MCP server")))
+      (should (eq (ai-code--pull-or-review-action-choice) 'github-mcp))
+      (should-not completing-read-called))))
+
+(ert-deftest ai-code-test-action-choice-returns-gh-cli-when-default-set ()
+  "When `ai-code-default-review-source' is `gh-cli', return it directly."
+  (let ((ai-code-default-review-source 'gh-cli)
+        (completing-read-called nil))
+    (cl-letf (((symbol-function 'completing-read)
+               (lambda (&rest _args)
+                 (setq completing-read-called t)
+                 "Use gh CLI tool")))
+      (should (eq (ai-code--pull-or-review-action-choice) 'gh-cli))
+      (should-not completing-read-called))))
+
+(ert-deftest ai-code-test-action-choice-prompts-when-default-nil ()
+  "When `ai-code-default-review-source' is nil, use completing-read."
+  (let ((ai-code-default-review-source nil)
+        (completing-read-called nil))
+    (cl-letf (((symbol-function 'completing-read)
+               (lambda (&rest _args)
+                 (setq completing-read-called t)
+                 "Use GitHub MCP server")))
+      (should (eq (ai-code--pull-or-review-action-choice) 'github-mcp))
+      (should completing-read-called))))
 
 (provide 'test_ai-code-git)
 
