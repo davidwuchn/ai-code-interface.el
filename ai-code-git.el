@@ -38,6 +38,16 @@ Candidate values:
   :type 'string
   :group 'ai-code)
 
+(defcustom ai-code-default-review-source nil
+  "Default review source for pull request and issue analysis.
+When set, `ai-code--pull-or-review-action-choice' returns this value
+directly without prompting.  Valid values are `github-mcp', `gh-cli',
+or nil (prompt the user)."
+  :type '(choice (const :tag "Prompt user" nil)
+                 (const :tag "GitHub MCP server" github-mcp)
+                 (const :tag "gh CLI tool" gh-cli))
+  :group 'ai-code)
+
 (defcustom ai-code-git-worktree-root
   (expand-file-name "ai-code-worktrees" user-emacs-directory)
   "Directory used to host centralized Git worktrees for all repositories."
@@ -59,15 +69,17 @@ Candidate values:
           (truename (file-truename file)))
       (string-prefix-p ignore-dir truename))))
 
+;; DONE: add a customize variable, default value is nil. It will be used to indicate if we want to use GitHub MCP server or gh CLI tool by default. If it is setting, it will return github-mcp or gh-cli. If it's nil, keep the current code path.
 (defun ai-code--pull-or-review-action-choice ()
-  "Prompt user for action in `ai-code-pull-or-review-diff-file'."
-  (let* ((action-alist '(("Use GitHub MCP server" . github-mcp)
-                         ("Use gh CLI tool" . gh-cli)
-                         ("Generate diff file" . diff-file)))
-         (choice (completing-read "Select review source: "
-                                  action-alist
-                                  nil t nil nil "Use GitHub MCP server")))
-    (alist-get choice action-alist nil nil #'string=)))
+  "Prompt user for action in `ai-code-pull-or-review-diff-file'.
+When `ai-code-default-review-source' is set, return it directly."
+  (or ai-code-default-review-source
+      (let* ((action-alist '(("Use GitHub MCP server" . github-mcp)
+                             ("Use gh CLI tool" . gh-cli)))
+             (choice (completing-read "Select review source: "
+                                      action-alist
+                                      nil t nil nil "Use GitHub MCP server")))
+        (alist-get choice action-alist nil nil #'string=))))
 
 (defun ai-code--build-pr-review-init-prompt (review-source pr-url)
   "Build PR review initial prompt for REVIEW-SOURCE with PR-URL."
@@ -147,6 +159,24 @@ CI Checks Review Steps:
 4. No need to make code change. Provide analysis only."
             pr-url source-instruction)))
 
+(defun ai-code--build-resolve-merge-conflict-init-prompt (review-source pr-url)
+  "Build merge conflict resolution prompt for REVIEW-SOURCE with PR-URL."
+  (let ((source-instruction
+         (ai-code--pull-or-review-source-instruction review-source 'resolve-merge-conflict)))
+    (format "Resolve merge conflict for pull request: %s
+
+%s
+
+Merge Conflict Resolution Steps:
+1. Identify the current working branch and the target branch from the PR.
+2. Verify the current working branch matches the PR source branch.
+3. Update the local target branch to the latest remote version.
+4. Attempt to merge the target branch into the current working branch.
+5. If there are merge conflicts, analyze each conflict and provide detailed instructions on how to resolve them, including which files to change and how.
+6. Do not make code changes. Provide analysis and resolution suggestions only.
+7. If there are no merge conflicts, report that the merge would succeed and return a success message."
+            pr-url source-instruction)))
+
 (defun ai-code--pull-or-review-source-instruction (review-source &optional review-mode)
   "Return source instruction string for REVIEW-SOURCE and REVIEW-MODE."
   (pcase review-mode
@@ -164,6 +194,13 @@ CI Checks Review Steps:
        ('gh-cli
         "Use gh CLI tool to fetch pull request details and CI checks.")
        (_ "Review the GitHub CI checks for this pull request.")))
+    ('resolve-merge-conflict
+     (pcase review-source
+       ('github-mcp
+        "Use GitHub MCP server to fetch pull request branch details and merge status.")
+       ('gh-cli
+        "Use gh CLI tool to fetch pull request branch details and merge status.")
+       (_ "Resolve merge conflicts for this pull request.")))
     (_
      (pcase review-source
        ('github-mcp
@@ -180,47 +217,53 @@ CI Checks Review Steps:
 
 (defun ai-code--pull-or-review-pr-with-source (review-source)
   "Prompt for a mode and send a prompt for REVIEW-SOURCE to AI.
-If the selected mode is `send-current-branch-pr', ask for the target
-branch for the current branch PR.  Otherwise, ask for the relevant pull
-request or issue URL."
-  (let* ((review-mode (ai-code--pull-or-review-pr-mode-choice))
-         (init-prompt
-         (if (eq review-mode 'send-current-branch-pr)
-              (progn
-                (unless (magit-toplevel)
-                  (user-error "Not inside a Git repository"))
-                (let* ((current-branch (ai-code--require-current-branch))
-                       (default-target-branch
-                        (ai-code--default-pr-target-branch current-branch))
-                       (target-branch
-                        (ai-code-read-string "Target branch to merge into: "
-                                             default-target-branch))
-                       (pr-title
-                        (read-string
-                         "PR title (optional, leave empty for AI to generate): "
-                         nil
-                         'ai-code-pr-title-history)))
-                  (ai-code--build-send-current-branch-pr-init-prompt
-                   review-source current-branch target-branch pr-title)))
-            (let* ((url-prompt (ai-code--pull-or-review-url-prompt review-mode))
-                   (target-url (ai-code-read-string url-prompt)))
-              (ai-code--build-pr-init-prompt review-source target-url review-mode))))
-         (prompt-label (if (eq review-mode 'send-current-branch-pr)
-                           "Enter PR creation prompt: "
-                         "Enter review prompt: "))
-         (prompt (ai-code-read-string prompt-label init-prompt)))
-    (ai-code--insert-prompt prompt)))
+If the selected mode is `generate-diff-file', generate a diff file.
+If `send-current-branch-pr', ask for the target branch.
+Otherwise, ask for the relevant pull request or issue URL."
+  (let* ((review-mode (ai-code--pull-or-review-pr-mode-choice)))
+    (if (eq review-mode 'generate-diff-file)
+        (ai-code--magit-generate-feature-branch-diff-file)
+      (let* ((init-prompt
+              (if (eq review-mode 'send-current-branch-pr)
+                  (progn
+                    (unless (magit-toplevel)
+                      (user-error "Not inside a Git repository"))
+                    (let* ((current-branch (ai-code--require-current-branch))
+                           (default-target-branch
+                            (ai-code--default-pr-target-branch current-branch))
+                           (target-branch
+                            (ai-code-read-string "Target branch to merge into: "
+                                                 default-target-branch))
+                           (pr-title
+                            (read-string
+                             "PR title (optional, leave empty for AI to generate): "
+                             nil
+                             'ai-code-pr-title-history)))
+                      (ai-code--build-send-current-branch-pr-init-prompt
+                       review-source current-branch target-branch pr-title)))
+                (let* ((url-prompt (ai-code--pull-or-review-url-prompt review-mode))
+                       (target-url (ai-code-read-string url-prompt)))
+                  (ai-code--build-pr-init-prompt review-source target-url review-mode))))
+             (prompt-label (if (eq review-mode 'send-current-branch-pr)
+                               "Enter PR creation prompt: "
+                             "Enter review prompt: "))
+             (prompt (ai-code-read-string prompt-label init-prompt)))
+        (ai-code--insert-prompt prompt)))))
 
 (defun ai-code--pull-or-review-pr-mode-choice ()
   "Prompt user to choose analysis mode for a pull request or issue."
   ;; DONE: add a choice: send out PR for current branch. The feature will ask user the target branch to merge. By default, it should be parent branch of current branch. AI should send out PR with description. The description should looks like it's written by the author, and it should be short.
   ;; DONE: for send out PR feature, it should ask user about the PR title. If user does not provide one, AI should generate a concise title based on the code change
+  ;; DONE: the generate diff file function should be moved here, in the tail as an option. It shouldn't be in ai-code--pull-or-review-action-choice function. and downstream process should be moved and not inside ai-code-pull-or-review-diff-file
+  ;; DONE: add an option: resolve merge conflict. It accept a PR URL, which want to merge current working branch (you should verify) and target branch to merge to. AI should update local target branch to the latest, and try to merge the target branch into current working branch. If there is any merge conflict, AI should analyze the conflict and provide detailed instruction on how to resolve the conflict, including which files to change and how to change. Do not make code change, just provide suggestion on how to resolve conflicts. If there is no merge conflict, AI should just finish the merge and return a success message.
   (let* ((review-mode-alist '(("Review the PR" . review-pr)
                               ("Check unresolved feedback" . check-feedback)
+                              ("Prepare PR description" . prepare-pr-description)
+                              ("Send out PR for current branch" . send-current-branch-pr)
                               ("Investigate issue" . investigate-issue)
                               ("Review GitHub CI checks" . review-ci-checks)
-                              ("Prepare PR description" . prepare-pr-description)
-                              ("Send out PR for current branch" . send-current-branch-pr)))
+                              ("Resolve merge conflict" . resolve-merge-conflict)
+                              ("Generate diff file" . generate-diff-file)))
          (review-mode (completing-read "Select analysis mode (PR or issue): "
                                        review-mode-alist
                                        nil t nil nil "Review the PR")))
@@ -239,6 +282,8 @@ request or issue URL."
     (ai-code--build-pr-ci-check-init-prompt review-source target-url))
    ('prepare-pr-description
     (ai-code--build-pr-description-init-prompt review-source target-url))
+   ('resolve-merge-conflict
+    (ai-code--build-resolve-merge-conflict-init-prompt review-source target-url))
    (_
     (ai-code--build-pr-review-init-prompt review-source target-url))))
 
@@ -335,9 +380,9 @@ PR Creation Steps:
 
 ;;;###autoload
 (defun ai-code-pull-or-review-diff-file ()
-  "Review a diff file with AI Code or generate one if not viewing a diff.
+  "Review a diff file with AI Code or choose a PR review workflow.
 If current buffer is a .diff file, ask AI Code to review it.
-Otherwise, generate the diff."
+Otherwise, prompt for a review source and analysis mode."
   (interactive)
   (if (and buffer-file-name (string-match-p "\\.diff$" buffer-file-name))
       (let* ((file-name (file-name-nondirectory buffer-file-name))
@@ -353,11 +398,8 @@ Provide overall assessment.
 **Requirement**: " file-name))
              (prompt (ai-code-read-string "Enter review prompt (type requirement at end): " init-prompt)))
         (ai-code--insert-prompt prompt))
-    ;; For non-diff files, let user choose PR review via MCP/gh CLI or keep diff generation.
-    (pcase (ai-code--pull-or-review-action-choice)
-      ('github-mcp (ai-code--pull-or-review-pr-with-source 'github-mcp))
-      ('gh-cli (ai-code--pull-or-review-pr-with-source 'gh-cli))
-      (_ (ai-code--magit-generate-feature-branch-diff-file)))))
+    ;; For non-diff files, let user choose PR review via MCP/gh CLI.
+    (ai-code--pull-or-review-pr-with-source (ai-code--pull-or-review-action-choice))))
 
 (defun ai-code--validate-git-repository ()
   "Validate that current directory is in a git repository.

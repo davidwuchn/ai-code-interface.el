@@ -1,7 +1,7 @@
 ;;; ai-code.el --- Unified interface for AI coding backends such as Codex CLI, Copilot CLI, Claude Code, Gemini CLI, Opencode, Grok CLI, etc -*- lexical-binding: t; -*-
 
 ;; Author: Kang Tu <tninja@gmail.com>
-;; Version: 1.70
+;; Version: 1.71
 ;; Package-Requires: ((emacs "29.1") (transient "0.9.0") (magit "2.1.0"))
 ;; URL: https://github.com/tninja/ai-code-interface.el
 
@@ -245,6 +245,55 @@ test suffixes."
   :type '(choice (const nil) string)
   :group 'ai-code)
 
+;; DONE: add a wrapper to the following function. Before really calling this, just do simple string check: if the prompt-text contains suffix from ai-code-code-change, it should be classfied as code change; if it contains suffix from ai-code-ask-question, or "Please explain" etc, it should be classified as non-code change. This is to reduce unnecessary calls to GPTel for simple prompts that are easy to classify with simple keyword matching. Finally, all previous call to following function should call the wrapper instead.
+(defun ai-code--downcase-strings (strings)
+  "Return STRINGS converted to lowercase."
+  (mapcar #'downcase strings))
+
+(defconst ai-code--code-change-prompt-markers
+  (ai-code--downcase-strings
+   (list ai-code-change--selected-region-note
+         ai-code-change--generic-note
+         ai-code-change--selected-files-note))
+  "Prompt markers that clearly indicate a code-change request.")
+
+(defconst ai-code--non-code-change-prompt-markers
+  (append
+   (ai-code--downcase-strings
+    (list ai-code-discussion--question-only-note
+          ai-code-discussion--selected-region-note))
+   (ai-code--downcase-strings
+    ai-code-discussion--explain-prompt-prefixes))
+  "Prompt markers that clearly indicate a non-code-change request.")
+
+(defun ai-code--prompt-contains-any-marker-p (text markers)
+  "Return non-nil when any string in MARKERS appears in TEXT."
+  (seq-some (lambda (marker)
+              (string-match-p (regexp-quote marker) text))
+            markers))
+
+(defun ai-code--simple-classify-prompt-code-change (prompt-text)
+  "Classify PROMPT-TEXT with cheap string matching before GPTel.
+Return one of: `code-change`, `non-code-change`, or `unknown`."
+  (let ((text (downcase (or prompt-text ""))))
+    (cond
+     ((ai-code--prompt-contains-any-marker-p text
+                                             ai-code--code-change-prompt-markers)
+      'code-change)
+     ((ai-code--prompt-contains-any-marker-p text
+                                             ai-code--non-code-change-prompt-markers)
+      'non-code-change)
+     (t 'unknown))))
+
+(defun ai-code--classify-prompt-code-change (prompt-text)
+  "Classify whether PROMPT-TEXT requests a code change.
+Use simple string matching first, then fall back to GPTel."
+  (let ((classification
+         (ai-code--simple-classify-prompt-code-change prompt-text)))
+    (if (eq classification 'unknown)
+        (ai-code--gptel-classify-prompt-code-change prompt-text)
+      classification)))
+
 (defun ai-code--gptel-classify-prompt-code-change (prompt-text)
   "Classify whether PROMPT-TEXT requests a code change using GPTel.
 Return one of: `code-change`, `non-code-change`, or `unknown`."
@@ -271,19 +320,19 @@ Return one of: `code-change`, `non-code-change`, or `unknown`."
 
 (defun ai-code--resolve-auto-test-type-for-send (&optional prompt-text classification)
   "Resolve the concrete auto test type for current send action for PROMPT-TEXT.
-CLASSIFICATION is the optional GPTel prompt classification result."
+CLASSIFICATION is the optional prompt classification result."
   (if (eq ai-code-auto-test-type 'ask-me)
       (ai-code--resolve-ask-auto-test-type-for-send prompt-text classification)
     (and (memq ai-code-auto-test-type
                ai-code--auto-test-type-legacy-persistent-modes)
-         ai-code-auto-test-type)))
+          ai-code-auto-test-type)))
 
 (defun ai-code--resolve-ask-auto-test-type-for-send (&optional prompt-text classification)
   "Resolve the send-time auto test type for ask-me mode with PROMPT-TEXT.
-CLASSIFICATION is the optional GPTel prompt classification result."
+CLASSIFICATION is the optional prompt classification result."
   (if ai-code-use-gptel-classify-prompt
       (pcase (or classification
-                 (ai-code--gptel-classify-prompt-code-change prompt-text))
+                 (ai-code--classify-prompt-code-change prompt-text))
         ('code-change (ai-code--read-auto-test-type-choice))
         ('non-code-change nil)
         (_ (ai-code--read-auto-test-type-choice)))
@@ -291,29 +340,29 @@ CLASSIFICATION is the optional GPTel prompt classification result."
 
 (defun ai-code--resolve-auto-follow-up-suffix-for-send (&optional prompt-text classification)
   "Resolve next-step suggestion suffix for current send action for PROMPT-TEXT.
-CLASSIFICATION is the optional GPTel prompt classification result."
+CLASSIFICATION is the optional prompt classification result."
   (when (and ai-code-discussion-auto-follow-up-enabled
              ai-code-next-step-suggestion-suffix)
     (let ((classification (or classification
                               (and ai-code-use-gptel-classify-prompt
-                                   (ai-code--gptel-classify-prompt-code-change prompt-text)))))
+                                   (ai-code--classify-prompt-code-change prompt-text)))))
       (unless (eq classification 'code-change)
         (and (ai-code--read-auto-follow-up-choice)
              ai-code-next-step-suggestion-suffix)))))
 
 (defun ai-code--resolve-auto-test-suffix-for-send (&optional prompt-text classification)
   "Resolve auto test suffix for current send action for PROMPT-TEXT.
-CLASSIFICATION is the optional GPTel prompt classification result."
+CLASSIFICATION is the optional prompt classification result."
   (ai-code--auto-test-suffix-for-type
    (ai-code--resolve-auto-test-type-for-send prompt-text classification)))
 
 (defun ai-code--classify-prompt-for-send (&optional prompt-text)
-  "Return GPTel prompt classification for PROMPT-TEXT when needed.
+  "Return prompt classification for PROMPT-TEXT when needed.
 Send-time routing uses this result for test and discussion follow-up suffixes."
   (when (and ai-code-use-gptel-classify-prompt
              (or ai-code-auto-test-type
                  ai-code-discussion-auto-follow-up-enabled))
-    (ai-code--gptel-classify-prompt-code-change prompt-text)))
+    (ai-code--classify-prompt-code-change prompt-text)))
 
 (defun ai-code--with-auto-test-suffix-for-send (orig-fun prompt-text)
   "Resolve and bind send-time suffixes before calling ORIG-FUN with PROMPT-TEXT."

@@ -33,6 +33,14 @@
   :type '(repeat string)
   :group 'ai-code-opencode)
 
+(defcustom ai-code-opencode-extra-env-vars
+  '("OTUI_USE_ALTERNATE_SCREEN=main-screen")
+  "Extra environment variables passed to the Opencode terminal session.
+`OTUI_USE_ALTERNATE_SCREEN=main-screen' avoids the alternate screen
+buffer so that terminal scrollback is partially preserved."
+  :type '(repeat string)
+  :group 'ai-code-opencode)
+
 (defconst ai-code-opencode--session-prefix "opencode"
   "Session prefix used in Opencode buffer names.")
 
@@ -61,7 +69,8 @@ With prefix ARG, prompt for CLI args using
      nil
      nil
      ai-code-opencode--session-prefix
-     nil)))
+     nil
+     ai-code-opencode-extra-env-vars)))
 
 ;;;###autoload
 (defun ai-code-opencode-switch-to-buffer (&optional force-prompt)

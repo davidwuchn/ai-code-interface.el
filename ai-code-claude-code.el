@@ -31,8 +31,13 @@
   :type '(repeat string)
   :group 'ai-code-claude-code)
 
-(defcustom ai-code-claude-code-no-flicker t
-  "Enable experimental flicker-free terminal renderer in Claude Code."
+(defcustom ai-code-claude-code-no-flicker nil
+  "Enable experimental flicker-free terminal renderer in Claude Code.
+When non-nil, set CLAUDE_CODE_NO_FLICKER=1 which uses full-screen
+redraw rendering.  This can break vterm scrollback because the
+screen-clearing sequences overwrite the scrollback buffer.  Leave
+nil unless you specifically need flicker-free rendering and do not
+rely on scrolling back through terminal history."
   :type 'boolean
   :group 'ai-code-claude-code)
 
@@ -64,9 +69,33 @@ With prefix ARG, prompt for CLI args using
          (mcp-launch (ai-code-mcp-agent-prepare-launch 'claude-code working-dir command))
          (launch-command (or (plist-get mcp-launch :command) command))
          (cleanup-fn (plist-get mcp-launch :cleanup-fn))
-         (post-start-fn (plist-get mcp-launch :post-start-fn))
-         (env-vars (list (format "CLAUDE_CODE_NO_FLICKER=%s"
-                                 (if ai-code-claude-code-no-flicker "1" "0")))))
+         (mcp-post-start-fn (plist-get mcp-launch :post-start-fn))
+         ;; Wrap post-start-fn to conditionally disable strip-alternate-screen.
+         ;; strip-alternate-screen (PR #298) strips \e[?1049h/l so scrollback
+         ;; is preserved, but it causes the Claude Code badge to repeat
+         ;; because the Ink/React TUI redraws the full screen every frame.
+         ;;
+         ;; - vterm: KEEP strip-alternate-screen enabled (with throttling).
+         ;;   libvterm's alternate screen has no scrollback ring, so letting
+         ;;   \e[?1049h through truncates scrollback to vterm-max-scrollback
+         ;;   (~1000 lines).
+         ;; - eat/ghostel: DISABLE strip-alternate-screen.  eat saves the
+         ;;   entire buffer on alternate-screen entry and restores on exit,
+         ;;   so scrollback is never lost.
+         (post-start-fn
+          (lambda (buffer process instance-name)
+            (with-current-buffer buffer
+              (if (eq ai-code-backends-infra-terminal-backend 'vterm)
+                  ;; Explicitly re-enable for vterm to guard against stale
+                  ;; buffer-local nil from a previous session or backend switch.
+                  (setq-local ai-code-backends-infra-strip-alternate-screen t)
+                (setq-local ai-code-backends-infra-strip-alternate-screen nil)))
+            (when mcp-post-start-fn
+              (funcall mcp-post-start-fn buffer process instance-name))))
+         (env-vars (append (list "TERM_PROGRAM=emacs"
+                                "FORCE_CODE_TERMINAL=true")
+                          (when ai-code-claude-code-no-flicker
+                            (list "CLAUDE_CODE_NO_FLICKER=1")))))
     (ai-code-backends-infra--toggle-or-create-session
      working-dir
      nil

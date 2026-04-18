@@ -19,11 +19,12 @@
 (require 'project)
 (require 'ai-code-session-link)
 
+;; DONE: Prefer `ghostel-exec' for Ghostel backend startup when available,
+;; as it simplifies process startup integration.
+
 ;; Silence native-compiler warnings.
 (declare-function browse-url "browse-url" (url &optional new-window))
-(declare-function ghostel-mode "ghostel" ())
-(declare-function ghostel--new "ghostel" (rows cols scrollback-bytes))
-(declare-function ghostel--start-process "ghostel" ())
+(declare-function ghostel-exec "ghostel" (buffer program &optional args))
 (declare-function ghostel--window-adjust-process-window-size "ghostel" (process windows))
 (declare-function vterm "vterm" (&optional buffer-name))
 (declare-function vterm-send-string "vterm" (&rest args))
@@ -45,11 +46,8 @@
 (defvar eat--semi-char-mode)
 (defvar ghostel-shell nil)
 (defvar ghostel-enable-title-tracking t)
-(defvar ghostel-max-scrollback nil)
 (defvar ghostel--copy-mode-active nil)
 (defvar ghostel--process nil)
-(defvar ghostel--term nil)
-(defvar ghostel--term-rows nil)
 
 ;;; Customization
 
@@ -114,11 +112,29 @@ Can be either `vterm', `eat', or `ghostel'."
   :group 'ai-code-backends-infra)
 
 (defcustom ai-code-backends-infra-eat-preserve-position t
-  "Obsolete compatibility toggle for eat-specific reflow suppression.
-Eat sessions now always use the terminal's native resize and redisplay
-behavior because suppressing reflow can leave the screen stale when a
-window becomes visible again."
+  "Maintain terminal scroll position when switching windows in eat.
+When enabled, prevents the eat terminal from jumping to the top
+when you switch focus to other windows and return.  This provides
+a more stable viewing experience when working with multiple windows."
   :type 'boolean
+  :group 'ai-code-backends-infra)
+
+(defcustom ai-code-backends-infra-strip-alternate-screen t
+  "Strip alternate screen buffer sequences from terminal output.
+When non-nil, remove the escape sequences that switch to and from
+the alternate screen buffer (\\e[?1049h and \\e[?1049l).  TUI
+applications like GitHub Copilot CLI hardcode these sequences,
+which disables terminal scrollback.  Stripping them forces output
+onto the normal screen buffer where scrollback is preserved."
+  :type 'boolean
+  :group 'ai-code-backends-infra)
+
+(defcustom ai-code-backends-infra-scrollback-inject-interval 1.0
+  "Minimum seconds between scrollback-preservation injections.
+When a TUI application redraws via synchronized output, we inject
+newlines to push visible content into the scrollback ring.  This
+interval prevents flooding the scrollback with duplicate frames."
+  :type 'number
   :group 'ai-code-backends-infra)
 
 ;;; Variables
@@ -178,6 +194,136 @@ if the AI session buffer is not currently visible."
   :group 'ai-code-backends-infra)
 
 ;;; Vterm Rendering Optimization
+
+(defconst ai-code-backends-infra--alternate-screen-regexp
+  "\033\\[\\?1049[hl]"
+  "Regexp matching alternate screen buffer enter/exit sequences.
+Matches \\e[?1049h (enter) and \\e[?1049l (exit).")
+
+(defconst ai-code-backends-infra--screen-clear-regexp
+  "\033\\[2J"
+  "Regexp matching the Erase Display (ED 2) screen clear sequence.")
+
+(defconst ai-code-backends-infra--scrollback-clear-regexp
+  "\033\\[3J"
+  "Regexp matching the Erase Display (ED 3) scrollback clear sequence.")
+
+(defconst ai-code-backends-infra--sync-redraw-regexp
+  "\033\\[\\?2026h\033\\[1;1H"
+  "Regexp matching synchronized-update frame start with cursor home.
+Copilot CLI uses \\e[?2026h (begin synchronized update) followed
+immediately by \\e[1;1H (cursor to row 1, col 1) to redraw the
+entire screen in place.")
+
+(defvar ai-code-backends-infra-strip-alternate-screen-debug nil
+  "When non-nil, log alternate-screen filter matches to *Messages*.
+Set to t to debug scrollback-preservation transformations.")
+
+(defvar-local ai-code-backends-infra--last-scrollback-inject-time 0
+  "Timestamp of the last scrollback-preservation injection.
+Used to throttle injections per `ai-code-backends-infra-scrollback-inject-interval'.")
+
+(defvar-local ai-code-backends-infra--sync-redraw-scrollback nil
+  "When non-nil, inject scrollback-preserving newlines before
+synchronized-update frame redraws (\\e[?2026h\\e[1;1H).
+Backends that hardcode alternate screen buffer should set this
+to t via their post-start-fn.")
+
+(defun ai-code-backends-infra--scroll-to-scrollback-sequence ()
+  "Return a sequence that pushes visible content into scrollback.
+Move cursor to the last row, emit enough newlines to scroll all
+visible lines into the scrollback buffer, then cursor home."
+  (let ((height (or (when-let ((win (get-buffer-window (current-buffer) t)))
+                      (window-body-height win))
+                    50)))
+    (concat "\033[" (number-to-string height) ";1H"
+            (make-string height ?\n)
+            "\033[H")))
+
+(defun ai-code-backends-infra--strip-alternate-screen-sequences (str)
+  "Normalize terminal sequences in STR to preserve scrollback.
+When `ai-code-backends-infra-strip-alternate-screen' is non-nil and
+the current buffer is an AI session buffer, apply these transformations:
+1. Strip alternate screen enter/exit (\\e[?1049h, \\e[?1049l).
+2. Convert screen clear (\\e[2J) to a newline-scroll sequence so
+   the current content is pushed into scrollback.  Throttled via
+   `ai-code-backends-infra-scrollback-inject-interval'.
+3. Strip scrollback clear (\\e[3J).
+4. Convert erase-to-end (\\e[J / \\e[0J) preceded by cursor-home
+   into a scrollback-preserving sequence.  Throttled to avoid
+   flooding the scrollback ring with repeated TUI frames.
+5. Detect synchronized-update frame redraws (\\e[?2026h\\e[1;1H)
+   and inject scrollback preservation before the frame, throttled
+   to avoid flooding."
+  (if (and ai-code-backends-infra-strip-alternate-screen
+           (ai-code-backends-infra--session-buffer-p (current-buffer)))
+      (let* ((result str)
+             (scroll-seq (ai-code-backends-infra--scroll-to-scrollback-sequence))
+             (now (float-time))
+             (inject-ok (>= (- now
+                               ai-code-backends-infra--last-scrollback-inject-time)
+                            ai-code-backends-infra-scrollback-inject-interval)))
+        (when (and ai-code-backends-infra-strip-alternate-screen-debug
+                   (string-match-p "\033\\[" str))
+          (let ((visible (replace-regexp-in-string
+                          "\033" "<ESC>" (substring str 0 (min 200 (length str))))))
+            (message "alt-screen-filter: len=%d alt=%s 2J=%s 3J=%s H+J=%s sync=%s seq=[%s]"
+                     (length str)
+                     (if (string-match-p ai-code-backends-infra--alternate-screen-regexp str) "Y" "N")
+                     (if (string-match-p ai-code-backends-infra--screen-clear-regexp str) "Y" "N")
+                     (if (string-match-p ai-code-backends-infra--scrollback-clear-regexp str) "Y" "N")
+                     (if (string-match-p "\033\\[H.*\033\\[J\\|\033\\[H.*\033\\[0J" str) "Y" "N")
+                     (if (string-match-p ai-code-backends-infra--sync-redraw-regexp str) "Y" "N")
+                     visible)))
+        ;; 1. Strip alternate screen transitions.
+        (setq result (replace-regexp-in-string
+                      ai-code-backends-infra--alternate-screen-regexp "" result))
+        ;; 2. Convert ED 2 (clear screen) to newline-scroll, throttled
+        ;;    to avoid flooding the scrollback ring with repeated TUI
+        ;;    frames.  When throttled the plain \e[2J clears the screen
+        ;;    without preserving content, which is acceptable since a
+        ;;    recent snapshot was already pushed.
+        (when (and inject-ok
+                   (string-match-p ai-code-backends-infra--screen-clear-regexp result))
+          (setq ai-code-backends-infra--last-scrollback-inject-time now)
+          (setq result (replace-regexp-in-string
+                        ai-code-backends-infra--screen-clear-regexp
+                        scroll-seq result t t)))
+        ;; 3. Strip ED 3 (clear scrollback).
+        (setq result (replace-regexp-in-string
+                      ai-code-backends-infra--scrollback-clear-regexp "" result))
+        ;; 4. Convert cursor-home + erase-to-end (\e[H\e[J) into a
+        ;;    scrollback-preserving sequence, throttled to avoid flooding
+        ;;    the scrollback ring with repeated TUI frames (e.g. the
+        ;;    Claude Code badge appearing on every redraw).
+        (when inject-ok
+          (let ((home-erase-re "\033\\[H\033\\[J\\|\033\\[H\033\\[0J"))
+            (when (string-match-p home-erase-re result)
+              (setq ai-code-backends-infra--last-scrollback-inject-time now)
+              (setq result (replace-regexp-in-string
+                            home-erase-re
+                            (concat scroll-seq "\033[H") result t t)))))
+        ;; 5. Detect synchronized-update frames (\e[?2026h followed by
+        ;;    cursor to row 1) and inject scrollback preservation before
+        ;;    the frame redraw, throttled to avoid flooding the scrollback
+        ;;    ring.  Only trigger on chunks > 500 bytes (meaningful
+        ;;    redraws, not small cursor movements).  Guarded by the
+        ;;    buffer-local `--sync-redraw-scrollback' flag so that only
+        ;;    backends that explicitly opt in (e.g. Copilot CLI) get
+        ;;    the injection.
+        (when (and ai-code-backends-infra--sync-redraw-scrollback
+                   (> (length result) 500)
+                   (string-match ai-code-backends-infra--sync-redraw-regexp result)
+                   (>= (- (float-time)
+                          ai-code-backends-infra--last-scrollback-inject-time)
+                       ai-code-backends-infra-scrollback-inject-interval))
+          (setq ai-code-backends-infra--last-scrollback-inject-time (float-time))
+          (let ((match-start (match-beginning 0)))
+            (setq result (concat (substring result 0 match-start)
+                                 scroll-seq
+                                 (substring result match-start)))))
+        result)
+    str))
 
 (defconst ai-code-backends-infra--vterm-redraw-regexp
   "\033\\[[0-9;?]*[A-GJKMH]"
@@ -258,17 +404,25 @@ The timer is reset only after meaningful output is observed."
   (ai-code-backends-infra--schedule-idle-check))
 
 (defun ai-code-backends-infra--vterm-notification-tracker (orig-fun process input)
-  "Track vterm activity for notification purposes, then call ORIG-FUN."
-  (when (ai-code-backends-infra--session-buffer-p (process-buffer process))
-    (with-current-buffer (process-buffer process)
-      (when (ai-code-backends-infra--output-meaningful-p input)
-        (ai-code-backends-infra--note-meaningful-output))))
-  (prog1
-      (funcall orig-fun process input)
+  "Track vterm activity for notification purposes, then call ORIG-FUN.
+When `ai-code-backends-infra-strip-alternate-screen' is non-nil,
+strip alternate screen buffer sequences from INPUT so that TUI
+applications write to the normal screen buffer (preserving scrollback)."
+  (let ((filtered-input
+         (if (ai-code-backends-infra--session-buffer-p (process-buffer process))
+             (with-current-buffer (process-buffer process)
+               (ai-code-backends-infra--strip-alternate-screen-sequences input))
+           input)))
+    (when (ai-code-backends-infra--session-buffer-p (process-buffer process))
+      (with-current-buffer (process-buffer process)
+        (when (ai-code-backends-infra--output-meaningful-p filtered-input)
+          (ai-code-backends-infra--note-meaningful-output))))
+    (prog1
+      (funcall orig-fun process filtered-input)
     (when (ai-code-backends-infra--session-buffer-p (process-buffer process))
       (ai-code-session-link--schedule-linkify-recent-output
        (process-buffer process)
-       input))))
+       filtered-input)))))
 
 (defun ai-code-backends-infra--vterm-render-preserving-copy-mode-view (render-fn)
   "Call RENDER-FN while keeping the user's `vterm-copy-mode' viewport stable."
@@ -397,36 +551,26 @@ returns to normal terminal interaction."
 
 (defun ai-code-backends-infra--configure-ghostel-buffer ()
   "Configure the current Ghostel buffer for AI Code sessions."
-  (unless (eq major-mode 'ghostel-mode)
-    (ghostel-mode))
   ;; Keep AI session names stable so remembered sessions can still be
   ;; resolved through the conventional *backend[project]* buffer title.
   (setq-local ghostel-enable-title-tracking nil)
-  (if-let ((window (get-buffer-window (current-buffer) t)))
-      (ai-code-backends-infra--initialize-ghostel-term window)
-    (add-hook 'window-configuration-change-hook
-              #'ai-code-backends-infra--initialize-ghostel-when-displayed
-              nil t))
   (ai-code-backends-infra--configure-session-input-shortcuts)
   (ai-code-backends-infra--install-navigation-cursor-sync))
 
-(defun ai-code-backends-infra--initialize-ghostel-term (window)
-  "Initialize the current Ghostel terminal state for WINDOW."
-  (let ((height (max 1 (window-body-height window)))
-        (width (max 1 (window-max-chars-per-line window))))
-    (setq-local ghostel--term
-                (ghostel--new height width ghostel-max-scrollback))
-    (setq-local ghostel--term-rows height)))
-
-(defun ai-code-backends-infra--initialize-ghostel-when-displayed ()
-  "Initialize the current Ghostel buffer once it has a live window."
-  (when (and (eq major-mode 'ghostel-mode)
-             (not (bound-and-true-p ghostel--term)))
-    (when-let ((window (get-buffer-window (current-buffer) t)))
-      (ai-code-backends-infra--initialize-ghostel-term window)
-      (remove-hook 'window-configuration-change-hook
-                   #'ai-code-backends-infra--initialize-ghostel-when-displayed
-                   t))))
+(defun ai-code-backends-infra--start-ghostel-process (buffer command)
+  "Start a Ghostel session in BUFFER for COMMAND."
+  (with-current-buffer buffer
+    (ai-code-backends-infra--configure-ghostel-buffer)
+    (let* ((argv (split-string-shell-command command))
+           (program (car argv))
+           (args (cdr argv)))
+      (cond
+       ((not program) nil)
+       ((fboundp 'ghostel-exec)
+        (ghostel-exec buffer program args))
+       (t
+        (user-error
+         "Ghostel backend requires a Ghostel version that provides `ghostel-exec`"))))))
 
 ;;; Terminal Backend Abstraction
 
@@ -576,6 +720,27 @@ MULTILINE-INPUT-SEQUENCE configures `S-<return>' and `C-<return>' when non-nil."
 
 ;;; Reflow and Window Management
 
+(defun ai-code-backends-infra--eat-terminal-position-keeper (window-list)
+  "Maintain stable terminal view position across window switches.
+WINDOW-LIST contains windows requiring position synchronization.
+Implements intelligent scroll management to preserve user context
+when navigating between terminal and other buffers."
+  (dolist (win window-list)
+    (if (eq win 'buffer)
+        (goto-char (eat-term-display-cursor eat-terminal))
+      (unless buffer-read-only
+        (let ((terminal-point (eat-term-display-cursor eat-terminal)))
+          (set-window-point win terminal-point)
+          (cond
+           ((>= terminal-point (- (point-max) 2))
+            (with-selected-window win
+              (goto-char terminal-point)
+              (recenter -1)))
+           ((not (pos-visible-in-window-p terminal-point win))
+            (with-selected-window win
+              (goto-char terminal-point)
+              (recenter)))))))))
+
 (defun ai-code-backends-infra--terminal-resize-handler ()
   "Retrieve the terminal's resize handling function based on backend."
   (pcase ai-code-backends-infra-terminal-backend
@@ -590,7 +755,9 @@ MULTILINE-INPUT-SEQUENCE configures `S-<return>' and `C-<return>' when non-nil."
     (string-match-p "\\`\\*.*\\[.*\\].*\\*\\'" name)))
 
 (defun ai-code-backends-infra--terminal-reflow-filter (original-fn &rest args)
-  "Filter terminal reflows to prevent height-only resize triggers."
+  "Filter terminal reflows to prevent height-only resize triggers.
+Suppress reflow when terminal width is unchanged or when the session
+buffer is in scroll/copy mode, working around bug #1422."
   (let* ((base-result (apply original-fn args))
          (dimensions-stable t))
     (dolist (win (window-list))
@@ -601,15 +768,27 @@ MULTILINE-INPUT-SEQUENCE configures `S-<return>' and `C-<return>' when non-nil."
           (unless (eql new-width cached-width)
             (setq dimensions-stable nil)
             (set-window-parameter win 'ai-code-backends-infra-cached-width new-width)))))
-    (if (and ai-code-backends-infra-prevent-reflow-glitch dimensions-stable)
-        nil
-      base-result)))
+    (cond
+     ;; Not in a session buffer - pass through
+     ((not (ai-code-backends-infra--session-buffer-p (current-buffer)))
+      base-result)
+     ;; In scroll/copy mode - suppress reflow to avoid disrupting navigation
+     ((ai-code-backends-infra--terminal-navigation-mode-p)
+      nil)
+     ;; Width changed - allow reflow
+     ((not dimensions-stable)
+      base-result)
+     ;; Height-only change with reflow glitch prevention - suppress
+     (ai-code-backends-infra-prevent-reflow-glitch
+      nil)
+     ;; Default - pass through
+     (t base-result))))
 
 (defun ai-code-backends-infra--sync-reflow-filter-advice ()
   "Add or remove terminal reflow advice according to current settings."
   (let* ((resize-handler (ai-code-backends-infra--terminal-resize-handler))
          (enabled (and ai-code-backends-infra-prevent-reflow-glitch
-                       (eq ai-code-backends-infra-terminal-backend 'vterm))))
+                       (memq ai-code-backends-infra-terminal-backend '(vterm eat)))))
     (dolist (handler (cl-copy-list ai-code-backends-infra--reflow-advised-handlers))
       (unless (and enabled (eq handler resize-handler))
         (when (advice-member-p #'ai-code-backends-infra--terminal-reflow-filter
@@ -648,6 +827,11 @@ MULTILINE-INPUT-SEQUENCE configures `S-<return>' and `C-<return>' when non-nil."
     (setq ai-code-backends-infra--last-accessed-buffer buffer)
     (when (and window ai-code-backends-infra-focus-on-open)
       (select-window window))
+    ;; Sync terminal dimensions with the actual window size.
+    ;; The buffer may have been created with different dimensions before
+    ;; being displayed in this window.
+    (when (and window (buffer-live-p buffer))
+      (ai-code-backends-infra--sync-terminal-dimensions buffer window))
     window))
 
 (defun ai-code-backends-infra--fit-side-window-body-width (window)
@@ -656,6 +840,18 @@ MULTILINE-INPUT-SEQUENCE configures `S-<return>' and `C-<return>' when non-nil."
                   (window-body-width window))))
     (unless (zerop delta)
       (window-resize window delta t))))
+
+(defun ai-code-backends-infra--sync-terminal-dimensions (buffer window)
+  "Sync terminal dimensions in BUFFER to match WINDOW size.
+This ensures the terminal process has the correct dimensions after
+the buffer has been displayed in its final window, which may differ
+from the window where it was initially created."
+  (when (and buffer window (buffer-live-p buffer) (window-live-p window))
+    (with-current-buffer buffer
+      (when-let ((proc (get-buffer-process buffer)))
+        (let ((height (window-body-height window))
+              (width (window-body-width window)))
+          (set-process-window-size proc height width))))))
 
 ;;; Session Helpers
 
@@ -1209,6 +1405,7 @@ ENV-VARS is a list of environment variables."
 
      ((eq ai-code-backends-infra-terminal-backend 'eat)
      (let* ((buffer (get-buffer-create buffer-name))
+             (eat-term-name "xterm-256color")
              (parts (split-string-shell-command command))
              (program (car parts))
              (args (cdr parts)))
@@ -1216,6 +1413,9 @@ ENV-VARS is a list of environment variables."
         (with-current-buffer buffer
           (setq-local ai-code-backends-infra--session-terminal-backend 'eat)
           (unless (eq major-mode 'eat-mode) (eat-mode))
+          (when ai-code-backends-infra-eat-preserve-position
+            (setq-local eat--synchronize-scroll-function
+                        #'ai-code-backends-infra--eat-terminal-position-keeper))
           (ai-code-backends-infra--configure-session-input-shortcuts)
           (ai-code-backends-infra--install-navigation-cursor-sync)
           (setq-local process-environment (append env-vars process-environment))
@@ -1226,14 +1426,17 @@ ENV-VARS is a list of environment variables."
               (set-process-filter
                proc
                (lambda (process output)
-                 ;; Call original filter first
-                 (when orig-filter
-                   (funcall orig-filter process output))
-                 ;; Then track activity for notifications
-                 (with-current-buffer (process-buffer process)
-                   (when (ai-code-backends-infra--output-meaningful-p output)
-                     (ai-code-backends-infra--note-meaningful-output))
-                   (ai-code-session-link--linkify-recent-output output))))))
+                 (let ((filtered-output
+                        (with-current-buffer (process-buffer process)
+                          (ai-code-backends-infra--strip-alternate-screen-sequences output))))
+                   ;; Call original filter first
+                   (when orig-filter
+                     (funcall orig-filter process filtered-output))
+                   ;; Then track activity for notifications
+                   (with-current-buffer (process-buffer process)
+                     (when (ai-code-backends-infra--output-meaningful-p filtered-output)
+                       (ai-code-backends-infra--note-meaningful-output))
+                     (ai-code-session-link--linkify-recent-output filtered-output)))))))
            (cons buffer (get-buffer-process buffer)))))
      ((eq ai-code-backends-infra-terminal-backend 'ghostel)
       (let* ((buffer (get-buffer-create buffer-name))
@@ -1241,8 +1444,7 @@ ENV-VARS is a list of environment variables."
         (ai-code-backends-infra--set-session-directory buffer working-dir)
         (with-current-buffer buffer
           (setq-local ai-code-backends-infra--session-terminal-backend 'ghostel)
-          (ai-code-backends-infra--configure-ghostel-buffer)
-          (let ((proc (ghostel--start-process)))
+          (let ((proc (ai-code-backends-infra--start-ghostel-process buffer command)))
             (when (processp proc)
               (set-process-query-on-exit-flag proc nil)
               (let ((orig-filter (process-filter proc)))
@@ -1254,9 +1456,7 @@ ENV-VARS is a list of environment variables."
                    (with-current-buffer (process-buffer process)
                      (when (ai-code-backends-infra--output-meaningful-p output)
                        (ai-code-backends-infra--note-meaningful-output))
-                     (ai-code-session-link--linkify-recent-output output)))))
-              (when (and command (> (length command) 0))
-                (process-send-string proc (concat command "\r"))))
+                     (ai-code-session-link--linkify-recent-output output))))))
             (cons buffer proc)))))
      (t (error "Unknown backend")))))
 

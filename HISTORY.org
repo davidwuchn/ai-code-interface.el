@@ -2,6 +2,14 @@
 * Release history
 
 ** Main branch change
+- Chore: Use ghostel-exec for Ghostel backend startup
+
+** 1.71
+- Feat: Add get_variable_value MCP tool
+- Fix: Resolve github-copilot-cli scroll back issue
+- Chore: bypass gptel prompt classification for existing menu items (code change, ask question, explain)
+- Fix: Scroll back issue for vterm & eat
+- Feat: Add optional editor-session MCP tools
 - Feat: Add terminal backend selection menu item to switch between vterm, eat, and ghostel
 
 ** 1.70

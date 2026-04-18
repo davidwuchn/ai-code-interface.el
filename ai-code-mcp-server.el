@@ -13,6 +13,7 @@
 
 (require 'cl-lib)
 (require 'json)
+(require 'ai-code-mcp-common)
 (require 'imenu)
 (require 'project)
 (require 'seq)
@@ -116,6 +117,12 @@ Use `auto' to prefer Flycheck and then Flymake when available."
      :name "get_project_buffers"
      :description "List open buffers that belong to the current project."
      :args nil)
+    (:function ai-code-mcp-notify-user
+     :name "notify_user"
+     :description "Show a notification to the Emacs user."
+     :args ((:name "message_text"
+              :type string
+             :description "Notification text to show in Emacs.")))
     (:function ai-code-mcp-imenu-list-symbols
      :name "imenu_list_symbols"
      :description "List useful symbols in a file via imenu."
@@ -169,6 +176,7 @@ The default tool list includes:
 - `get_diagnostics'
 - `get_project_files'
 - `get_project_buffers'
+- `notify_user'
 - `imenu_list_symbols'
 - `xref_find_references'
 - `xref_find_definitions_at_point'
@@ -251,7 +259,9 @@ Required keys are `:function', `:name', and `:description'."
   "Register the built-in common Emacs MCP tools."
   (interactive)
   (dolist (tool ai-code-mcp--builtin-tool-specs)
-    (apply #'ai-code-mcp-make-tool tool)))
+    (apply #'ai-code-mcp-make-tool tool))
+  (dolist (setup-fn ai-code-mcp-server-tool-setup-functions)
+    (funcall setup-fn)))
 
 (defun ai-code-mcp--ensure-builtins ()
   "Ensure built-in MCP tools are registered."
@@ -420,7 +430,9 @@ When START-LINE and NUM-LINES are non-nil, return only that line range."
 
 (defun ai-code-mcp--make-diagnostic (start-line start-column end-line end-column
                                                 severity source message)
-  "Return an MCP diagnostics entry for START-LINE, START-COLUMN, END-LINE, END-COLUMN, SEVERITY, SOURCE, and MESSAGE."
+  "Return an MCP diagnostics entry.
+Use START-LINE, START-COLUMN, END-LINE, END-COLUMN, SEVERITY,
+SOURCE, and MESSAGE to describe the diagnostic payload."
   `((range . ((start . ((line . ,start-line)
                         (character . ,start-column)))
               (end . ((line . ,end-line)
@@ -787,6 +799,15 @@ When WHOLE-FILE is non-nil, inspect the root node instead."
     (forward-line (1- line))
     (move-to-column column)
     (point)))
+
+(defun ai-code-mcp-notify-user (message-text)
+  "Show MESSAGE-TEXT to the Emacs user and beep."
+  (message "%s" message-text)
+  (beep)
+  (format "Notified user: %s" message-text))
+
+(require 'ai-code-mcp-debug-tools nil t)
+(require 'ai-code-mcp-editor-tools nil t)
 
 (provide 'ai-code-mcp-server)
 
