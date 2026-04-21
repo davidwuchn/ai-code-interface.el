@@ -17,7 +17,7 @@
 
 (defvar vterm-copy-mode-hook)
 (defvar eat-term-name)
-(defvar ghostel-enable-title-tracking)
+(defvar ghostel-set-title-function)
 (defvar ghostel--copy-mode-active)
 (defvar ghostel--process)
 
@@ -597,17 +597,17 @@
          (buffer (get-buffer-create buffer-name))
          (process 'ghostel-proc)
          (title-tracking-before-start :unset)
-         (saved-default (default-value 'ghostel-enable-title-tracking))
+         (saved-default (default-value 'ghostel-set-title-function))
          (ai-code-backends-infra-terminal-backend 'ghostel))
     (unwind-protect
         (progn
-          (setq-default ghostel-enable-title-tracking t)
+          (setq-default ghostel-set-title-function #'ignore)
           (cl-letf (((symbol-function 'ai-code-backends-infra--terminal-ensure-backend)
                      (lambda () nil))
                     ((symbol-function 'ghostel-exec)
                      (lambda (target-buffer _program &optional _args)
                        (with-current-buffer target-buffer
-                         (setq title-tracking-before-start ghostel-enable-title-tracking)
+                         (setq title-tracking-before-start ghostel-set-title-function)
                          (setq-local ghostel--process process))
                        process))
                     ((symbol-function 'get-buffer-process)
@@ -620,7 +620,7 @@
              "echo hi"
              nil)
             (should (eq title-tracking-before-start nil))))
-      (setq-default ghostel-enable-title-tracking saved-default)
+      (setq-default ghostel-set-title-function saved-default)
       (when (buffer-live-p buffer)
         (kill-buffer buffer)))))
 
@@ -679,10 +679,10 @@
 
 (ert-deftest test-ai-code-backends-infra-configure-ghostel-buffer-disables-title-tracking ()
   "Ghostel AI session buffers should keep their original buffer names."
-  (let ((saved-default (default-value 'ghostel-enable-title-tracking)))
+  (let ((saved-default (default-value 'ghostel-set-title-function)))
     (unwind-protect
         (progn
-          (setq-default ghostel-enable-title-tracking t)
+          (setq-default ghostel-set-title-function #'ignore)
           (cl-letf (((symbol-function 'ghostel-mode)
                      (lambda () nil))
                     ((symbol-function 'get-buffer-window)
@@ -691,9 +691,9 @@
                      (lambda (&rest _args) nil)))
             (with-temp-buffer
               (ai-code-backends-infra--configure-ghostel-buffer)
-              (should-not ghostel-enable-title-tracking)
-              (should (eq (default-value 'ghostel-enable-title-tracking) t)))))
-      (setq-default ghostel-enable-title-tracking saved-default))))
+              (should-not ghostel-set-title-function)
+              (should (eq (default-value 'ghostel-set-title-function) #'ignore)))))
+      (setq-default ghostel-set-title-function saved-default))))
 
 (ert-deftest test-ai-code-backends-infra-create-terminal-session-ghostel-wraps-output-filter ()
   "Ghostel session creation should track meaningful output and linkify output."

@@ -33,7 +33,7 @@
 
 (defvar ai-code-backends-infra--session-terminal-backend)
 (defvar ghostel--copy-mode-active nil)
-(defvar ghostel-enable-title-tracking t)
+(defvar ghostel-set-title-function nil)
 
 (defun ai-code-backends-infra-ghostel-ensure-backend ()
   "Ensure the Ghostel backend is available."
@@ -72,7 +72,7 @@
 
 (defun ai-code-backends-infra--configure-ghostel-buffer ()
   "Configure the current Ghostel buffer for AI Code sessions."
-  (setq-local ghostel-enable-title-tracking nil)
+  (setq-local ghostel-set-title-function nil)
   (ai-code-backends-infra--configure-session-input-shortcuts)
   (ai-code-backends-infra--install-navigation-cursor-sync))
 
