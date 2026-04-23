@@ -2234,6 +2234,7 @@ Call this when completely disabling ai-code-behaviors."
 
 (defconst ai-code--backend-session-prefixes
   '((opencode . "opencode")
+    (kilo . "kilo")
     (claude-code . "claude")
     (gemini . "gemini")
     (github-copilot-cli . "copilot")

@@ -1,4 +1,4 @@
-;;; ai-code.el --- Unified interface for AI coding backends such as Codex CLI, Copilot CLI, Claude Code, Gemini CLI, Opencode, Grok CLI, etc -*- lexical-binding: t; -*-
+;;; ai-code.el --- Unified interface for AI coding backends such as Codex CLI, Copilot CLI, Claude Code, Gemini CLI, Opencode, Kilo, Grok CLI, etc -*- lexical-binding: t; -*-
 
 ;; Author: Kang Tu <tninja@gmail.com>
 ;; Version: 1.74
@@ -21,6 +21,7 @@
 ;;   - Gemini CLI
 ;;   - Claude Code
 ;;   - Opencode
+;;   - Kilo
 ;;   - Grok CLI
 ;;   - Cursor CLI
 ;;   - Kiro CLI
@@ -49,7 +50,7 @@
 ;;
 ;; (use-package ai-code
 ;;   :config
-;;   ;; use codex as backend, other options are 'gemini, 'github-copilot-cli, 'opencode, 'grok, 'claude-code-ide, 'claude-code-el, 'claude-code, 'cursor, 'kiro, 'codebuddy, 'aider, 'agent-shell, 'eca
+;;   ;; use codex as backend, other options are 'gemini, 'github-copilot-cli, 'opencode, 'kilo, 'grok, 'claude-code-ide, 'claude-code-el, 'claude-code, 'cursor, 'kiro, 'codebuddy, 'aider, 'agent-shell, 'eca
 ;;   (ai-code-set-backend 'codex) ;; set your preferred backend
 ;;   ;; Optional: use a narrower transient menu on smaller frames
 ;;   ;; (setq ai-code-menu-layout 'two-columns)
@@ -112,6 +113,7 @@
 (require 'ai-code-aider-cli)
 (require 'ai-code-github-copilot-cli)
 (require 'ai-code-opencode)
+(require 'ai-code-kilo)
 (require 'ai-code-grok-cli)
 (require 'ai-code-codebuddy-cli)
 (require 'ai-code-file)

@@ -258,6 +258,18 @@ so the CLI itself handles the installation details."
      :upgrade "npm i -g opencode-ai@latest"
      :install-skills nil
      :cli     "opencode")
+    (kilo
+     :label "Kilo"
+     :require ai-code-kilo
+     :start   ai-code-kilo
+     :switch  ai-code-kilo-switch-to-buffer
+     :send    ai-code-kilo-send-command
+     :resume  ai-code-kilo-resume
+     :config  "~/.config/kilo/kilo.json"
+     :agent-file nil
+     :upgrade "npm install -g kilo@latest"
+     :install-skills nil
+     :cli     "kilo")
     (grok
      :label "Grok CLI"
      :require ai-code-grok-cli

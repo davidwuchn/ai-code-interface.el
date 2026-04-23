@@ -15,6 +15,7 @@ An Emacs interface for AI-assisted software development. *The purpose is to prov
   - [[https://github.com/google-gemini/gemini-cli][Gemini CLI]]
   - [[https://github.com/anthropics/claude-code][Claude Code]]
   - [[https://opencode.ai/][Opencode]]
+  - [[https://kilo.dev/][Kilo]]
   - [[https://grokcli.io/][Grok CLI]]
   - [[https://docs.cursor.com/en/cli][Cursor CLI]]
   - [[https://kiro.dev/cli/][Kiro CLI]]
@@ -83,7 +84,7 @@ Enable installation of packages from MELPA by adding an entry to package-archive
   (use-package ai-code
     ;; :straight (:host github :repo "tninja/ai-code-interface.el") ;; if you want to use straight to install, no need to have MELPA setting above
     :config
-    ;; use codex as backend, other options are 'claude-code, 'gemini, 'github-copilot-cli, 'opencode, 'grok, 'cursor, 'kiro, 'codebuddy, 'aider, 'eca, 'agent-shell, 'claude-code-ide, 'claude-code-el
+    ;; use codex as backend, other options are 'claude-code, 'gemini, 'github-copilot-cli, 'opencode, 'kilo, 'grok, 'cursor, 'kiro, 'codebuddy, 'aider, 'eca, 'agent-shell, 'claude-code-ide, 'claude-code-el
     (ai-code-set-backend 'codex)
     ;; Optional: default menu stays unchanged; use a narrower 2-column layout on smaller frames
     ;; (setq ai-code-menu-layout 'two-columns)
@@ -418,6 +419,7 @@ When working with multiple AI sessions, it can be useful to receive desktop noti
      - Binds =Shift+Enter=/=Ctrl+Enter= inside Claude sessions to send Claude's
        multiline input sequence.
    - [[https://opencode.ai/][Opencode]] (`[[./ai-code-opencode.el][ai-code-opencode.el]]`)
+   - [[https://kilo.dev/][Kilo]] (`[[./ai-code-kilo.el][ai-code-kilo.el]]`)
    - [[https://grokcli.io/][Grok CLI]] (`[[./ai-code-grok-cli.el][ai-code-grok-cli.el]]`)
    - [[https://docs.cursor.com/en/cli][Cursor CLI]] (`[[./ai-code-cursor-cli.el][ai-code-cursor-cli.el]]`)
    - [[https://kiro.dev/cli/][Kiro CLI]] (`[[./ai-code-kiro-cli.el][ai-code-kiro-cli.el]]`)
