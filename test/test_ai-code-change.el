@@ -339,7 +339,7 @@ is between the function definition and its body."
         (should (looking-at-p "    ;; TODO: indented task"))))))
 
 (ert-deftest ai-code-test-implement-todo-action-choice-is-presented ()
-  "Test that build-and-send-prompt presents action choice via completing-read."
+  "Test that build-and-send-prompt presents action choice via `completing-read'."
   (with-temp-buffer
     (setq buffer-file-name "test.el")
     (setq-local comment-start ";")
@@ -505,6 +505,81 @@ is between the function definition and its body."
         ;; Should contain question-oriented label, not implementation
         (should (string-match-p "[Qq]uestion" captured-label))
         (should-not (string-match-p "implementation" captured-label))))))
+
+(ert-deftest ai-code-test-ai-code-implement-todo-org-section-includes-heading-and-content ()
+  "Test Org TODO section is used as prompt context without requiring comment syntax."
+  (with-temp-buffer
+    (require 'org)
+    (setq buffer-file-name "todo.org")
+    (insert "* TODO Build backend switcher\n")
+    (insert "Use Codex for implementation.\n")
+    (insert "Keep the UI untouched.\n")
+    (org-mode)
+    (goto-char (point-min))
+
+    (let (captured-prompt)
+      (cl-letf (((symbol-function 'completing-read)
+                 (lambda (&rest _) "Code change"))
+                ((symbol-function 'ai-code-read-string)
+                 (lambda (_label input) input))
+                ((symbol-function 'ai-code--get-clipboard-text) (lambda () nil))
+                ((symbol-function 'ai-code--get-context-files-string) (lambda () ""))
+                ((symbol-function 'ai-code--format-repo-context-info) (lambda () ""))
+                ((symbol-function 'which-function) (lambda () nil))
+                ((symbol-function 'region-active-p) (lambda () nil))
+                ((symbol-function 'ai-code--insert-prompt)
+                 (lambda (prompt) (setq captured-prompt prompt))))
+
+        (ai-code-implement-todo nil)
+
+        (should (stringp captured-prompt))
+        (should (string-match-p "Please implement code" captured-prompt))
+        (should (string-match-p "\\* TODO Build backend switcher" captured-prompt))
+        (should (string-match-p "Use Codex for implementation\\." captured-prompt))
+        (should (string-match-p "Keep the UI untouched\\." captured-prompt))))))
+
+(ert-deftest ai-code-test-ai-code-implement-todo-org-body-line-is-not-headline ()
+  "Test Org body lines do not count as the TODO entry for implementation."
+  (with-temp-buffer
+    (require 'org)
+    (setq buffer-file-name "todo.org")
+    (insert "** TODO my task description\n")
+    (insert "Supporting details live here.\n")
+    (org-mode)
+    (goto-char (point-min))
+    (forward-line 1)
+
+    (cl-letf (((symbol-function 'region-active-p) (lambda () nil)))
+      (should-error (ai-code-implement-todo nil) :type 'user-error))))
+
+(ert-deftest ai-code-test-ai-code-implement-todo-org-headline-with-colon-prefix ()
+  "Test Org headline with `TODO:' prefix is accepted."
+  (with-temp-buffer
+    (require 'org)
+    (setq buffer-file-name "todo.org")
+    (insert "** TODO: what is the most important verse in Bible\n")
+    (org-mode)
+    (goto-char (point-min))
+
+    (let (captured-prompt)
+      (cl-letf (((symbol-function 'completing-read)
+                 (lambda (&rest _) "Ask question"))
+                ((symbol-function 'ai-code-read-string)
+                 (lambda (_label input) input))
+                ((symbol-function 'ai-code--get-clipboard-text) (lambda () nil))
+                ((symbol-function 'ai-code--get-context-files-string) (lambda () ""))
+                ((symbol-function 'ai-code--format-repo-context-info) (lambda () ""))
+                ((symbol-function 'which-function) (lambda () nil))
+                ((symbol-function 'region-active-p) (lambda () nil))
+                ((symbol-function 'ai-code--insert-prompt)
+                 (lambda (prompt) (setq captured-prompt prompt))))
+
+        (ai-code-implement-todo nil)
+
+        (should (stringp captured-prompt))
+        (should (string-match-p "Regarding this Org TODO headline" captured-prompt))
+        (should (string-match-p "\\*\\* TODO: what is the most important verse in Bible"
+                                captured-prompt))))))
 
 (provide 'test_ai-code-change)
 
