@@ -386,13 +386,15 @@ END-POS defaults to the current '#' position."
           (when candidates
             (list start end candidates :exclusive 'no)))))))
 
-(defun ai-code--auto-trigger-filepath-completion (delete-fn insert-fn)
+(defun ai-code--auto-trigger-filepath-completion (delete-fn insert-fn &optional allow-no-file)
   "Auto trigger file path/symbol completion using DELETE-FN and INSERT-FN.
 DELETE-FN is called to delete the trigger character.
-INSERT-FN is called with the text to insert."
+INSERT-FN is called with the text to insert.
+When ALLOW-NO-FILE is non-nil, allow completion in buffers without
+`buffer-file-name', such as AI terminal session buffers."
   (when (and ai-code-prompt-filepath-completion-enabled
-             (buffer-file-name)
-             (not (minibufferp)))
+              (or allow-no-file (buffer-file-name))
+              (not (minibufferp)))
     (pcase (char-before)
       (?@
        (let ((candidates (ai-code--prompt-filepath-candidates)))
@@ -425,7 +427,8 @@ INSERT-FN is called with the text to insert."
              (ai-code--git-root))
     (ai-code--auto-trigger-filepath-completion
      (lambda () (ai-code-backends-infra--terminal-send-backspace))
-     (lambda (text) (ai-code-backends-infra--terminal-send-string text)))))
+     (lambda (text) (ai-code-backends-infra--terminal-send-string text))
+     t)))
 
 (defun ai-code--session-handle-at-input ()
   "Handle '@' input in AI session buffers with optional filepath completion."

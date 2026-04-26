@@ -220,7 +220,7 @@ BEHAVIOR: Binds ROOT to project root or returns nil
 EDGE CASE: Returns nil gracefully when not in a project (prevents state leakage)
 TEST: Call with nil root outside a git repo, should return nil"
   (declare (indent 1))
-  `(let ((,root (or ,root (ai-code--behaviors-project-root))))
+  `(let ((,root (or root (ai-code--behaviors-project-root))))
      (when ,root
        ,@body)))
 
@@ -2265,6 +2265,7 @@ Call this when completely disabling ai-code-behaviors."
 
 (defconst ai-code--backend-session-prefixes
   '((opencode . "opencode")
+    (kilo . "kilo")
     (claude-code . "claude")
     (gemini . "gemini")
     (github-copilot-cli . "copilot")

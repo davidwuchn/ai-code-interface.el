@@ -13,6 +13,7 @@
 (require 'cl-lib)
 (require 'magit)
 (require 'flycheck nil t)
+(require 'org)
 
 (require 'ai-code-input)
 (require 'ai-code-prompt-mode)
@@ -24,6 +25,8 @@
 (declare-function ai-code--get-git-relative-paths "ai-code-discussion")
 (declare-function ai-code--get-region-location-info "ai-code-discussion")
 (declare-function ai-code--format-repo-context-info "ai-code-file")
+(declare-function dired-get-marked-files "dired"
+                  (&optional localp arg filter distinguish-one-marked error-if-none-p))
 (declare-function flycheck-error-pos "flycheck")
 (declare-function flycheck-error-line "flycheck")
 (declare-function flycheck-error-column "flycheck")
@@ -46,6 +49,10 @@
 (defun ai-code--get-current-line-text ()
   "Return the current line text without properties."
   (buffer-substring-no-properties (line-beginning-position) (line-end-position)))
+
+(defconst ai-code-change--ask-question-note
+  "Note: Please only answer the question about the code above, do not make any code changes."
+  "Prompt note for question-only requests without code changes.")
 
 (defun ai-code--is-comment-line (line)
   "Check if LINE is a comment line based on current buffer's comment syntax.
@@ -262,6 +269,7 @@ line, with proper indentation.  If cursor is inside a function, implement
 comments for that function.
 Otherwise implement comments for the entire current file.
 Argument ARG is the prefix argument."
+  ;; DONE: I want to implement the idea inside https://github.com/tninja/ai-code-interface.el/issues/316, it could to either code change or ask question, given user's input with completing-read selection. The difference of this org-mode section TODO, with the existing comment todo is, it won't replace the TODO section with implementation. It just use the section headline and content inside this section as part of prompt, and send to AI.
   (interactive "P")
   (if (not buffer-file-name)
       (user-error "Error: buffer-file-name must be available")
@@ -330,9 +338,54 @@ Returns non-nil if handled and the caller should exit."
         (indent-according-to-mode)))
     t))
 
+(defun ai-code--implement-todo--get-org-todo-section-info ()
+  "Return current Org TODO section info as a plist, or nil.
+The plist contains `:heading-line', `:content', and `:line-number'."
+  (when (derived-mode-p 'org-mode)
+    (save-excursion
+      (when (and (org-at-heading-p)
+                 (ignore-errors (org-back-to-heading t)))
+        (let* ((line-number (line-number-at-pos (point)))
+               (heading-line (buffer-substring-no-properties
+                              (line-beginning-position)
+                              (line-end-position)))
+               (todo-state (org-get-todo-state))
+               (todo-prefix-p
+                (ai-code--implement-todo--org-todo-headline-p heading-line)))
+          (when (and (or todo-state todo-prefix-p)
+                     (not (org-entry-is-done-p)))
+            (let* ((content-start (save-excursion
+                                    (forward-line 1)
+                                    (point)))
+                   (content-end (save-excursion
+                                  (org-end-of-subtree t t)
+                                  (point)))
+                   (content (string-trim-right
+                             (buffer-substring-no-properties
+                              content-start
+                              content-end))))
+              (list :heading-line heading-line
+                    :content content
+                    :line-number line-number))))))))
+
+(defun ai-code--implement-todo--format-org-section-block (org-todo-section-info)
+  "Return formatted Org section text from ORG-TODO-SECTION-INFO."
+  (when org-todo-section-info
+    (let ((heading-line (plist-get org-todo-section-info :heading-line))
+          (content (plist-get org-todo-section-info :content)))
+      (concat heading-line
+              (unless (string-blank-p content)
+                (concat "\n" content))))))
+
+(defun ai-code--implement-todo--org-todo-headline-p (heading-line)
+  "Return non-nil when HEADING-LINE begins with a TODO-style Org headline."
+  (string-match-p "^[[:space:]]*\\*+[[:space:]]+TODO:?\\(?:[[:space:]]\\|$\\)"
+                  heading-line))
+
 (defun ai-code--implement-todo--build-and-send-prompt (arg)
   "Build the TODO implementation prompt and insert it.
 ARG is the prefix argument for clipboard context."
+  ;; DONE: ask user with completing-read before build up prompt, candidate should be 1. Code change; 2. Ask question. Given selection, add suffix to them respectively to indicate AI to make code change, or do not make any code change
   (let* ((clipboard-context (when arg (ai-code--get-clipboard-text)))
          (current-line (string-trim (thing-at-point 'line t)))
          (current-line-number (line-number-at-pos (point)))
@@ -340,6 +393,11 @@ ARG is the prefix argument for clipboard context."
          (function-name (if is-comment
                             (ai-code--get-function-name-for-comment)
                           (which-function)))
+         (org-todo-section-info (ai-code--implement-todo--get-org-todo-section-info))
+         (org-line-number (plist-get org-todo-section-info :line-number))
+         (org-section-block
+          (ai-code--implement-todo--format-org-section-block
+           org-todo-section-info))
          (function-context (if function-name
                                (format "\nFunction: %s" function-name)
                              ""))
@@ -362,9 +420,31 @@ ARG is the prefix argument for clipboard context."
                                        (format "Selected region starting on line %d"
                                                region-start-line)))))
          (files-context-string (ai-code--get-context-files-string))
-         (repo-context-string (ai-code--format-repo-context-info))
+         (region-comment-block-p (or (not region-text)
+                                     (ai-code--is-comment-block region-text)))
+         ;; Validate scenario before prompting user
+         (_ (unless (or org-todo-section-info region-text is-comment)
+              (user-error "Current line is not a TODO comment or Org TODO headline and cannot proceed with `ai-code-implement-todo'.  Please select a TODO comment (not DONE), an Org TODO headline, a region of comments, or activate on a blank line")))
+         (_ (unless region-comment-block-p
+              (user-error "Selected region must be a comment block")))
+         (action-intent (completing-read "Select action: "
+                                         '("Code change" "Ask question")
+                                         nil t))
+         (ask-question-p (string= action-intent "Ask question"))
          (prompt-label
           (cond
+           ((and ask-question-p org-todo-section-info)
+            (if (and clipboard-context (string-match-p "\\S-" clipboard-context))
+                "Question about Org TODO headline (clipboard context): "
+              "Question about Org TODO headline: "))
+           (ask-question-p
+            (if (and clipboard-context (string-match-p "\\S-" clipboard-context))
+                "Question about TODO comment (clipboard context): "
+              "Question about TODO comment: "))
+           ((and org-todo-section-info
+                 clipboard-context
+                 (string-match-p "\\S-" clipboard-context))
+            "TODO implementation instruction for Org TODO headline (clipboard context): ")
            ((and clipboard-context
                  (string-match-p "\\S-" clipboard-context))
             (cond
@@ -372,15 +452,27 @@ ARG is the prefix argument for clipboard context."
              (is-comment "TODO implementation instruction (clipboard context): ")
              (function-name (format "TODO implementation instruction for function %s (clipboard context): " function-name))
              (t "TODO implementation instruction (clipboard context): ")))
+           (org-todo-section-info "TODO implementation instruction for Org TODO headline: ")
            (region-text "TODO implementation instruction: ")
            (is-comment "TODO implementation instruction: ")
            (function-name (format "TODO implementation instruction for function %s: " function-name))
            (t "TODO implementation instruction: ")))
          (initial-input
           (cond
+           ((and ask-question-p org-todo-section-info)
+            (format "Regarding this Org TODO headline on line %d:\n%s%s%s"
+                    org-line-number org-section-block function-context files-context-string))
+           ((and ask-question-p region-text)
+            (format "Regarding this TODO comment block in the selected region:\n%s\n%s%s%s"
+                    region-location-line region-text function-context files-context-string))
+           ((and ask-question-p is-comment)
+            (format "Regarding this TODO comment on line %d: '%s'%s%s"
+                    current-line-number current-line function-context files-context-string))
+           (org-todo-section-info
+            (format "Please implement code for this Org TODO headline first. After implementing, keep the Org TODO headline in place and use the headline and content as prompt context.\nLine %d:\n%s%s%s"
+                    org-line-number org-section-block function-context
+                    files-context-string))
            (region-text
-            (unless (ai-code--is-comment-block region-text)
-              (user-error "Selected region must be a comment block"))
             (format
              "Please implement code for this requirement comment block in the selected region first. After implementing, keep the comment in place and ensure it begins with a DONE prefix (change TODO to DONE or prepend DONE if no prefix). If this is a pure new code block, place it after the comment; otherwise keep the existing structure and make corresponding change for the context.\n%s\n%s%s%s"
              region-location-line region-text function-context
@@ -388,22 +480,17 @@ ARG is the prefix argument for clipboard context."
            (is-comment
             (format "Please implement code for this requirement comment on line %d: '%s' first. After implementing, keep the comment in place and ensure it begins with a DONE prefix (change TODO to DONE or prepend DONE if needed). If this is a pure new code block, place it after the comment; otherwise keep the existing structure and make corresponding change for the context.%s%s"
                     current-line-number current-line function-context files-context-string))
-           ;; (function-name
-           ;;  (format "Please implement code after all TODO comments in function '%s'. The TODOs are TODO comments. Keep each comment in place and ensure each begins with a DONE prefix (change TODO to DONE or prepend DONE if needed) before adding implementation code after it. Keep the existing code structure and only add code after these marked items.%s"
-           ;;          function-name files-context-string))
-           ;; (t
-           ;;  (format "Please implement code after all TODO comments in file '%s'. The TODOs are TODO comments. Keep each comment in place and ensure each begins with a DONE prefix (change TODO to DONE or prepend DONE if needed) before adding implementation code after it. Keep the existing code structure and only add code after these marked items.%s"
-           ;;          (file-name-nondirectory buffer-file-name) files-context-string))
-           ;; DONE: otherwise, let user know the current line is not a comment and cannot proceed
-           (t
-            (user-error "Current line is not a TODO comment and cannot proceed with `ai-code-implement-todo'.  Please select a TODO comment (not DONE), a region of comments, or activate on a blank line"))))
+           (t "")))
+         (repo-context-string (ai-code--format-repo-context-info))
          (prompt (ai-code-read-string prompt-label initial-input))
          (final-prompt
           (concat prompt
                   (when (and clipboard-context
                              (string-match-p "\\S-" clipboard-context))
                     (concat "\n\nClipboard context:\n" clipboard-context))
-                  repo-context-string)))
+                  repo-context-string
+                  (when (string= action-intent "Ask question")
+                    (concat "\n" ai-code-change--ask-question-note)))))
     (ai-code--insert-prompt final-prompt)))
 
 ;;; Flycheck integration

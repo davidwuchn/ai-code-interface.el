@@ -2,6 +2,28 @@
 * Release history
 
 ** Main branch change
+- Breaking: Remove =ai-code-mcp-editor-tools.el= and merge its remaining MCP tools into the core server and debug modules
+  - =editor_state= and =visible_buffers= are now built-in MCP tools in =ai-code-mcp-server.el=
+  - =eval_elisp= now lives in =ai-code-mcp-debug-tools.el= and is gated by =ai-code-mcp-debug-tools-enable-eval-elisp=
+  - Remove the legacy =messages_tail= tool in favor of =get_recent_messages=
+  - Remove the old =ai-code-mcp-editor-tools-enabled= and =ai-code-mcp-editor-tools-allow-effect-eval= settings
+  - Move the dedicated editor-tools tests into the server/debug MCP test files
+  - Update MCP docs and release notes to match the new tool layout
+
+** 1.74
+- Fix: Guard eat/ghostel process filters against deleted buffers on exit and add regression tests
+- Fix: Enable ghostel full-redraw mode for Claude Code and Copilot CLI sessions
+- Refactor: Use Ghostel public API for sending input
+- Chore: Notify on response and beep before D-Bus
+- Chore: Allow adding non-git files and directories to existing repo context candidates
+
+** 1.72
+- Chore: Add action intent prompt to TODO implementation flow
+- Refactor: Extract terminal specific variable / logic to their corresponding .el file
+- Cleanup: Remove pytest / jest / ert based test runner
+- Feat: Add resolve merge conflict AI tool for pull requests
+- Fix: Subtle issues in claude code backend infra
+- Feat: Add emacs debugging and inspection MCP tools
 - Chore: Use ghostel-exec for Ghostel backend startup
 
 ** 1.71

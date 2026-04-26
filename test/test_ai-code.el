@@ -392,6 +392,31 @@
       (should (equal "Please explain why this fails, then update the implementation."
                      captured-prompt)))))
 
+(ert-deftest ai-code-test-gptel-classifier-prompt-treats-document-edits-as-non-code-change ()
+  "Test that GPTel instructions reserve CODE_CHANGE for program code edits."
+  (let ((captured-prompt nil)
+        (original-require (symbol-function 'require)))
+    (cl-letf (((symbol-function 'require)
+               (lambda (feature &optional filename noerror)
+                 (if (eq feature 'gptel)
+                     t
+                   (funcall original-require feature filename noerror))))
+              ((symbol-function 'ai-code-call-gptel-sync)
+               (lambda (prompt)
+                 (setq captured-prompt prompt)
+                 "NOT_CODE_CHANGE")))
+      (should (eq 'non-code-change
+                  (ai-code--gptel-classify-prompt-code-change
+                   "Please update the README and other docs.")))
+      (should
+       (string-match-p
+        "Return CODE_CHANGE only for changes to program code or test code\\."
+        captured-prompt))
+      (should
+       (string-match-p
+        "Treat documentation changes and any other non-program-code actions as NOT_CODE_CHANGE\\."
+        captured-prompt)))))
+
 (ert-deftest ai-code-test-simple-classifier-reuses-shared-prompt-markers ()
   "Test that classifier markers reuse shared prompt-builder constants."
   (should (boundp 'ai-code-change--selected-region-note))

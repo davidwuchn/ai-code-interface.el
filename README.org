@@ -15,6 +15,7 @@ An Emacs interface for AI-assisted software development. *The purpose is to prov
   - [[https://github.com/google-gemini/gemini-cli][Gemini CLI]]
   - [[https://github.com/anthropics/claude-code][Claude Code]]
   - [[https://opencode.ai/][Opencode]]
+  - [[https://kilo.ai/][Kilo]]
   - [[https://grokcli.io/][Grok CLI]]
   - [[https://docs.cursor.com/en/cli][Cursor CLI]]
   - [[https://kiro.dev/cli/][Kiro CLI]]
@@ -31,17 +32,6 @@ An Emacs interface for AI-assisted software development. *The purpose is to prov
 - If you are choosing between the main AI coding packages in Emacs, ask one question first: do you want the deepest integration for one specific agent runtime, or do you want one Emacs workflow that stays stable even when you change AI tools?
 
 - *ai-code-interface.el* is built for the second case. Its real advantage is not just backend coverage. Its main advantage is *workflow portability*: the same menu, context gathering, prompt flow, refactoring commands, TDD helpers, review workflow, prompt files, and Emacs MCP tools continue to work while the backend changes underneath.
-
-| Package              | Built around                    | Choose it when |
-|----------------------+---------------------------------+----------------|
-| ai-code-interface.el | One workflow across backends    | You switch AI tools but want one stable Emacs workflow |
-| claude-code-ide.el   | Claude Code inside Emacs        | Claude Code is your main runtime |
-| agent-shell          | ACP shell sessions              | You prefer shell-first agent workflows and transcripts |
-| eca-emacs            | An ECA-centered chat workspace  | You want a polished server-backed chat UX |
-
-- All four packages aim to keep AI-assisted development inside Emacs. The difference is what stays fixed. In =claude-code-ide.el=, the center is Claude Code. In =agent-shell=, the center is the ACP shell session. In =eca-emacs=, the center is the ECA workspace. In =ai-code-interface.el=, the center is your *development workflow inside Emacs*.
-
-- That distinction matters if you do not want to commit to a single winner forever. You can use Claude Code for one task, Codex for another, Gemini CLI for a third, and still keep the same habits inside Emacs: the same entry points, the same context model, and the same review-oriented development flow. You are changing the backend, not changing how you work.
 
 - Screenshot
 
@@ -94,7 +84,7 @@ Enable installation of packages from MELPA by adding an entry to package-archive
   (use-package ai-code
     ;; :straight (:host github :repo "tninja/ai-code-interface.el") ;; if you want to use straight to install, no need to have MELPA setting above
     :config
-    ;; use codex as backend, other options are 'claude-code, 'gemini, 'github-copilot-cli, 'opencode, 'grok, 'cursor, 'kiro, 'codebuddy, 'aider, 'eca, 'agent-shell, 'claude-code-ide, 'claude-code-el
+    ;; use codex as backend, other options are 'claude-code, 'gemini, 'github-copilot-cli, 'opencode, 'kilo, 'grok, 'cursor, 'kiro, 'codebuddy, 'aider, 'eca, 'agent-shell, 'claude-code-ide, 'claude-code-el
     (ai-code-set-backend 'codex)
     ;; Optional: default menu stays unchanged; use a narrower 2-column layout on smaller frames
     ;; (setq ai-code-menu-layout 'two-columns)
@@ -132,7 +122,7 @@ Enable installation of packages from MELPA by adding an entry to package-archive
 - One of vterm (default), eat, or [[https://github.com/dakra/ghostel][ghostel]] needs to be installed to support native AI coding CLI backends, depending on `ai-code-backends-infra-terminal-backend`.
 - [[https://github.com/dakra/ghostel][ghostel]] is also supported as an *experimental* native backend infra option.
   - Ghostel is an Emacs terminal emulator powered by libghostty-vt, the VT engine from Ghostty.
-  - Compared with vterm and eat, ghostel support in ai-code-interface.el is still experimental and may behave differently in startup flow, shell integration, or buffer naming.
+  - [[https://github.com/dakra/ghostel][ghostel]] is under active development, please install the latest version.
   - To try it:
 
 #+begin_src emacs-lisp
@@ -152,8 +142,6 @@ Enable installation of packages from MELPA by adding an entry to package-archive
   - (emacs built-in) abbrev + skeleton is also a good way to expand prompt. [[./etc/prompt_expand_with_abbrev_skeleton.el][example abbrev to solve / iterate leetcode problem with tdd (need to set ai-code-auto-test-type with tdd)]], [[./examples/leetcode][example problem resolved]]
 - `projectile`: For project root initialization.
 - `helm-gtags`: For tags creation and symbol navigation fallback from clickable session symbols.
-- `python-pytest`: For running python tests in the TDD workflow.
-- `jest`: For running JavaScript / TypeScript tests in the TDD workflow.
 
 ** Key Features
 
@@ -210,8 +198,10 @@ The generated prompt will include the function/region scope, visible file list, 
 
 **** Built-in Emacs MCP Tools
 
-AI Code includes an Emacs MCP server with these core built-in tools:
+AI Code includes an Emacs MCP server with these built-in tools:
 - =project_info=: summarize the current project, active buffer, and file count
+- =editor_state=: inspect the currently selected buffer, point, mode, region, and buffer flags
+- =visible_buffers=: list the buffers visible in the selected frame windows
 - =buffer_query=: read buffer contents, optionally by line range
 - =get_diagnostics=: return Flycheck or Flymake diagnostics for one file or open project buffers
 - =get_project_files=: list regular files in the current project
@@ -221,39 +211,34 @@ AI Code includes an Emacs MCP server with these core built-in tools:
 - =xref_find_definitions_at_point=: find definitions at a file location
 - =treesit_info=: inspect tree-sitter node information for a file location
 
-Optional debugging tools are registered from a separate module and are enabled by default:
+Additional debugging tools come from =ai-code-mcp-debug-tools.el= and are enabled by default:
 
 #+begin_src emacs-lisp
 (setq ai-code-mcp-debug-tools-enabled t)  ;; default
 ;; (setq ai-code-mcp-debug-tools-enabled nil) ;; disable them
 #+end_src
 
-When enabled, AI Code also registers:
+These tools add:
 - =get_variable_value=: return the printed value of an Emacs variable by name
 - =get_variable_binding_info=: inspect current and default bindings for an Emacs variable
 - =get_function_info=: inspect function metadata such as kind, aliasing, and advice state
 - =get_feature_load_state=: inspect whether an Emacs feature is loaded and where it comes from
 - =get_recent_messages=: return the latest lines from =*Messages*=
 - =get_last_error_backtrace=: return the most recently recorded Emacs command error snapshot
+- =eval_elisp=: evaluate a single Emacs Lisp form in a chosen buffer context when explicitly enabled
 
-This split keeps the MCP core small while still exposing debugging-oriented tools by default.
+The old =ai-code-mcp-editor-tools.el= module has been removed. Its live-editor read tools are now built in, while =eval_elisp= remains an explicit opt-in.
 
-Optional editor-session tools are available when you explicitly enable them:
+To register =eval_elisp=:
 
 #+begin_src emacs-lisp
-(setq ai-code-mcp-editor-tools-enabled t)
+(setq ai-code-mcp-debug-tools-enable-eval-elisp t)
 #+end_src
 
-When enabled, AI Code also registers:
-- =editor_state=: inspect the currently selected buffer, point, mode, region, and buffer flags
-- =visible_buffers=: list the buffers visible in the selected frame windows
-- =messages_tail=: return the latest lines from =*Messages*=
-- =eval_elisp=: evaluate a single Emacs Lisp form in a chosen buffer context
-
-By default, =eval_elisp= only allows =query= mode. To allow editor-local side effects too, opt in explicitly:
+=eval_elisp= only allows =query= mode by default. To allow editor-local side effects too:
 
 #+begin_src emacs-lisp
-(setq ai-code-mcp-editor-tools-allow-effect-eval t)
+(setq ai-code-mcp-debug-tools-allow-effect-eval t)
 #+end_src
 
 screenshot inside Codex cli:
@@ -267,7 +252,7 @@ Set the backend to =claude-code=, =codex=, or =github-copilot-cli= and start a s
 - register the current project/buffer as the MCP session context
 - inject a session-scoped MCP config into that agent session automatically
 
-Today this auto-wiring is enabled for =claude-code=, =codex=, and =github-copilot-cli=. The adapter layer is designed so other backends can be added later.
+Auto-wiring is currently enabled for =claude-code=, =codex=, and =github-copilot-cli=.
 
 If you disabled it before, enable it again with:
 
@@ -287,10 +272,9 @@ If it shows =:backend=, =:session-id=, and a local =:server-url=, then Emacs has
 - use =imenu_list_symbols= for the current file
 - use =get_diagnostics= and summarize the current file diagnostics
 
-The status command only proves the Emacs side is wired.
-The real proof is that the started agent returns your current project path, buffer context, or current-file symbols from those tools.
+The status command only proves the Emacs side is wired. The real proof is that the agent returns your current project path, buffer context, or current-file symbols from those tools.
 
-***** Add New MCP function
+***** Add a New MCP Tool
 
 1. Define an Emacs Lisp function.
 
@@ -324,8 +308,7 @@ If the agent session is already running, restart it after registering the new to
 (ai-code-mcp-dispatch "tools/list")
 #+end_src
 
-If =current_buffer_name= appears in the tool list, Emacs has registered it.
-If the started agent can call it and returns the expected buffer name, the tool is available inside the AI coding agent.
+If =current_buffer_name= appears in the tool list, Emacs has registered it. If the agent can call it and returns the expected buffer name, the tool is available inside the AI coding session.
 
 ***** Use the MCP Core Directly from Elisp
 
@@ -395,7 +378,6 @@ When working with multiple AI sessions, it can be useful to receive desktop noti
 - To enable notifications in your config:
 #+begin_src emacs-lisp
 (setq ai-code-notifications-enabled t)
-(setq ai-code-notifications-show-on-response t)
 #+end_src
 
 **** How It Works
@@ -432,6 +414,7 @@ When working with multiple AI sessions, it can be useful to receive desktop noti
      - Binds =Shift+Enter=/=Ctrl+Enter= inside Claude sessions to send Claude's
        multiline input sequence.
    - [[https://opencode.ai/][Opencode]] (`[[./ai-code-opencode.el][ai-code-opencode.el]]`)
+   - [[https://kilo.ai/][Kilo]] (`[[./ai-code-kilo.el][ai-code-kilo.el]]`)
    - [[https://grokcli.io/][Grok CLI]] (`[[./ai-code-grok-cli.el][ai-code-grok-cli.el]]`)
    - [[https://docs.cursor.com/en/cli][Cursor CLI]] (`[[./ai-code-cursor-cli.el][ai-code-cursor-cli.el]]`)
    - [[https://kiro.dev/cli/][Kiro CLI]] (`[[./ai-code-kiro-cli.el][ai-code-kiro-cli.el]]`)
@@ -513,6 +496,18 @@ When working with multiple AI sessions, it can be useful to receive desktop noti
 - A: Enable auto-approval for your active AI coding CLI. For example, in Codex CLI, you can enable the following flag.
 #+begin_src elisp
   (setq ai-code-codex-cli-program-switches '("-a" "never"))
+#+end_src
+
+- For github copilot cli, it is
+#+begin_src elisp
+  (setq ai-code-github-copilot-cli-program-switches '("--allow-all"))
+#+end_src
+
+*** Q: During using ghostel terminal backend, for long conversation, I found the earliest conversation got truncated
+
+- A: Ghostel trims old output after `ghostel-max-scrollback` bytes are used. The default is 5 MB, so increase it before starting Ghostel sessions.
+#+begin_src elisp
+  (setq ghostel-max-scrollback (* 20 1024 1024)) ; 20 MB
 #+end_src
 
 ** AI Assisted Programming related books

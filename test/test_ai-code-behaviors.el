@@ -554,12 +554,14 @@
   "Test that CLI backend session prefixes are defined."
   (should ai-code--backend-session-prefixes)
   (should (assoc 'opencode ai-code--backend-session-prefixes))
+  (should (assoc 'kilo ai-code--backend-session-prefixes))
   (should (assoc 'claude-code ai-code--backend-session-prefixes))
   (should-not (assoc 'eca ai-code--backend-session-prefixes)))
 
 (ert-deftest ai-code-test-get-session-prefix ()
   "Test getting session prefix for different backends."
   (should (equal "opencode" (alist-get 'opencode ai-code--backend-session-prefixes)))
+  (should (equal "kilo" (alist-get 'kilo ai-code--backend-session-prefixes)))
   (should (equal "claude" (alist-get 'claude-code ai-code--backend-session-prefixes)))
   (should-not (alist-get 'eca ai-code--backend-session-prefixes)))
 

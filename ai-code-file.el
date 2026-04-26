@@ -473,7 +473,9 @@ Otherwise, ask AI to generate a build command."
 
 ;;;###autoload
 (defun ai-code-add-context ()
-  "Capture current buffer context and store it per Git repository.
+  "Capture current buffer context and store it per selected repository root.
+If current buffer is not inside a Git repository, select from known repository
+roots gathered from existing context entries and visible/session buffers.
 When no region is selected, use the full file path and current function
 \(if any).  When a region is active, use the file path with line range
 in the form filepath#Lstart-Lend."
@@ -495,9 +497,18 @@ in the form filepath#Lstart-Lend."
                                 (when (and root (not (member root roots)))
                                   (push root roots)))))))
                       (nreverse roots)))
-         (ordered-roots (if (and current-root (member current-root all-roots))
-                            (cons current-root (remove current-root all-roots))
-                          all-roots))
+         (existing-roots (let ((roots '()))
+                           (maphash (lambda (root _contexts)
+                                      (when (and (stringp root)
+                                                 (not (member root roots)))
+                                        (push root roots)))
+                                    ai-code--repo-context-info)
+                           (sort roots #'string<)))
+         (candidate-roots (sort (delete-dups (append existing-roots all-roots))
+                                #'string<))
+         (ordered-roots (if (and current-root (member current-root candidate-roots))
+                            (cons current-root (remove current-root candidate-roots))
+                          candidate-roots))
          (repo-root (cond
                      ((null ordered-roots)
                       (user-error "Not inside a Git repository"))

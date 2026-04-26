@@ -276,8 +276,11 @@ Returns the session if found, nil otherwise."
     (let ((target (expand-file-name workspace-root)))
       (cl-find-if
        (lambda (session)
-         (member target (mapcar #'expand-file-name
-                                (eca--session-workspace-folders session))))
+          (let ((folders (condition-case nil
+                             (eca--session-workspace-folders session)
+                           (wrong-type-argument
+                            (plist-get session :workspace-folders)))))
+            (member target (mapcar #'expand-file-name folders))))
        (eca-vals eca--sessions)))))
 
 (defun ai-code-eca-create-session-for-workspace (&optional _arg)

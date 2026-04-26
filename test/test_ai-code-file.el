@@ -195,10 +195,10 @@ everything is cleaned up afterward."
          (opened-in-other-window nil)
          (ai-code-task-use-gptel-filename nil))
      (cl-letf (((symbol-function 'completing-read)
-                (lambda (prompt collection &rest args)
+               (lambda (prompt collection &rest args)
                   "file"))
                ((symbol-function 'read-string)
-                (lambda (prompt &optional initial-input)
+                (lambda (prompt &optional initial-input &rest _args)
                   (cond
                    ((string-match-p "Describe" prompt) "test file")
                    ((string-match-p "Confirm" prompt) "test.txt"))))
@@ -223,10 +223,10 @@ everything is cleaned up afterward."
          (opened-in-dired nil)
          (ai-code-task-use-gptel-filename nil))
      (cl-letf (((symbol-function 'completing-read)
-                (lambda (prompt collection &rest args)
+               (lambda (prompt collection &rest args)
                   "directory"))
                ((symbol-function 'read-string)
-                (lambda (prompt &optional initial-input)
+                (lambda (prompt &optional initial-input &rest _args)
                   (cond
                    ((string-match-p "Describe" prompt) "test directory")
                    ((string-match-p "Confirm" prompt) "test_dir"))))
@@ -250,10 +250,10 @@ everything is cleaned up afterward."
    (let ((created-file nil)
          (ai-code-task-use-gptel-filename t))
      (cl-letf (((symbol-function 'completing-read)
-                (lambda (prompt collection &rest args)
+               (lambda (prompt collection &rest args)
                   "file"))
                ((symbol-function 'read-string)
-                (lambda (prompt &optional initial-input)
+                (lambda (prompt &optional initial-input &rest _args)
                   (cond
                    ((string-match-p "Describe" prompt) "user authentication module")
                    ((string-match-p "Confirm" prompt) initial-input)))) ; Accept suggested name
@@ -278,10 +278,10 @@ everything is cleaned up afterward."
    (let ((created-file nil)
          (ai-code-task-use-gptel-filename t))
      (cl-letf (((symbol-function 'completing-read)
-                (lambda (prompt collection &rest args)
+               (lambda (prompt collection &rest args)
                   "file"))
                ((symbol-function 'read-string)
-                (lambda (prompt &optional initial-input)
+                (lambda (prompt &optional initial-input &rest _args)
                   (cond
                    ((string-match-p "Describe" prompt) "test file")
                    ((string-match-p "Confirm" prompt) initial-input)))) ; Accept fallback
@@ -306,10 +306,10 @@ everything is cleaned up afterward."
    (let ((created-file nil)
          (ai-code-task-use-gptel-filename nil))
      (cl-letf (((symbol-function 'completing-read)
-                (lambda (_prompt _collection &rest _args)
+               (lambda (_prompt _collection &rest _args)
                   "file"))
                ((symbol-function 'read-string)
-                (lambda (prompt &optional initial-input)
+                (lambda (prompt &optional initial-input &rest _args)
                   (cond
                    ((string-match-p "Describe" prompt)
                     "rdar://12345 Fix crash on startup")
@@ -334,10 +334,10 @@ everything is cleaned up afterward."
   (ai-code-file-with-test-env
    (let ((ai-code-task-use-gptel-filename nil))
      (cl-letf (((symbol-function 'completing-read)
-                (lambda (prompt collection &rest args)
+               (lambda (prompt collection &rest args)
                   "file"))
                ((symbol-function 'read-string)
-                (lambda (prompt &optional initial-input)
+                (lambda (prompt &optional initial-input &rest _args)
                   ""))) ; Empty description
        ;; Should raise user-error
        (should-error (ai-code-create-file-or-dir) :type 'user-error)))))
@@ -347,10 +347,10 @@ everything is cleaned up afterward."
   (ai-code-file-with-test-env
    (let ((ai-code-task-use-gptel-filename nil))
      (cl-letf (((symbol-function 'completing-read)
-                (lambda (prompt collection &rest args)
+               (lambda (prompt collection &rest args)
                   "file"))
                ((symbol-function 'read-string)
-                (lambda (prompt &optional initial-input)
+                (lambda (prompt &optional initial-input &rest _args)
                   (cond
                    ((string-match-p "Describe" prompt) "test file")
                    ((string-match-p "Confirm" prompt) "   "))))) ; Whitespace only
@@ -363,10 +363,10 @@ everything is cleaned up afterward."
    (let ((created-file nil)
          (ai-code-task-use-gptel-filename nil))
      (cl-letf (((symbol-function 'completing-read)
-                (lambda (prompt collection &rest args)
+               (lambda (prompt collection &rest args)
                   "file"))
                ((symbol-function 'read-string)
-                (lambda (prompt &optional initial-input)
+                (lambda (prompt &optional initial-input &rest _args)
                   (cond
                    ((string-match-p "Describe" prompt) "nested file")
                    ((string-match-p "Confirm" prompt) "src_lib_utils.js"))))
@@ -389,10 +389,10 @@ everything is cleaned up afterward."
          (ai-code-task-use-gptel-filename t)
          (confirmation-shown nil))
      (cl-letf (((symbol-function 'completing-read)
-                (lambda (prompt collection &rest args)
+               (lambda (prompt collection &rest args)
                   "file"))
                ((symbol-function 'read-string)
-                (lambda (prompt &optional initial-input)
+                (lambda (prompt &optional initial-input &rest _args)
                   (cond
                    ((string-match-p "Describe" prompt) "database connection")
                    ((string-match-p "Confirm" prompt)
@@ -423,10 +423,10 @@ everything is cleaned up afterward."
    (let ((created-file nil)
          (ai-code-task-use-gptel-filename t))
      (cl-letf (((symbol-function 'completing-read)
-                (lambda (prompt collection &rest args)
+               (lambda (prompt collection &rest args)
                   "file"))
                ((symbol-function 'read-string)
-                (lambda (prompt &optional initial-input)
+                (lambda (prompt &optional initial-input &rest _args)
                   (cond
                    ((string-match-p "Describe" prompt) "test")
                    ((string-match-p "Confirm" prompt)
@@ -453,10 +453,10 @@ everything is cleaned up afterward."
    (let ((created-dir nil)
          (ai-code-task-use-gptel-filename t))
      (cl-letf (((symbol-function 'completing-read)
-                (lambda (prompt collection &rest args)
+               (lambda (prompt collection &rest args)
                   "directory"))
                ((symbol-function 'read-string)
-                (lambda (prompt &optional initial-input)
+                (lambda (prompt &optional initial-input &rest _args)
                   (cond
                    ((string-match-p "Describe" prompt) "test")
                    ((string-match-p "Confirm" prompt)
@@ -492,10 +492,10 @@ everything is cleaned up afterward."
                 (lambda ()
                   dired-dir))
                ((symbol-function 'completing-read)
-                (lambda (prompt collection &rest args)
+               (lambda (prompt collection &rest args)
                   "file"))
                ((symbol-function 'read-string)
-                (lambda (prompt &optional initial-input)
+                (lambda (prompt &optional initial-input &rest _args)
                   (cond
                    ((string-match-p "Describe" prompt) "test")
                    ((string-match-p "Confirm" prompt)
@@ -674,6 +674,38 @@ everything is cleaned up afterward."
                  nil)))
       (ai-code-context-action '(4))
       (should completing-read-called))))
+
+(ert-deftest ai-code-test-add-context-allows-non-git-file-for-existing-repo-context ()
+  "Test `ai-code-add-context' can add a non-git file to an existing repo context."
+  (let ((ai-code--repo-context-info (make-hash-table :test #'equal))
+        (repo-root "/tmp/existing-repo/")
+        (new-file (make-temp-file "ai-code-context-"))
+        (completing-read-called nil))
+    (unwind-protect
+        (with-temp-buffer
+          (setq buffer-file-name new-file)
+          (puthash repo-root
+                   '("/tmp/existing-repo/lib/existing-context.el")
+                   ai-code--repo-context-info)
+          (cl-letf (((symbol-function 'ai-code--git-root)
+                     (lambda (&optional _dir) nil))
+                    ((symbol-function 'walk-windows)
+                     (lambda (&rest _args) nil))
+                    ((symbol-function 'completing-read)
+                     (lambda (&rest _args)
+                       (setq completing-read-called t)
+                       repo-root))
+                    ((symbol-function 'derived-mode-p)
+                     (lambda (&rest _args) nil))
+                    ((symbol-function 'message)
+                     (lambda (&rest _args) nil)))
+            (ai-code-add-context)
+            (should-not completing-read-called)
+            (should (equal (gethash repo-root ai-code--repo-context-info)
+                           (list new-file
+                                 "/tmp/existing-repo/lib/existing-context.el")))))
+      (when (file-exists-p new-file)
+        (delete-file new-file)))))
 
 (ert-deftest ai-code-test-build-or-test-project-dispatches-test-project ()
   "Test selecting \"Test project\" dispatches to `ai-code-test-project'."
