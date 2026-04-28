@@ -581,6 +581,146 @@ is between the function definition and its body."
         (should (string-match-p "\\*\\* TODO: what is the most important verse in Bible"
                                 captured-prompt))))))
 
+(ert-deftest ai-code-test-detect-todo-info-org-todo-headline ()
+  "Test `ai-code--detect-todo-info' detects Org TODO headlines."
+  (with-temp-buffer
+    (require 'org)
+    (setq buffer-file-name "plan.org")
+    (insert "* TODO Build search feature\n")
+    (insert "Design the API first.\n")
+    (org-mode)
+    (goto-char (point-min))
+
+    (cl-letf (((symbol-function 'region-active-p) (lambda () nil)))
+      (let ((result (ai-code--detect-todo-info nil)))
+        (should result)
+        (should (stringp (nth 0 result)))
+        (should (string-match-p "TODO Build search feature" (nth 0 result)))
+        (should (integerp (nth 1 result)))
+        (should (integerp (nth 2 result)))))))
+
+(ert-deftest ai-code-test-detect-todo-info-org-done-headline-returns-nil ()
+  "Test `ai-code--detect-todo-info' returns nil for Org DONE headlines."
+  (with-temp-buffer
+    (require 'org)
+    (setq buffer-file-name "plan.org")
+    (insert "* DONE Completed task\n")
+    (org-mode)
+    (goto-char (point-min))
+
+    (cl-letf (((symbol-function 'region-active-p) (lambda () nil)))
+      (should-not (ai-code--detect-todo-info nil)))))
+
+(ert-deftest ai-code-test-detect-todo-info-org-non-todo-headline-returns-nil ()
+  "Test `ai-code--detect-todo-info' returns nil for non-TODO Org headlines."
+  (with-temp-buffer
+    (require 'org)
+    (setq buffer-file-name "notes.org")
+    (insert "* Regular heading\n")
+    (org-mode)
+    (goto-char (point-min))
+
+    (cl-letf (((symbol-function 'region-active-p) (lambda () nil)))
+      (should-not (ai-code--detect-todo-info nil)))))
+
+(ert-deftest ai-code-test-detect-todo-info-org-todo-colon-prefix ()
+  "Test `ai-code--detect-todo-info' detects `TODO:' prefixed Org headlines."
+  (with-temp-buffer
+    (require 'org)
+    (setq buffer-file-name "plan.org")
+    (insert "** TODO: Implement auth module\n")
+    (org-mode)
+    (goto-char (point-min))
+
+    (cl-letf (((symbol-function 'region-active-p) (lambda () nil)))
+      (let ((result (ai-code--detect-todo-info nil)))
+        (should result)
+        (should (string-match-p "TODO:" (nth 0 result)))))))
+
+(ert-deftest ai-code-test-implement-todo-default-action-skips-completing-read ()
+  "Test that passing default-action skips the completing-read prompt."
+  (with-temp-buffer
+    (setq buffer-file-name "test.el")
+    (setq-local comment-start ";")
+    (setq-local comment-end "")
+    (insert ";; TODO: implement feature\n")
+    (goto-char (point-min))
+
+    (let (captured-prompt (completing-read-called nil))
+      (cl-letf (((symbol-function 'completing-read)
+                 (lambda (&rest _args)
+                   (setq completing-read-called t)
+                   "Code change"))
+                ((symbol-function 'ai-code-read-string)
+                 (lambda (_label input) input))
+                ((symbol-function 'ai-code--get-clipboard-text) (lambda () nil))
+                ((symbol-function 'ai-code--get-context-files-string) (lambda () ""))
+                ((symbol-function 'ai-code--format-repo-context-info) (lambda () ""))
+                ((symbol-function 'ai-code--get-function-name-for-comment) (lambda () nil))
+                ((symbol-function 'which-function) (lambda () nil))
+                ((symbol-function 'region-active-p) (lambda () nil))
+                ((symbol-function 'ai-code--insert-prompt)
+                 (lambda (p) (setq captured-prompt p))))
+
+        (ai-code--implement-todo--build-and-send-prompt nil "Code change")
+
+        (should (stringp captured-prompt))
+        (should-not completing-read-called)
+        (should (string-match-p "Please implement code" captured-prompt))))))
+
+(ert-deftest ai-code-test-implement-todo-nil-default-action-prompts-user ()
+  "Test that nil default-action still prompts user with completing-read."
+  (with-temp-buffer
+    (setq buffer-file-name "test.el")
+    (setq-local comment-start ";")
+    (setq-local comment-end "")
+    (insert ";; TODO: implement feature\n")
+    (goto-char (point-min))
+
+    (let (captured-prompt (completing-read-called nil))
+      (cl-letf (((symbol-function 'completing-read)
+                 (lambda (_prompt candidates &rest _args)
+                   (setq completing-read-called t)
+                   (if (and (listp candidates)
+                            (member "Code change" candidates))
+                       "Code change"
+                     (if (listp candidates) (car candidates) ""))))
+                ((symbol-function 'ai-code-read-string)
+                 (lambda (_label input) input))
+                ((symbol-function 'ai-code--get-clipboard-text) (lambda () nil))
+                ((symbol-function 'ai-code--get-context-files-string) (lambda () ""))
+                ((symbol-function 'ai-code--format-repo-context-info) (lambda () ""))
+                ((symbol-function 'ai-code--get-function-name-for-comment) (lambda () nil))
+                ((symbol-function 'which-function) (lambda () nil))
+                ((symbol-function 'region-active-p) (lambda () nil))
+                ((symbol-function 'ai-code--insert-prompt)
+                 (lambda (p) (setq captured-prompt p))))
+
+        (ai-code--implement-todo--build-and-send-prompt nil nil)
+
+        (should (stringp captured-prompt))
+        (should completing-read-called)))))
+
+(ert-deftest ai-code-test-code-change-passes-code-change-action ()
+  "Test that `ai-code-code-change' passes \"Code change\" as default-action."
+  (with-temp-buffer
+    (setq buffer-file-name "test.el")
+    (setq-local comment-start ";")
+    (setq-local comment-end "")
+    (insert ";; TODO: implement feature\n")
+    (goto-char (point-min))
+
+    (let (captured-default-action)
+      (cl-letf (((symbol-function 'ai-code--get-clipboard-text) (lambda () nil))
+                ((symbol-function 'ai-code-implement-todo)
+                 (lambda (_arg &optional default-action)
+                   (setq captured-default-action default-action)))
+                ((symbol-function 'region-active-p) (lambda () nil)))
+
+        (ai-code-code-change nil)
+
+        (should (equal captured-default-action "Code change"))))))
+
 (provide 'test_ai-code-change)
 
 ;;; test_ai-code-change.el ends here
