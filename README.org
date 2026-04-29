@@ -178,11 +178,11 @@ Context engineering is the deliberate practice of selecting, structuring, and de
 This package makes context engineering easy by automatically assembling precise context blocks and letting you curate additional context on demand:
 - Automatic file and window context: prompts can include the current file and other visible files (`ai-code--get-context-files-string`), so the AI sees related code without manual copying.
 - Function or region scoping: most actions capture the current function or active region, keeping requests focused (e.g., `ai-code-code-change`, `ai-code-implement-todo`, `ai-code-ask-question`).
-- Manual context curation: `C-c a @` (`ai-code-context-action`) stores file paths, function anchors, or region ranges in a repo-scoped list, which is appended to prompts via `ai-code--format-repo-context-info`.
+- Manual context curation: `C-c a @` (`ai-code-context-action`) stores file paths, function anchors, or region ranges in a repo-scoped list, which is appended to prompts via `ai-code--format-repo-context-info`. In a Dired buffer, `C-c a @` (`ai-code-context-action`) can store the marked files or directories as repo context; if nothing is explicitly marked, it falls back to the file or directory at point.
 - Optional clipboard context: prefix with `C-u` to append clipboard content to prompts for external snippets or logs.
 - @-triggered filepath completion in comments and AI sessions. Type `@` to open a completion list of recent and visible repo files, then select a path to insert.
+- Dired-aware prompt context: Dired-based actions such as code change, question asking, and explain can use marked entries or the current entry as prompt context, so the AI receives the exact file or directory targets you selected in the directory view.
 - Prompt suffix guardrails: set `ai-code-prompt-suffix` to append persistent constraints to every prompt (when `ai-code-use-prompt-suffix` is non-nil). Example: `(setq ai-code-prompt-suffix "Only use English in code file, but Reply in Simplified Chinese language")`.
-- Optional GPTel headline generation: set `ai-code-use-gptel-headline` to auto-generate prompt headings with GPTel.
 
 Example (focused refactor with curated context):
 1) In a buffer, run `C-c a @` to add the current function or selected region to stored repo context.
@@ -225,7 +225,7 @@ These tools add:
 - =get_feature_load_state=: inspect whether an Emacs feature is loaded and where it comes from
 - =get_recent_messages=: return the latest lines from =*Messages*=
 - =get_last_error_backtrace=: return the most recently recorded Emacs command error snapshot
-- =eval_elisp=: evaluate a single Emacs Lisp form in a chosen buffer context when explicitly enabled
+- =eval_elisp=: evaluate arbitrary Emacs Lisp with possible side effects in a chosen buffer context when explicitly enabled (no restrictions once enabled)
 
 The old =ai-code-mcp-editor-tools.el= module has been removed. Its live-editor read tools are now built in, while =eval_elisp= remains an explicit opt-in.
 
@@ -235,11 +235,7 @@ To register =eval_elisp=:
 (setq ai-code-mcp-debug-tools-enable-eval-elisp t)
 #+end_src
 
-=eval_elisp= only allows =query= mode by default. To allow editor-local side effects too:
-
-#+begin_src emacs-lisp
-(setq ai-code-mcp-debug-tools-allow-effect-eval t)
-#+end_src
+Once enabled, =eval_elisp= can evaluate any Emacs Lisp form without restrictions. It takes =code= (a single top-level form), optional =buffer_name= or =file_path= for evaluation context, optional =capture_messages= to collect new =*Messages*= output, optional =include_backtrace= to include a backtrace on failure, and optional =timeout_ms=. This is useful for letting the AI apply fixes by evaluating modified function definitions directly.
 
 screenshot inside Codex cli:
 

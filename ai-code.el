@@ -1,7 +1,7 @@
 ;;; ai-code.el --- Unified interface for AI coding backends such as Codex CLI, Copilot CLI, Claude Code, Gemini CLI, Opencode, Kilo, Grok CLI, etc -*- lexical-binding: t; -*-
 
 ;; Author: Kang Tu <tninja@gmail.com>
-;; Version: 1.74
+;; Version: 1.77
 ;; Package-Requires: ((emacs "29.1") (transient "0.9.0") (magit "2.1.0"))
 ;; URL: https://github.com/tninja/ai-code-interface.el
 
@@ -182,9 +182,9 @@ See the later `defcustom' for user-facing documentation and default.")
 
 (defconst ai-code--auto-test-type-ask-choices
   '(("Run tests after code change" . test-after-change)
+    ("Do not write or run tests" . no-test)
     ("TDD Red + Green (write failing test, then make it pass)" . tdd)
-    ("TDD Red + Green + Blue (refactor after Green)" . tdd-with-refactoring)
-    ("Do not write or run tests" . no-test))
+    ("TDD Red + Green + Blue (refactor after Green)" . tdd-with-refactoring))
   "Resolve auto test suffix choices for `ask-me` mode.")
 
 (defconst ai-code--auto-test-type-persistent-choices
