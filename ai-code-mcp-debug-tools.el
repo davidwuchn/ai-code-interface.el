@@ -107,14 +107,42 @@
             :optional t)))
   "Optional MCP eval tool specification.")
 
+(defun ai-code-mcp-debug-tools--register-base-tools ()
+  "Register the standard MCP debugging tools."
+  (dolist (tool ai-code-mcp-debug-tools--specs)
+    (apply #'ai-code-mcp-make-tool tool)))
+
+(defun ai-code-mcp-debug-tools--register-eval-tool ()
+  "Register the optional `eval_elisp' MCP tool."
+  (apply #'ai-code-mcp-make-tool ai-code-mcp-debug-tools--eval-spec))
+
+(defun ai-code-mcp-debug-tools--enabled-p ()
+  "Return non-nil when debug tools are enabled globally."
+  ai-code-mcp-debug-tools-enabled)
+
+(defun ai-code-mcp-debug-tools--eval-enabled-p ()
+  "Return non-nil when `eval_elisp' is enabled globally."
+  ai-code-mcp-debug-tools-enable-eval-elisp)
+
+(defun ai-code-mcp-debug-tools--require-enabled ()
+  "Signal an error unless debug inspection tools are enabled."
+  (unless (ai-code-mcp-debug-tools--enabled-p)
+    (error
+     "Enable ai-code-mcp-debug-tools-enabled to use the global Emacs debug MCP tools")))
+
+(defun ai-code-mcp-debug-tools--require-eval-enabled ()
+  "Signal an error unless `eval_elisp' is enabled."
+  (unless (ai-code-mcp-debug-tools--eval-enabled-p)
+    (error
+     "Enable ai-code-mcp-debug-tools-enable-eval-elisp to use the global eval_elisp MCP tool")))
+
 (defun ai-code-mcp-debug-tools-setup ()
   "Register optional MCP debugging tools when enabled."
   (when ai-code-mcp-debug-tools-enabled
     (ai-code-mcp--ensure-error-capture)
-    (dolist (tool ai-code-mcp-debug-tools--specs)
-      (apply #'ai-code-mcp-make-tool tool))
+    (ai-code-mcp-debug-tools--register-base-tools)
     (when ai-code-mcp-debug-tools-enable-eval-elisp
-      (apply #'ai-code-mcp-make-tool ai-code-mcp-debug-tools--eval-spec))))
+      (ai-code-mcp-debug-tools--register-eval-tool))))
 
 (defun ai-code-mcp--documentation-summary (documentation)
   "Return a trimmed summary line for DOCUMENTATION."
@@ -343,6 +371,7 @@ keeps the backtrace on failures."
 
 (defun ai-code-mcp-get-variable-binding-info (variable-name &optional buffer-name)
   "Return JSON binding details for VARIABLE-NAME in BUFFER-NAME."
+  (ai-code-mcp-debug-tools--require-enabled)
   (let ((symbol (ai-code-mcp--find-existing-variable-symbol variable-name)))
     (if (not symbol)
         (json-encode
@@ -380,6 +409,7 @@ keeps the backtrace on failures."
   "Return the printed representation of VARIABLE-NAME.
 Return a friendly error string when VARIABLE-NAME does not name an
 existing bound variable."
+  (ai-code-mcp-debug-tools--require-enabled)
   (let ((symbol (ai-code-mcp--find-existing-variable-symbol variable-name)))
     (cond
      ((not symbol)
@@ -429,6 +459,7 @@ existing bound variable."
 
 (defun ai-code-mcp-get-function-info (function-name)
   "Return JSON metadata describing FUNCTION-NAME."
+  (ai-code-mcp-debug-tools--require-enabled)
   (let ((symbol (ai-code-mcp--find-existing-function-symbol function-name)))
     (if (not (and symbol (fboundp symbol)))
         (json-encode
@@ -480,6 +511,7 @@ existing bound variable."
 
 (defun ai-code-mcp-get-last-error-backtrace ()
   "Return a JSON snapshot of the most recently recorded Emacs error."
+  (ai-code-mcp-debug-tools--require-enabled)
   (json-encode
    (if ai-code-mcp--last-error-record
        (ai-code-mcp--last-error-json-payload ai-code-mcp--last-error-record)
@@ -520,6 +552,7 @@ existing bound variable."
 
 (defun ai-code-mcp-get-feature-load-state (feature-name)
   "Return JSON load-state details for FEATURE-NAME."
+  (ai-code-mcp-debug-tools--require-enabled)
   (if (not (ai-code-mcp--valid-feature-name-p feature-name))
       (json-encode
        (ai-code-mcp--invalid-feature-load-state-payload feature-name))
@@ -539,6 +572,7 @@ existing bound variable."
 
 (defun ai-code-mcp-get-recent-messages (&optional limit)
   "Return a JSON payload for recent messages using LIMIT."
+  (ai-code-mcp-debug-tools--require-enabled)
   (let* ((limit (or limit 50))
          (messages (ai-code-mcp--message-lines)))
     (unless (and (integerp limit) (> limit 0))
@@ -556,6 +590,8 @@ existing bound variable."
 Return a JSON payload.  BUFFER-NAME or FILE-PATH select the evaluation
 context.  CAPTURE-MESSAGES, INCLUDE-BACKTRACE, and TIMEOUT-MS control
 diagnostics."
+  (ai-code-mcp-debug-tools--require-enabled)
+  (ai-code-mcp-debug-tools--require-eval-enabled)
   (let* ((capture-messages (ai-code-mcp-debug-tools--bool-arg
                             capture-messages
                             t))

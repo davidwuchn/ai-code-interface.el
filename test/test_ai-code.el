@@ -565,12 +565,109 @@
       (should (eq ai-code-backends-infra-terminal-backend 'ghostel))
       (should sync-called))))
 
+(ert-deftest ai-code-test-debug-emacs-runtime-uses-global-eval-flag-in-prompt ()
+  "Debug Emacs runtime should describe the global eval flag state."
+  (let (description-prompt
+        confirm-read-args
+        sent-prompt)
+    (let ((ai-code-mcp-debug-tools-enabled t)
+          (ai-code-mcp-debug-tools-enable-eval-elisp t))
+      (cl-letf (((symbol-function 'y-or-n-p)
+               (lambda (prompt)
+                 (should (string-match-p "eval Emacs Lisp" prompt))
+                 t))
+              ((symbol-function 'ai-code-read-string)
+               (lambda (prompt &optional initial-input _candidate-list)
+                 (cond
+                  ((string-match-p "Describe the Emacs runtime issue" prompt)
+                   (setq description-prompt prompt)
+                   "C-c x runs the wrong interactive command")
+                  ((string-match-p "Confirm and edit Emacs runtime debug prompt" prompt)
+                   (setq confirm-read-args (list prompt initial-input))
+                   initial-input)
+                  (t
+                   (ert-fail (format "Unexpected prompt: %s" prompt))))))
+              ((symbol-function 'ai-code--insert-prompt)
+               (lambda (prompt)
+                 (setq sent-prompt prompt))))
+        (ai-code-debug-emacs-runtime)))
+    (should (string-match-p "interactive function or a key binding"
+                            description-prompt))
+    (should (equal (car confirm-read-args)
+                   "Confirm and edit Emacs runtime debug prompt: "))
+    (should (string-match-p "Use the Emacs MCP tools available in this session"
+                            (cadr confirm-read-args)))
+    (should (string-match-p "eval_elisp is enabled in your Emacs MCP config"
+                            (cadr confirm-read-args)))
+    (should (string-match-p "C-c x runs the wrong interactive command"
+                            sent-prompt))))
+
+(ert-deftest ai-code-test-debug-emacs-runtime-errors-when-global-eval-flag-is-off ()
+  "Debug Emacs runtime should tell the user to enable the global eval flag."
+  (let ((ai-code-mcp-debug-tools-enabled t)
+        (ai-code-mcp-debug-tools-enable-eval-elisp nil)
+        description-prompt)
+    (cl-letf (((symbol-function 'y-or-n-p)
+               (lambda (_prompt) t))
+              ((symbol-function 'ai-code-read-string)
+               (lambda (prompt &optional _initial-input _candidate-list)
+                 (setq description-prompt prompt)
+                 "M-x foo fails"))
+              ((symbol-function 'ai-code--insert-prompt)
+               (lambda (&rest _args)
+                 (ert-fail "Should not send a prompt when eval_elisp is disabled globally."))))
+      (should-error
+       (ai-code-debug-emacs-runtime)
+       :type 'user-error))
+    (should (string-match-p "Describe the Emacs runtime issue"
+                            description-prompt))))
+
+(ert-deftest ai-code-test-debug-emacs-runtime-distinguishes-config-from-run-consent ()
+  "Debug Emacs runtime should separate global eval availability from per-run consent."
+  (let (confirm-read-args)
+    (let ((ai-code-mcp-debug-tools-enabled t)
+          (ai-code-mcp-debug-tools-enable-eval-elisp t))
+      (cl-letf (((symbol-function 'y-or-n-p)
+                 (lambda (_prompt) nil))
+                ((symbol-function 'ai-code-read-string)
+                 (lambda (prompt &optional initial-input _candidate-list)
+                   (if (string-match-p "Confirm and edit Emacs runtime debug prompt" prompt)
+                       (progn
+                         (setq confirm-read-args (list prompt initial-input))
+                         initial-input)
+                     "C-c x runs the wrong interactive command")))
+                ((symbol-function 'ai-code--insert-prompt)
+                 (lambda (&rest _args) nil)))
+        (ai-code-debug-emacs-runtime)))
+    (should (string-match-p
+             "eval_elisp is enabled in your Emacs MCP config"
+             (cadr confirm-read-args)))
+    (should (string-match-p
+             "not requested for this debugging run"
+             (cadr confirm-read-args)))))
+
+(ert-deftest ai-code-test-debug-emacs-runtime-removes-stale-done-comment ()
+  "The source should not keep the stale DONE note for the runtime debug menu item."
+  (with-temp-buffer
+    (insert-file-contents (expand-file-name "ai-code.el" default-directory))
+    (should-not
+     (search-forward ";; DONE: add a menu item: Debug your emacs runtime." nil t))))
+
 (ert-deftest ai-code-test-menu-ai-cli-session-includes-select-terminal-entry ()
   "Test that the AI CLI session menu exposes terminal backend selection."
   (let ((suffix (transient-get-suffix 'ai-code--menu-ai-cli-session "l")))
     (should suffix)
     (should (eq (plist-get (cdr suffix) :command)
                 'ai-code-select-terminal))))
+
+(ert-deftest ai-code-test-menu-other-tools-includes-debug-emacs-runtime-entry ()
+  "Test that the Other Tools menu exposes Emacs runtime debugging."
+  (let ((suffix (transient-get-suffix 'ai-code--menu-other-tools "d")))
+    (should suffix)
+    (should (eq (plist-get (cdr suffix) :command)
+                'ai-code-debug-emacs-runtime))
+    (should (equal (plist-get (cdr suffix) :description)
+                   "Debug Emacs runtime"))))
 
 (ert-deftest ai-code-test-menu-prefix-command-default-layout ()
   "Test that the default menu layout uses the original transient."
