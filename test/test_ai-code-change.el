@@ -506,7 +506,7 @@ is between the function definition and its body."
         (should (string-match-p "[Qq]uestion" captured-label))
         (should-not (string-match-p "implementation" captured-label))))))
 
-(ert-deftest ai-code-test-ai-code-implement-todo-org-section-includes-heading-and-content ()
+(ert-deftest ai-code-test-implement-todo-org-section-includes-heading-and-content ()
   "Test Org TODO section is used as prompt context without requiring comment syntax."
   (with-temp-buffer
     (require 'org)
@@ -577,7 +577,7 @@ is between the function definition and its body."
         (ai-code-implement-todo nil)
 
         (should (stringp captured-prompt))
-        (should (string-match-p "Regarding this Org TODO headline" captured-prompt))
+        (should (string-match-p "Regarding this Org headline" captured-prompt))
         (should (string-match-p "TODO: what is the most important verse in Bible"
                                 captured-prompt))))))
 
@@ -611,17 +611,23 @@ is between the function definition and its body."
     (cl-letf (((symbol-function 'region-active-p) (lambda () nil)))
       (should-not (ai-code--detect-todo-info nil)))))
 
-(ert-deftest ai-code-test-detect-todo-info-org-non-todo-headline-returns-nil ()
-  "Test `ai-code--detect-todo-info' returns nil for non-TODO Org headlines."
+(ert-deftest ai-code-test-detect-todo-info-org-plain-headline-detected ()
+  "Test `ai-code--detect-todo-info' detects plain Org headlines without TODO keyword."
   (with-temp-buffer
     (require 'org)
     (setq buffer-file-name "notes.org")
     (insert "* Regular heading\n")
+    (insert "Some content.\n")
     (org-mode)
     (goto-char (point-min))
 
     (cl-letf (((symbol-function 'region-active-p) (lambda () nil)))
-      (should-not (ai-code--detect-todo-info nil)))))
+      (let ((result (ai-code--detect-todo-info nil)))
+        (should result)
+        (should (stringp (nth 0 result)))
+        (should (string-match-p "Regular heading" (nth 0 result)))
+        (should (integerp (nth 1 result)))
+        (should (integerp (nth 2 result)))))))
 
 (ert-deftest ai-code-test-detect-todo-info-org-todo-colon-prefix ()
   "Test `ai-code--detect-todo-info' detects `TODO:' prefixed Org headlines."
@@ -720,6 +726,277 @@ is between the function definition and its body."
         (ai-code-code-change nil)
 
         (should (equal captured-default-action "Code change"))))))
+
+(ert-deftest ai-code-test-get-org-section-info-plain-headline ()
+  "Test `ai-code--implement-todo--get-org-todo-section-info' returns info for plain Org headline."
+  (with-temp-buffer
+    (require 'org)
+    (setq buffer-file-name "notes.org")
+    (insert "* Regular heading\n")
+    (insert "Some content.\n")
+    (org-mode)
+    (goto-char (point-min))
+
+    (let ((result (ai-code--implement-todo--get-org-todo-section-info)))
+      (should result)
+      (should (string-match-p "Regular heading"
+                              (plist-get result :heading-line)))
+      (should (string= "Some content." (plist-get result :content))))))
+
+(ert-deftest ai-code-test-implement-todo-org-plain-headline-works ()
+  "Test `ai-code-implement-todo' works on a plain Org headline."
+  (with-temp-buffer
+    (require 'org)
+    (setq buffer-file-name "notes.org")
+    (insert "* Implement search feature\n")
+    (insert "Use fuzzy matching.\n")
+    (org-mode)
+    (goto-char (point-min))
+
+    (let (captured-prompt)
+      (cl-letf (((symbol-function 'completing-read)
+                 (lambda (&rest _) "Code change"))
+                ((symbol-function 'ai-code-read-string)
+                 (lambda (_label input) input))
+                ((symbol-function 'ai-code--get-clipboard-text) (lambda () nil))
+                ((symbol-function 'ai-code--get-context-files-string) (lambda () ""))
+                ((symbol-function 'ai-code--format-repo-context-info) (lambda () ""))
+                ((symbol-function 'which-function) (lambda () nil))
+                ((symbol-function 'region-active-p) (lambda () nil))
+                ((symbol-function 'ai-code--insert-prompt)
+                 (lambda (prompt) (setq captured-prompt prompt))))
+
+        (ai-code-implement-todo nil)
+
+        (should (stringp captured-prompt))
+        (should (string-match-p "Implement search feature" captured-prompt))
+        (should (string-match-p "Use fuzzy matching" captured-prompt))))))
+
+(ert-deftest ai-code-test-code-change-routes-to-implement-todo-on-plain-org-headline ()
+  "Test `ai-code-code-change' routes to `ai-code-implement-todo' on plain Org headline."
+  (with-temp-buffer
+    (require 'org)
+    (setq buffer-file-name "notes.org")
+    (insert "* Regular heading\n")
+    (org-mode)
+    (goto-char (point-min))
+
+    (let (captured-default-action)
+      (cl-letf (((symbol-function 'ai-code--get-clipboard-text) (lambda () nil))
+                ((symbol-function 'ai-code-implement-todo)
+                 (lambda (_arg &optional default-action)
+                   (setq captured-default-action default-action)))
+                ((symbol-function 'region-active-p) (lambda () nil)))
+
+        (ai-code-code-change nil)
+
+        (should (equal captured-default-action "Code change"))))))
+
+(ert-deftest ai-code-test-implement-todo-org-no-append-summary-in-build ()
+  "Test that `build-and-send-prompt' no longer asks about appending summary (moved to insert-prompt)."
+  (with-temp-buffer
+    (require 'org)
+    (setq buffer-file-name "todo.org")
+    (insert "* TODO Build feature\n")
+    (insert "Details here.\n")
+    (org-mode)
+    (goto-char (point-min))
+
+    (let (y-or-n-called)
+      (cl-letf (((symbol-function 'completing-read)
+                 (lambda (&rest _) "Code change"))
+                ((symbol-function 'y-or-n-p)
+                 (lambda (_prompt)
+                   (setq y-or-n-called t)
+                   nil))
+                ((symbol-function 'ai-code-read-string)
+                 (lambda (_label input) input))
+                ((symbol-function 'ai-code--get-clipboard-text) (lambda () nil))
+                ((symbol-function 'ai-code--get-context-files-string) (lambda () ""))
+                ((symbol-function 'ai-code--format-repo-context-info) (lambda () ""))
+                ((symbol-function 'which-function) (lambda () nil))
+                ((symbol-function 'region-active-p) (lambda () nil))
+                ((symbol-function 'ai-code--insert-prompt) (lambda (_p) nil)))
+
+        (ai-code--implement-todo--build-and-send-prompt nil)
+
+        (should-not y-or-n-called)))))
+
+(ert-deftest ai-code-test-implement-todo-comment-no-append-summary-asked ()
+  "Test that `y-or-n-p' is NOT asked on regular TODO comment path."
+  (with-temp-buffer
+    (setq buffer-file-name "test.el")
+    (setq-local comment-start ";")
+    (setq-local comment-end "")
+    (insert ";; TODO: implement feature\n")
+    (goto-char (point-min))
+
+    (let (y-or-n-called)
+      (cl-letf (((symbol-function 'completing-read)
+                 (lambda (&rest _) "Code change"))
+                ((symbol-function 'y-or-n-p)
+                 (lambda (_prompt)
+                   (setq y-or-n-called t)
+                   nil))
+                ((symbol-function 'ai-code-read-string)
+                 (lambda (_label input) input))
+                ((symbol-function 'ai-code--get-clipboard-text) (lambda () nil))
+                ((symbol-function 'ai-code--get-context-files-string) (lambda () ""))
+                ((symbol-function 'ai-code--format-repo-context-info) (lambda () ""))
+                ((symbol-function 'ai-code--get-function-name-for-comment) (lambda () nil))
+                ((symbol-function 'which-function) (lambda () nil))
+                ((symbol-function 'region-active-p) (lambda () nil))
+                ((symbol-function 'ai-code--insert-prompt) (lambda (_p) nil)))
+
+        (ai-code--implement-todo--build-and-send-prompt nil)
+
+        (should-not y-or-n-called)))))
+
+(ert-deftest ai-code-test-implement-todo-org-build-prompt-no-summary-text ()
+  "Test that `build-and-send-prompt' prompt does NOT contain summary (moved to insert-prompt)."
+  (with-temp-buffer
+    (require 'org)
+    (setq buffer-file-name "/tmp/project/todo.org")
+    (insert "* TODO Build feature\n")
+    (insert "Details here.\n")
+    (org-mode)
+    (goto-char (point-min))
+
+    (let (captured-prompt)
+      (cl-letf (((symbol-function 'completing-read)
+                 (lambda (&rest _) "Code change"))
+                ((symbol-function 'ai-code-read-string)
+                 (lambda (_label input) input))
+                ((symbol-function 'ai-code--get-clipboard-text) (lambda () nil))
+                ((symbol-function 'ai-code--get-context-files-string) (lambda () ""))
+                ((symbol-function 'ai-code--format-repo-context-info) (lambda () ""))
+                ((symbol-function 'which-function) (lambda () nil))
+                ((symbol-function 'region-active-p) (lambda () nil))
+                ((symbol-function 'ai-code--insert-prompt)
+                 (lambda (p) (setq captured-prompt p))))
+
+        (ai-code--implement-todo--build-and-send-prompt nil)
+
+        (should (stringp captured-prompt))
+        (should-not (string-match-p "summary" captured-prompt))))))
+
+(ert-deftest ai-code-test-implement-todo-org-append-summary-no ()
+  "Test that choosing no does NOT add summary instruction to prompt."
+  (with-temp-buffer
+    (require 'org)
+    (setq buffer-file-name "/tmp/project/todo.org")
+    (insert "* TODO Build feature\n")
+    (insert "Details here.\n")
+    (org-mode)
+    (goto-char (point-min))
+
+    (let (captured-prompt)
+      (cl-letf (((symbol-function 'completing-read)
+                 (lambda (&rest _) "Code change"))
+                ((symbol-function 'ai-code-read-string)
+                 (lambda (_label input) input))
+                ((symbol-function 'ai-code--get-clipboard-text) (lambda () nil))
+                ((symbol-function 'ai-code--get-context-files-string) (lambda () ""))
+                ((symbol-function 'ai-code--format-repo-context-info) (lambda () ""))
+                ((symbol-function 'which-function) (lambda () nil))
+                ((symbol-function 'region-active-p) (lambda () nil))
+                ((symbol-function 'ai-code--insert-prompt)
+                 (lambda (p) (setq captured-prompt p))))
+
+        (ai-code--implement-todo--build-and-send-prompt nil)
+
+        (should (stringp captured-prompt))
+        (should-not (string-match-p "summary" captured-prompt))))))
+
+(ert-deftest ai-code-test-insert-prompt-org-heading-append-summary-yes ()
+  "Test that `ai-code--insert-prompt' appends summary instruction on prompt-mode heading when user confirms."
+  (with-temp-buffer
+    (setq buffer-file-name "/tmp/project/.ai.code.files/.ai.code.prompt.org")
+    (insert "* TODO Build search feature\n")
+    (insert "Design the API first.\n")
+    (ai-code-prompt-mode)
+    (goto-char (point-min))
+
+    (let (captured-prompt
+          (ai-code-prompt-preprocess-filepaths nil))
+      (cl-letf (((symbol-function 'y-or-n-p) (lambda (_) t))
+                ((symbol-function 'ai-code--write-prompt-to-file-and-send)
+                 (lambda (prompt) (setq captured-prompt prompt))))
+
+        (ai-code--insert-prompt "Test prompt text")
+
+        (should (stringp captured-prompt))
+        (should (string-match-p "Test prompt text" captured-prompt))
+        (should (string-match-p "summary" captured-prompt))
+        (should (string-match-p "\\.ai\\.code\\.prompt\\.org" captured-prompt))))))
+
+(ert-deftest ai-code-test-insert-prompt-org-heading-append-summary-no ()
+  "Test that `ai-code--insert-prompt' does NOT append summary when user declines."
+  (with-temp-buffer
+    (setq buffer-file-name "/tmp/project/.ai.code.files/.ai.code.prompt.org")
+    (insert "* TODO Build search feature\n")
+    (insert "Design the API first.\n")
+    (ai-code-prompt-mode)
+    (goto-char (point-min))
+
+    (let (captured-prompt
+          (ai-code-prompt-preprocess-filepaths nil))
+      (cl-letf (((symbol-function 'y-or-n-p) (lambda (_) nil))
+                ((symbol-function 'ai-code--write-prompt-to-file-and-send)
+                 (lambda (prompt) (setq captured-prompt prompt))))
+
+        (ai-code--insert-prompt "Test prompt text")
+
+        (should (stringp captured-prompt))
+        (should (string-match-p "Test prompt text" captured-prompt))
+        (should-not (string-match-p "summary" captured-prompt))))))
+
+(ert-deftest ai-code-test-insert-prompt-non-prompt-mode-no-summary-asked ()
+  "Test that `ai-code--insert-prompt' does NOT ask about summary in non-prompt-mode buffer."
+  (with-temp-buffer
+    (setq buffer-file-name "/tmp/project/test.el")
+    (setq-local comment-start ";")
+    (insert ";; some code\n")
+    (goto-char (point-min))
+
+    (let (y-or-n-called captured-prompt
+          (ai-code-prompt-preprocess-filepaths nil))
+      (cl-letf (((symbol-function 'y-or-n-p)
+                 (lambda (_)
+                   (setq y-or-n-called t)
+                   nil))
+                ((symbol-function 'ai-code--write-prompt-to-file-and-send)
+                 (lambda (prompt) (setq captured-prompt prompt))))
+
+        (ai-code--insert-prompt "Test prompt text")
+
+        (should-not y-or-n-called)
+        (should (string-match-p "Test prompt text" captured-prompt))
+        (should-not (string-match-p "summary" captured-prompt))))))
+
+(ert-deftest ai-code-test-insert-prompt-slash-command-on-heading-executes ()
+  "Test that slash commands execute directly even when on a prompt-mode heading."
+  (with-temp-buffer
+    (setq buffer-file-name "/tmp/project/.ai.code.files/.ai.code.prompt.org")
+    (insert "* TODO Build search feature\n")
+    (ai-code-prompt-mode)
+    (goto-char (point-min))
+
+    (let (y-or-n-called command-executed
+          (ai-code-prompt-preprocess-filepaths nil))
+      (cl-letf (((symbol-function 'y-or-n-p)
+                 (lambda (_)
+                   (setq y-or-n-called t)
+                   t))
+                ((symbol-function 'ai-code--execute-command)
+                 (lambda (_cmd) (setq command-executed t)))
+                ((symbol-function 'ai-code--write-prompt-to-file-and-send)
+                 (lambda (_) (error "Should not reach write-prompt"))))
+
+        (ai-code--insert-prompt "/status")
+
+        (should command-executed)
+        (should-not y-or-n-called)))))
 
 (provide 'test_ai-code-change)
 

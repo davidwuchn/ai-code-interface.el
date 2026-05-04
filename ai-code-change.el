@@ -151,9 +151,8 @@ Returns (TEXT START-POS END-POS) if TODO found, nil otherwise."
            (let ((heading-line (buffer-substring-no-properties
                                 (line-beginning-position)
                                 (line-end-position))))
-             (when (and (or (org-get-todo-state)
-                            (ai-code--implement-todo--org-todo-headline-p heading-line))
-                        (not (org-entry-is-done-p)))
+             (when (and (not (org-entry-is-done-p))
+                        (not (string-match-p "^\\*+ DONE " heading-line)))
                (list heading-line
                      (line-beginning-position)
                      (line-end-position))))))))))
@@ -289,6 +288,8 @@ Otherwise implement comments for the entire current file.
 Argument ARG is the prefix argument.
 Optional DEFAULT-ACTION skips the action prompt when non-nil."
   ;; DONE: I want to implement the idea inside https://github.com/tninja/ai-code-interface.el/issues/316, it could to either code change or ask question, given user's input with completing-read selection. The difference of this org-mode section TODO, with the existing comment todo is, it won't replace the TODO section with implementation. It just use the section headline and content inside this section as part of prompt, and send to AI.
+  ;; DONE: for this command triggered from org-mode file buffer. We want to let user choose if they want to add the condense result summary as a section (org headline), at the end of current section under cursor. If user choose yes. The prompt should let AI know this and where to add (maybe let it know current file, headline / cursor position maybe), so that it can add result summary.
+  ;; DONE: This result summary looks good. Is it possible to move this feature to the function just before sending prompt to AI, so that it can be applied to other code change or question asking command as well? The key point is to let user choose if they want to have this summary added to the file, and where to add, so that the prompt can include this requirement and context.
   (interactive "P")
   (if (not buffer-file-name)
       (user-error "Error: buffer-file-name must be available")
@@ -367,12 +368,9 @@ The plist contains `:heading-line', `:content', and `:line-number'."
         (let* ((line-number (line-number-at-pos (point)))
                (heading-line (buffer-substring-no-properties
                               (line-beginning-position)
-                              (line-end-position)))
-               (todo-state (org-get-todo-state))
-               (todo-prefix-p
-                (ai-code--implement-todo--org-todo-headline-p heading-line)))
-          (when (and (or todo-state todo-prefix-p)
-                     (not (org-entry-is-done-p)))
+                              (line-end-position))))
+          (when (and (not (org-entry-is-done-p))
+                     (not (string-match-p "^\\*+ DONE " heading-line)))
             (let* ((content-start (save-excursion
                                     (forward-line 1)
                                     (point)))
@@ -406,6 +404,7 @@ The plist contains `:heading-line', `:content', and `:line-number'."
 ARG is the prefix argument for clipboard context.
 Optional DEFAULT-ACTION skips the completing-read prompt when non-nil."
   ;; DONE: ask user with completing-read before build up prompt, candidate should be 1. Code change; 2. Ask question. Given selection, add suffix to them respectively to indicate AI to make code change, or do not make any code change
+  ;; DONE: currently ai-code-implement-todo work on the org-mode TODO headline. But I want it be able to work on any org-mode headline, no matter it has TODO keyword or not. Please also update the ai-code-code-change and @ai-code-discussion.el#ai-code-ask-question, for the org headline detection code (currently only detect org TODO headline) to be consistent with this function.
   (let* ((clipboard-context (when arg (ai-code--get-clipboard-text)))
          (current-line (string-trim (thing-at-point 'line t)))
          (current-line-number (line-number-at-pos (point)))
@@ -444,7 +443,7 @@ Optional DEFAULT-ACTION skips the completing-read prompt when non-nil."
                                      (ai-code--is-comment-block region-text)))
          ;; Validate scenario before prompting user
          (_ (unless (or org-todo-section-info region-text is-comment)
-              (user-error "Current line is not a TODO comment or Org TODO headline and cannot proceed with `ai-code-implement-todo'.  Please select a TODO comment (not DONE), an Org TODO headline, a region of comments, or activate on a blank line")))
+              (user-error "Current line is not a TODO comment or Org headline and cannot proceed with `ai-code-implement-todo'.  Please select a TODO comment (not DONE), an Org headline (not DONE), a region of comments, or activate on a blank line")))
          (_ (unless region-comment-block-p
               (user-error "Selected region must be a comment block")))
          (action-intent (or default-action
@@ -456,8 +455,8 @@ Optional DEFAULT-ACTION skips the completing-read prompt when non-nil."
           (cond
            ((and ask-question-p org-todo-section-info)
             (if (and clipboard-context (string-match-p "\\S-" clipboard-context))
-                "Question about Org TODO headline (clipboard context): "
-              "Question about Org TODO headline: "))
+                "Question about Org headline (clipboard context): "
+              "Question about Org headline: "))
            (ask-question-p
             (if (and clipboard-context (string-match-p "\\S-" clipboard-context))
                 "Question about TODO comment (clipboard context): "
@@ -465,7 +464,7 @@ Optional DEFAULT-ACTION skips the completing-read prompt when non-nil."
            ((and org-todo-section-info
                  clipboard-context
                  (string-match-p "\\S-" clipboard-context))
-            "TODO implementation instruction for Org TODO headline (clipboard context): ")
+            "Implementation instruction for Org headline (clipboard context): ")
            ((and clipboard-context
                  (string-match-p "\\S-" clipboard-context))
             (cond
@@ -473,7 +472,7 @@ Optional DEFAULT-ACTION skips the completing-read prompt when non-nil."
              (is-comment "TODO implementation instruction (clipboard context): ")
              (function-name (format "TODO implementation instruction for function %s (clipboard context): " function-name))
              (t "TODO implementation instruction (clipboard context): ")))
-           (org-todo-section-info "TODO implementation instruction for Org TODO headline: ")
+           (org-todo-section-info "Implementation instruction for Org headline: ")
            (region-text "TODO implementation instruction: ")
            (is-comment "TODO implementation instruction: ")
            (function-name (format "TODO implementation instruction for function %s: " function-name))
@@ -481,7 +480,7 @@ Optional DEFAULT-ACTION skips the completing-read prompt when non-nil."
          (initial-input
           (cond
            ((and ask-question-p org-todo-section-info)
-            (format "Regarding this Org TODO headline on line %d:\n%s%s%s"
+            (format "Regarding this Org headline on line %d:\n%s%s%s"
                     org-line-number org-section-block function-context files-context-string))
            ((and ask-question-p region-text)
             (format "Regarding this TODO comment block in the selected region:\n%s\n%s%s%s"
@@ -490,7 +489,7 @@ Optional DEFAULT-ACTION skips the completing-read prompt when non-nil."
             (format "Regarding this TODO comment on line %d: '%s'%s%s"
                     current-line-number current-line function-context files-context-string))
            (org-todo-section-info
-            (format "Please implement code for this Org TODO headline first. After implementing, keep the Org TODO headline in place and use the headline and content as prompt context.\nLine %d:\n%s%s%s"
+            (format "Please implement code for this Org headline first. After implementing, keep the Org headline in place and use the headline and content as prompt context.\nLine %d:\n%s%s%s"
                     org-line-number org-section-block function-context
                     files-context-string))
            (region-text

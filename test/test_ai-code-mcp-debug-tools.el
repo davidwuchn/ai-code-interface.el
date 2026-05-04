@@ -121,6 +121,30 @@
                                (alist-get 'tools tools-result))))
       (should (member "eval_elisp" tool-names)))))
 
+(ert-deftest ai-code-test-mcp-debug-tools-disabled-globally-blocks-access ()
+  "Global disable should block direct use of the optional debug tools."
+  (let ((ai-code-mcp-server-tools nil)
+        (ai-code-mcp-debug-tools-enabled nil)
+        (ai-code-mcp-debug-tools-enable-eval-elisp nil))
+    (should-error
+     (ai-code-mcp-get-recent-messages))
+    (should-error
+     (ai-code-mcp-eval-elisp "(+ 1 2)"))))
+
+(ert-deftest ai-code-test-mcp-debug-tools-errors-name-global-flags ()
+  "Global gating errors should point to the relevant defcustom names."
+  (let ((ai-code-mcp-debug-tools-enabled nil)
+        (ai-code-mcp-debug-tools-enable-eval-elisp nil))
+    (should (string-match-p
+             "ai-code-mcp-debug-tools-enabled"
+             (error-message-string
+              (should-error (ai-code-mcp-get-recent-messages)))))
+    (let ((ai-code-mcp-debug-tools-enabled t))
+      (should (string-match-p
+               "ai-code-mcp-debug-tools-enable-eval-elisp"
+               (error-message-string
+                (should-error (ai-code-mcp-eval-elisp "(+ 1 2)"))))))))
+
 (ert-deftest ai-code-test-mcp-tools-list-warns-eval-elisp-is-unrestricted ()
   "Eval tool metadata should warn about unrestricted side effects."
   (let ((ai-code-mcp-server-tools nil)

@@ -480,6 +480,59 @@ ARG is the prefix argument."
                                clipboard-context)))))
         (ai-code--insert-prompt final-prompt)))))
 
+(defun ai-code--emacs-runtime-debug-prompt (description eval-available-p
+                                                        request-eval-elisp)
+  "Return an Emacs runtime debugging prompt from DESCRIPTION.
+EVAL-AVAILABLE-P reports whether `eval_elisp' is globally enabled.
+REQUEST-EVAL-ELISP reports whether this debug run may use it."
+  (format
+   (concat
+    "Use the Emacs MCP tools available in this session to debug my Emacs runtime.\n"
+    "The issue may involve an interactive function or a key binding.\n"
+    "%s\n\n"
+    "Inspect the relevant runtime state first: keymaps, command metadata,\n"
+    "variables, recent messages, load state, and the last backtrace when useful.\n"
+    "Explain what you find, then recommend the smallest fix or next step.\n\n"
+    "Runtime issue description:\n"
+    "%s")
+   (cond
+    ((and eval-available-p request-eval-elisp)
+     "eval_elisp is enabled in your Emacs MCP config and is allowed for this debugging run.")
+    (eval-available-p
+     "eval_elisp is enabled in your Emacs MCP config, but it was not requested for this debugging run.")
+    (t
+     "eval_elisp is disabled in your Emacs MCP config, so rely on non-eval inspection tools unless you first enable ai-code-mcp-debug-tools-enable-eval-elisp."))
+   description))
+
+;;;###autoload
+(defun ai-code-debug-emacs-runtime ()
+  "Assemble and send an Emacs runtime debugging prompt for the current AI session."
+  (interactive)
+  (unless (bound-and-true-p ai-code-mcp-debug-tools-enabled)
+    (user-error
+     "Enable ai-code-mcp-debug-tools-enabled before using Emacs runtime debugging"))
+  (let* ((description
+          (ai-code-read-string
+           "Describe the Emacs runtime issue (it can be an interactive function or a key binding): "))
+         (eval-available-p
+          (bound-and-true-p ai-code-mcp-debug-tools-enable-eval-elisp))
+         (request-eval-elisp
+          (y-or-n-p
+           "Allow AI to eval Emacs Lisp while debugging this Emacs runtime issue? ")))
+    (when description
+      (when (and request-eval-elisp
+                 (not eval-available-p))
+        (user-error
+         "Enable ai-code-mcp-debug-tools-enable-eval-elisp before requesting eval_elisp debugging"))
+      (when-let* ((prompt
+                   (ai-code-read-string
+                    "Confirm and edit Emacs runtime debug prompt: "
+                    (ai-code--emacs-runtime-debug-prompt
+                     description
+                     eval-available-p
+                     request-eval-elisp))))
+        (ai-code--insert-prompt prompt)))))
+
 ;;;###autoload
 (defun ai-code-cli-switch-to-buffer-or-hide ()
   "Hide the current buffer when its name both begins and ends with '*'.
@@ -639,6 +692,7 @@ Shows the current backend label to the right."
   ("p" "Open prompt history file" ai-code-open-prompt-file)
   ("m" "Debug python MCP server" ai-code-debug-mcp)
   ("N" "Toggle notifications" ai-code-notifications-toggle)
+  ("d" "Debug Emacs runtime" ai-code-debug-emacs-runtime)
   ("h" "Help / Quick Start" ai-code-onboarding-open-quickstart))
 
 (transient-define-prefix ai-code-menu-default ()
