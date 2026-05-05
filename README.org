@@ -1,4 +1,4 @@
-[[file:./icon.png]]
+[[file:./ai-code-interface.png]]
 
 * AI Code Interface
 
