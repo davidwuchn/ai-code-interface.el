@@ -1,7 +1,7 @@
 ;;; ai-code.el --- Unified interface for AI coding backends such as Codex CLI, Copilot CLI, Claude Code, Gemini CLI, Opencode, Kilo, Grok CLI, etc -*- lexical-binding: t; -*-
 
 ;; Author: Kang Tu <tninja@gmail.com>
-;; Version: 1.77
+;; Version: 1.78
 ;; Package-Requires: ((emacs "29.1") (transient "0.9.0") (magit "2.1.0"))
 ;; URL: https://github.com/tninja/ai-code-interface.el
 
@@ -59,8 +59,8 @@
 ;;   ;; (ai-code-prompt-filepath-completion-mode -1)
 ;;   ;; Optional: Configure AI test prompting mode (e.g., ask about running tests/TDD) for a tighter build-test loop
 ;;   (setq ai-code-auto-test-type 'ask-me)
-;;   ;; Optional: Offer numbered next steps for discussion prompts at send time
-;;   ;; (setq ai-code-discussion-auto-follow-up-enabled t)
+;;   ;; Optional: Disable numbered next steps for discussion prompts at send time
+;;   ;; (setq ai-code-discussion-auto-follow-up-enabled nil)
 ;;   ;; Optional: In the AI session buffer (Evil normal state), SPC triggers the prompt entry UI
 ;;   (with-eval-after-load 'evil (ai-code-backends-infra-evil-setup))
 ;;   (global-auto-revert-mode 1)
@@ -176,7 +176,7 @@ See the later `defcustom' for user-facing documentation and default.")
 (defvar ai-code-discussion-auto-follow-up-suffix nil
   "Send-time prompt suffix that requests numbered next-step suggestions.")
 
-(defvar ai-code-discussion-auto-follow-up-enabled nil
+(defvar ai-code-discussion-auto-follow-up-enabled t
   "Forward declaration for `ai-code-discussion-auto-follow-up-enabled'.
 See the later `defcustom' for user-facing documentation and default.")
 
@@ -191,11 +191,6 @@ See the later `defcustom' for user-facing documentation and default.")
   '(("Ask every time" . ask-me)
     ("Off" . nil))
   "Persistent choices for `ai-code-auto-test-type`.")
-
-(defconst ai-code--auto-follow-up-type-ask-choices
-  '(("Suggest next steps" . t)
-    ("No next-step suggestions" . nil))
-  "Resolve next-step suggestion choices for `ask-me` mode.")
 
 (defconst ai-code--auto-test-type-legacy-persistent-modes
   '(test-after-change tdd tdd-with-refactoring)
@@ -214,13 +209,7 @@ See the later `defcustom' for user-facing documentation and default.")
 
 (defun ai-code--read-auto-follow-up-choice ()
   "Read whether to request numbered next-step suggestions for this send action."
-  (let* ((choice (completing-read "Discussion follow-up suggestions: "
-                                  (mapcar #'car ai-code--auto-follow-up-type-ask-choices)
-                                  nil t nil nil
-                                  (caar ai-code--auto-follow-up-type-ask-choices)))
-         (choice-cell (assoc choice ai-code--auto-follow-up-type-ask-choices)))
-    (and choice-cell
-         (cdr choice-cell))))
+  (y-or-n-p "Discussion follow-up suggestions? "))
 
 ;;;###autoload
 (defcustom ai-code-use-gptel-classify-prompt nil
@@ -409,11 +398,12 @@ Send-time routing uses this result for test and discussion follow-up suffixes."
   :set #'ai-code--test-after-code-change--set
   :group 'ai-code)
 
-(defcustom ai-code-discussion-auto-follow-up-enabled nil
+(defcustom ai-code-discussion-auto-follow-up-enabled t
   "When non-nil, prompts may request numbered next-step suggestions.
-Customize this to non-nil to turn on the send-time choice globally.
-Pair it with `ai-code-use-gptel-classify-prompt` when you want
-code-change prompts to skip these discussion follow-up suggestions."
+This is enabled by default; customize it to nil to turn the send-time
+choice off globally. Pair it with `ai-code-use-gptel-classify-prompt`
+when you want code-change prompts to skip these discussion follow-up
+suggestions."
   :type 'boolean
   :set (lambda (symbol value)
          (set-default symbol value)
