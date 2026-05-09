@@ -17,6 +17,7 @@
 
 (require 'cl-lib)
 (require 'project)
+(require 'subr-x)
 (require 'ai-code-session-link)
 ;; Terminal-specific implementations live in dedicated modules so this
 ;; file can stay focused on shared session orchestration.
@@ -144,6 +145,22 @@ being sent for the response completion.")
 
 (defvar ai-code-cli-args-history nil
   "History list for CLI args prompts.")
+
+(defconst ai-code-backends-infra--uuid-regexp
+  "[[:xdigit:]]\\{8\\}-[[:xdigit:]]\\{4\\}-[[:xdigit:]]\\{4\\}-[[:xdigit:]]\\{4\\}-[[:xdigit:]]\\{12\\}"
+  "Regexp matching the general UUID 8-4-4-4-12 text structure.
+This validates the textual shape, but not UUID version or variant bits.")
+
+(defun ai-code-backends-infra--selected-session-id ()
+  "Return the active region text when it contains a UUID session id."
+  (when (use-region-p)
+    (let ((candidate
+           (string-trim
+            (buffer-substring-no-properties (region-beginning) (region-end)))))
+      (when (string-match-p
+             (concat "\\`" ai-code-backends-infra--uuid-regexp "\\'")
+             candidate)
+        candidate))))
 
 (defcustom ai-code-backends-infra-idle-delay 5.0
   "Delay in seconds of inactivity before considering response complete.
@@ -854,12 +871,27 @@ If FORCE-PROMPT is nil and there are no existing instances, return \"default\"."
 (defun ai-code-backends-infra--resolve-start-command (program switches arg &optional prompt-label)
   "Build command string for PROGRAM and SWITCHES.
 When ARG is non-nil, prompt for CLI args using SWITCHES as default input.
-PROMPT-LABEL is used in the minibuffer prompt."
-  (let* ((default-args (mapconcat #'identity switches " "))
+PROMPT-LABEL is used in the minibuffer prompt.
+When resuming and the active region contains a UUID, prompt as though ARG
+were non-nil and append that UUID to the default CLI args."
+  (let* ((found-resume-switch
+          (cl-some (lambda (switch)
+                     (member switch '("resume" "--resume")))
+                   switches))
+         (selected-session-id
+          (and (null arg)
+               found-resume-switch
+               (ai-code-backends-infra--selected-session-id)))
+         (prompt-p (or arg selected-session-id))
+         (default-args (mapconcat #'identity
+                                   (append switches
+                                           (and selected-session-id
+                                                (list selected-session-id)))
+                                   " "))
          (prompt (format "%s args: " (or prompt-label "CLI")))
-         (prompt-args (when arg
-                        (read-string prompt default-args 'ai-code-cli-args-history)))
-         (resolved-args (if arg
+         (prompt-args (when prompt-p
+                           (read-string prompt default-args 'ai-code-cli-args-history)))
+         (resolved-args (if prompt-p
                             (split-string-shell-command prompt-args)
                           switches))
          (command (mapconcat #'identity

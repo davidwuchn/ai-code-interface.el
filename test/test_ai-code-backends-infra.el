@@ -21,6 +21,10 @@
 (defvar ghostel--copy-mode-active)
 (defvar ghostel--process)
 
+(defconst test-ai-code-backends-infra-valid-uuid
+  "123e4567-e89b-12d3-a456-426614174000"
+  "UUID fixture used by resume command resolution tests.")
+
 (ert-deftest test-ai-code-backends-infra-output-meaningful-p-noise ()
   "Ensure terminal noise is not considered meaningful output."
   (should-not (ai-code-backends-infra--output-meaningful-p nil))
@@ -62,6 +66,77 @@
     (goto-char (point-min))
     (should (re-search-forward
              "^(defcustom ai-code-backends-infra-eat-preserve-position\\_>" nil t))))
+
+(ert-deftest test-ai-code-backends-infra--resume-double-dash-prefills-uuid ()
+  "A selected UUID should make `--resume' prompt with that id appended."
+  (let ((uuid test-ai-code-backends-infra-valid-uuid)
+        seen-prompt
+        seen-initial
+        seen-history
+        result)
+    (with-temp-buffer
+      (transient-mark-mode 1)
+      (insert uuid)
+      (goto-char (point-min))
+      (set-mark (point))
+      (goto-char (point-max))
+      (activate-mark)
+      (cl-letf (((symbol-function 'read-string)
+                 (lambda (prompt &optional initial-input history &rest _args)
+                   (setq seen-prompt prompt
+                         seen-initial initial-input
+                         seen-history history)
+                   initial-input)))
+        (setq result
+              (ai-code-backends-infra--resolve-start-command
+               "claude" '("--resume") nil "Claude"))))
+    (should (equal seen-prompt "Claude args: "))
+    (should (equal seen-initial (format "--resume %s" uuid)))
+    (should (eq seen-history 'ai-code-cli-args-history))
+    (should (equal (plist-get result :args) `("--resume" ,uuid)))
+    (should (equal (plist-get result :command)
+                   (format "claude --resume %s" uuid)))))
+
+(ert-deftest test-ai-code-backends-infra--resume-subcommand-prefills-uuid ()
+  "A selected UUID should make `resume' prompt with that id appended."
+  (let ((uuid test-ai-code-backends-infra-valid-uuid)
+        seen-initial
+        result)
+    (with-temp-buffer
+      (transient-mark-mode 1)
+      (insert uuid)
+      (goto-char (point-min))
+      (set-mark (point))
+      (goto-char (point-max))
+      (activate-mark)
+      (cl-letf (((symbol-function 'read-string)
+                 (lambda (_prompt &optional initial-input _history &rest _args)
+                   (setq seen-initial initial-input)
+                   initial-input)))
+        (setq result
+              (ai-code-backends-infra--resolve-start-command
+               "codex" '("resume") nil "Codex"))))
+    (should (equal seen-initial (format "resume %s" uuid)))
+    (should (equal (plist-get result :args) `("resume" ,uuid)))
+    (should (equal (plist-get result :command)
+                   (format "codex resume %s" uuid)))))
+
+(ert-deftest test-ai-code-backends-infra--resume-ignores-non-uuid ()
+  "A non-UUID region should not trigger resume prompting."
+  (with-temp-buffer
+    (transient-mark-mode 1)
+    (insert "not-a-session-id")
+    (goto-char (point-min))
+    (set-mark (point))
+    (goto-char (point-max))
+    (activate-mark)
+    (cl-letf (((symbol-function 'read-string)
+               (lambda (&rest _args)
+                 (ert-fail "non-UUID selection should not prompt"))))
+      (let ((result (ai-code-backends-infra--resolve-start-command
+                     "claude" '("--resume") nil "Claude")))
+        (should (equal (plist-get result :args) '("--resume")))
+        (should (equal (plist-get result :command) "claude --resume"))))))
 
 (ert-deftest test-ai-code-backends-infra-buffer-user-visible-p ()
   "Return non-nil only when buffer has a visible window."
