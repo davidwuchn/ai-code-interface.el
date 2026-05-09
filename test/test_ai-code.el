@@ -600,14 +600,17 @@
   "Debug Emacs runtime should describe the global eval flag state."
   (let (description-prompt
         confirm-read-args
+        message-text
         sent-prompt)
     (let ((ai-code-mcp-debug-tools-enabled t)
           (ai-code-mcp-debug-tools-enable-eval-elisp t))
       (cl-letf (((symbol-function 'y-or-n-p)
-               (lambda (prompt)
-                 (should (string-match-p "eval Emacs Lisp" prompt))
-                 t))
-              ((symbol-function 'ai-code-read-string)
+                 (lambda (&rest _args)
+                   (ert-fail "Should not ask whether eval_elisp is allowed.")))
+                ((symbol-function 'message)
+                 (lambda (format-string &rest args)
+                   (setq message-text (apply #'format format-string args))))
+                ((symbol-function 'ai-code-read-string)
                (lambda (prompt &optional initial-input _candidate-list)
                  (cond
                   ((string-match-p "Describe the Emacs runtime issue" prompt)
@@ -628,38 +631,62 @@
                    "Confirm and edit Emacs runtime debug prompt: "))
     (should (string-match-p "Use the Emacs MCP tools available in this session"
                             (cadr confirm-read-args)))
-    (should (string-match-p "eval_elisp is enabled in your Emacs MCP config"
+    (should (string-match-p "eval_elisp is enabled" message-text))
+    (should (string-match-p "Emacs can use it for debugging" message-text))
+    (should (string-match-p "eval_elisp is enabled in your Emacs MCP config\\."
                             (cadr confirm-read-args)))
+    (should-not (string-match-p "allowed for this debugging run"
+                                (cadr confirm-read-args)))
     (should (string-match-p "C-c x runs the wrong interactive command"
                             sent-prompt))))
 
-(ert-deftest ai-code-test-debug-emacs-runtime-errors-when-global-eval-flag-is-off ()
-  "Debug Emacs runtime should tell the user to enable the global eval flag."
+(ert-deftest ai-code-test-debug-emacs-runtime-warns-when-global-eval-flag-is-off ()
+  "Debug Emacs runtime should recommend enabling the global eval flag."
   (let ((ai-code-mcp-debug-tools-enabled t)
         (ai-code-mcp-debug-tools-enable-eval-elisp nil)
-        description-prompt)
+        confirm-read-args
+        description-prompt
+        message-text
+        sent-prompt)
     (cl-letf (((symbol-function 'y-or-n-p)
-               (lambda (_prompt) t))
-              ((symbol-function 'ai-code-read-string)
-               (lambda (prompt &optional _initial-input _candidate-list)
-                 (setq description-prompt prompt)
-                 "M-x foo fails"))
-              ((symbol-function 'ai-code--insert-prompt)
                (lambda (&rest _args)
-                 (ert-fail "Should not send a prompt when eval_elisp is disabled globally."))))
-      (should-error
-       (ai-code-debug-emacs-runtime)
-       :type 'user-error))
+                 (ert-fail "Should not ask whether eval_elisp is allowed.")))
+              ((symbol-function 'message)
+               (lambda (format-string &rest args)
+                 (setq message-text (apply #'format format-string args))))
+              ((symbol-function 'ai-code-read-string)
+               (lambda (prompt &optional initial-input _candidate-list)
+                 (cond
+                  ((string-match-p "Describe the Emacs runtime issue" prompt)
+                   (setq description-prompt prompt)
+                   "M-x foo fails")
+                  ((string-match-p "Confirm and edit Emacs runtime debug prompt" prompt)
+                   (setq confirm-read-args (list prompt initial-input))
+                   initial-input)
+                  (t
+                   (ert-fail (format "Unexpected prompt: %s" prompt))))))
+              ((symbol-function 'ai-code--insert-prompt)
+               (lambda (prompt)
+                 (setq sent-prompt prompt))))
+      (ai-code-debug-emacs-runtime))
     (should (string-match-p "Describe the Emacs runtime issue"
-                            description-prompt))))
+                            description-prompt))
+    (should (string-match-p "eval_elisp is disabled" message-text))
+    (should (string-match-p "better to turn it on" message-text))
+    (should (string-match-p "improve debugging capability" message-text))
+    (should (string-match-p
+             "eval_elisp is disabled in your Emacs MCP config"
+             (cadr confirm-read-args)))
+    (should (string-match-p "M-x foo fails" sent-prompt))))
 
-(ert-deftest ai-code-test-debug-emacs-runtime-distinguishes-config-from-run-consent ()
-  "Debug Emacs runtime should separate global eval availability from per-run consent."
+(ert-deftest ai-code-test-debug-emacs-runtime-always-allows-enabled-eval ()
+  "Debug Emacs runtime should not mention per-run eval consent."
   (let (confirm-read-args)
     (let ((ai-code-mcp-debug-tools-enabled t)
           (ai-code-mcp-debug-tools-enable-eval-elisp t))
       (cl-letf (((symbol-function 'y-or-n-p)
-                 (lambda (_prompt) nil))
+                 (lambda (&rest _args)
+                   (ert-fail "Should not ask whether eval_elisp is allowed.")))
                 ((symbol-function 'ai-code-read-string)
                  (lambda (prompt &optional initial-input _candidate-list)
                    (if (string-match-p "Confirm and edit Emacs runtime debug prompt" prompt)
@@ -671,11 +698,11 @@
                  (lambda (&rest _args) nil)))
         (ai-code-debug-emacs-runtime)))
     (should (string-match-p
-             "eval_elisp is enabled in your Emacs MCP config"
+             "eval_elisp is enabled in your Emacs MCP config\\."
              (cadr confirm-read-args)))
-    (should (string-match-p
-             "not requested for this debugging run"
-             (cadr confirm-read-args)))))
+    (should-not (string-match-p
+                 "debugging run"
+                 (cadr confirm-read-args)))))
 
 (ert-deftest ai-code-test-debug-emacs-runtime-removes-stale-done-comment ()
   "The source should not keep the stale DONE note for the runtime debug menu item."
