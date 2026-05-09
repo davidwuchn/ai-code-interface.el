@@ -26,6 +26,7 @@
 (declare-function magit-rev-verify "magit-git" (rev))
 (declare-function magit-run-git "magit-git" (&rest args))
 (declare-function magit-worktree-status "magit-worktree" ())
+(declare-function difftastic-magit-diff "difftastic" ())
 
 (defcustom ai-code-init-project-gtags-label "pygments"
   "Default label passed to Helm-Gtags when initializing a project.
@@ -230,8 +231,12 @@ If the selected mode is `generate-diff-file', generate a diff file.
 If `send-current-branch-pr', ask for the target branch.
 Otherwise, ask for the relevant pull request or issue URL."
   (let* ((review-mode (ai-code--pull-or-review-pr-mode-choice)))
-    (if (eq review-mode 'generate-diff-file)
-        (ai-code--magit-generate-feature-branch-diff-file)
+    (cond
+     ((eq review-mode 'generate-diff-file)
+      (ai-code--magit-generate-feature-branch-diff-file))
+     ((eq review-mode 'review-current-branch-with-difftastic)
+      (ai-code--review-current-branch-with-difftastic))
+     (t
       (let* ((init-prompt
               (if (eq review-mode 'send-current-branch-pr)
                   (progn
@@ -258,7 +263,7 @@ Otherwise, ask for the relevant pull request or issue URL."
                                "Enter PR creation prompt: "
                              "Enter review prompt: "))
              (prompt (ai-code-read-string prompt-label init-prompt)))
-        (ai-code--insert-prompt prompt)))))
+        (ai-code--insert-prompt prompt))))))
 
 (defun ai-code--pull-or-review-pr-mode-choice ()
   "Prompt user to choose analysis mode for a pull request or issue."
@@ -270,6 +275,8 @@ Otherwise, ask for the relevant pull request or issue URL."
                               ("Check unresolved feedback" . check-feedback)
                               ("Prepare PR description" . prepare-pr-description)
                               ("Send out PR for current branch" . send-current-branch-pr)
+                              ("Review current branch with difftastic"
+                               . review-current-branch-with-difftastic)
                               ("Investigate issue" . investigate-issue)
                               ("Review GitHub CI checks" . review-ci-checks)
                               ("Resolve merge conflict" . resolve-merge-conflict)
@@ -279,6 +286,17 @@ Otherwise, ask for the relevant pull request or issue URL."
                                        nil t nil nil "Review the PR")))
     (or (alist-get review-mode review-mode-alist nil nil #'string=)
         'review-pr)))
+
+(defun ai-code--review-current-branch-with-difftastic ()
+  "Review the current branch with `difftastic-magit-diff'.
+Signal a helpful error when difftastic is unavailable."
+  (require 'difftastic nil t)
+  (unless (fboundp 'difftastic-magit-diff)
+    (user-error
+     (concat
+      "The package difftastic is not installed. "
+      "Install it from MELPA or https://github.com/pkryger/difftastic.el")))
+  (call-interactively #'difftastic-magit-diff))
 
 (defun ai-code--build-pr-init-prompt (review-source target-url review-mode)
   "Build initial prompt for REVIEW-SOURCE, TARGET-URL and REVIEW-MODE."

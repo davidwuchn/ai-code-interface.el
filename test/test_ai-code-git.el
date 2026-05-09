@@ -14,6 +14,7 @@
 (require 'ai-code-prompt-mode)
 (require 'ai-code-discussion)
 
+(declare-function difftastic-magit-diff "difftastic" ())
 (declare-function magit-worktree-status "magit-worktree" ())
 
 (defun ai-code-test--gitignore-required-entries ()
@@ -520,6 +521,52 @@ Return (CAPTURED-PROMPT DIFF-CALLED)."
     (should (eq (ai-code--pull-or-review-pr-mode-choice)
                 'resolve-merge-conflict))))
 
+(ert-deftest ai-code-test-pull-or-review-pr-mode-choice-review-current-branch-with-difftastic ()
+  "Choosing the difftastic mode should return `review-current-branch-with-difftastic'."
+  (cl-letf (((symbol-function 'completing-read)
+             (lambda (&rest _args) "Review current branch with difftastic")))
+    (should (eq (ai-code--pull-or-review-pr-mode-choice)
+                'review-current-branch-with-difftastic))))
+
+(ert-deftest ai-code-test-pull-or-review-pr-with-source-review-current-branch-with-difftastic ()
+  "Difftastic mode should dispatch to the dedicated review helper."
+  (let (difftastic-called)
+    (cl-letf (((symbol-function 'completing-read)
+               (lambda (&rest _args) "Review current branch with difftastic"))
+              ((symbol-function 'ai-code--review-current-branch-with-difftastic)
+               (lambda ()
+                 (setq difftastic-called t))))
+      (ai-code--pull-or-review-pr-with-source 'github-mcp)
+      (should difftastic-called))))
+
+(ert-deftest ai-code-test-review-current-branch-with-difftastic-calls-command ()
+  "When difftastic is available, run its Magit diff command interactively."
+  (let (captured-command)
+    (cl-letf (((symbol-function 'require)
+               (lambda (feature &optional _filename _noerror)
+                 (eq feature 'difftastic)))
+              ((symbol-function 'fboundp)
+               (lambda (fn)
+                 (eq fn 'difftastic-magit-diff)))
+              ((symbol-function 'call-interactively)
+               (lambda (fn &optional _record-flag _keys)
+                 (setq captured-command fn))))
+      (ai-code--review-current-branch-with-difftastic)
+      (should (eq captured-command #'difftastic-magit-diff)))))
+
+(ert-deftest ai-code-test-review-current-branch-with-difftastic-signals-install-guidance ()
+  "When difftastic is unavailable, show installation guidance."
+  (cl-letf (((symbol-function 'require)
+             (lambda (_feature &optional _filename _noerror)
+               nil))
+            ((symbol-function 'fboundp)
+             (lambda (_fn) nil)))
+    (let ((error-message
+           (cadr (should-error (ai-code--review-current-branch-with-difftastic)
+                               :type 'user-error))))
+      (should (string-match-p "MELPA" error-message))
+      (should (string-match-p "pkryger/difftastic\\.el" error-message)))))
+
 (ert-deftest ai-code-test-pull-or-review-diff-file-resolve-merge-conflict-github-mcp ()
   "When choosing resolve merge conflict mode with GitHub MCP, prompt should target merge conflicts."
   (pcase-let ((`(,captured-prompt ,diff-called)
@@ -556,7 +603,7 @@ Return (CAPTURED-PROMPT DIFF-CALLED)."
       (should-not completing-read-called))))
 
 (ert-deftest ai-code-test-action-choice-prompts-when-default-nil ()
-  "When `ai-code-default-review-source' is nil, use completing-read."
+  "When `ai-code-default-review-source' is nil, use `completing-read'."
   (let ((ai-code-default-review-source nil)
         (completing-read-called nil))
     (cl-letf (((symbol-function 'completing-read)
