@@ -2,6 +2,8 @@
 * Release history
 
 ** Main branch change
+- Feat: Add difftastic integration for AI-generated code review
+- Chore: Support resuming AI sessions from a selected UUID
 
 ** 1.78
 - Chore: tweak auto follow up suggestion feature
