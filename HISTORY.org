@@ -2,6 +2,8 @@
 * Release history
 
 ** Main branch change
+- Chore: Add AI session side-panel resize shortcuts, inside AI coding session buffer
+  - C-. to increase AI coding session panel size, C-, to decrease
 - Refactor: Move more code from ai-code.el to ai-code-harness.el
 - Feat: Add difftastic integration for AI-generated code review
 - Chore: Support resuming AI sessions from a selected UUID
