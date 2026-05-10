@@ -188,8 +188,8 @@ When .gitignore is missing some entries, they should be added."
 (ert-deftest ai-code-test-pull-or-review-diff-file-use-github-mcp ()
   "When user chooses GitHub MCP in non-diff buffer, insert a PR review prompt."
   (pcase-let ((`(,captured-prompt ,diff-called)
-               (ai-code-test--run-pull-or-review-diff-file "Use GitHub MCP server"
-                                                           "https://github.com/acme/demo/pull/123")))
+                (ai-code-test--run-pull-or-review-diff-file "Use GitHub MCP server"
+                                                            "https://github.com/acme/demo/pull/123")))
     (let ((case-fold-search nil))
       (should (string-match-p "Use GitHub MCP server" captured-prompt)))
     (should (string-match-p "https://github.com/acme/demo/pull/123" captured-prompt))
@@ -263,6 +263,22 @@ When .gitignore is missing some entries, they should be added."
              (lambda (&rest _args) "Review GitHub CI checks")))
     (should (eq (ai-code--pull-or-review-pr-mode-choice)
                 'review-ci-checks))))
+
+(ert-deftest ai-code-test-pull-or-review-pr-mode-choice-explain-code-change ()
+  "Choosing explain code change mode should return `explain-code-change'."
+  (cl-letf (((symbol-function 'completing-read)
+             (lambda (&rest _args) "Explain code change")))
+    (should (eq (ai-code--pull-or-review-pr-mode-choice)
+                'explain-code-change))))
+
+(ert-deftest ai-code-test-pull-or-review-source-instruction-explain-code-change ()
+  "Explain-code-change mode should inspect the diff, not review comments."
+  (let ((instruction
+         (ai-code--pull-or-review-source-instruction 'github-mcp
+                                                     'explain-code-change)))
+    (should (string-match-p "GitHub MCP server" instruction))
+    (should (string-match-p "diff" (downcase instruction)))
+    (should-not (string-match-p "review comments" (downcase instruction)))))
 
 (ert-deftest ai-code-test-pull-or-review-pr-mode-choice-send-current-branch-pr ()
   "Choosing current branch PR mode should return `send-current-branch-pr'."
@@ -511,8 +527,29 @@ Return (CAPTURED-PROMPT DIFF-CALLED)."
                (lambda (&rest _args) "Generate diff file"))
               ((symbol-function 'ai-code--magit-generate-feature-branch-diff-file)
                (lambda () (setq diff-called t))))
+       (ai-code--pull-or-review-pr-with-source 'github-mcp)
+       (should diff-called))))
+
+(ert-deftest ai-code-test-pull-or-review-pr-with-source-explain-code-change-shares-flow ()
+  "Explain code change mode should dispatch to the shared explanation flow."
+  (let (captured-review-source require-called)
+    (cl-letf (((symbol-function 'completing-read)
+               (lambda (&rest _args) "Explain code change"))
+              ((symbol-function 'require)
+               (lambda (feature &optional _filename _noerror)
+                 (setq require-called t)
+                 (unless (eq feature 'ai-code-discussion)
+                   (ert-fail (format "Unexpected require: %S" feature)))
+                 t))
+              ((symbol-function 'fboundp)
+               (lambda (fn)
+                 (eq fn 'ai-code--explain-code-change)))
+              ((symbol-function 'ai-code--explain-code-change)
+               (lambda (&optional review-source)
+                 (setq captured-review-source review-source))))
       (ai-code--pull-or-review-pr-with-source 'github-mcp)
-      (should diff-called))))
+      (should require-called)
+      (should (eq captured-review-source 'github-mcp)))))
 
 (ert-deftest ai-code-test-pull-or-review-pr-mode-choice-resolve-merge-conflict ()
   "Choosing resolve merge conflict mode should return `resolve-merge-conflict'."
@@ -588,8 +625,18 @@ Return (CAPTURED-PROMPT DIFF-CALLED)."
                (lambda (&rest _args)
                  (setq completing-read-called t)
                  "Use GitHub MCP server")))
-      (should (eq (ai-code--pull-or-review-action-choice) 'github-mcp))
-      (should-not completing-read-called))))
+       (should (eq (ai-code--pull-or-review-action-choice) 'github-mcp))
+       (should-not completing-read-called))))
+
+(ert-deftest ai-code-test-pull-or-review-message-displays-config-hint ()
+  "The review-source guidance should be messaged in the minibuffer."
+  (let (captured-message)
+    (cl-letf (((symbol-function 'message)
+               (lambda (format-string &rest args)
+                 (setq captured-message (apply #'format format-string args)))))
+      (ai-code--message-review-source-config-hint)
+      (should (string-match-p "ai-code-default-review-source" captured-message))
+      (should (string-match-p "C-c a v" captured-message)))))
 
 (ert-deftest ai-code-test-action-choice-returns-gh-cli-when-default-set ()
   "When `ai-code-default-review-source' is `gh-cli', return it directly."
@@ -612,6 +659,32 @@ Return (CAPTURED-PROMPT DIFF-CALLED)."
                  "Use GitHub MCP server")))
       (should (eq (ai-code--pull-or-review-action-choice) 'github-mcp))
       (should completing-read-called))))
+
+(ert-deftest ai-code-test-pull-or-review-diff-file-messages-config-hint-when-default-nil ()
+  "When no default review source is configured, `C-c a v' should message a hint."
+  (let ((ai-code-default-review-source nil)
+        hint-called)
+    (cl-letf (((symbol-function 'completing-read)
+               (lambda (&rest _args) "Use GitHub MCP server"))
+              ((symbol-function 'ai-code--pull-or-review-pr-with-source)
+               (lambda (_review-source)))
+              ((symbol-function 'ai-code--message-review-source-config-hint)
+               (lambda ()
+                 (setq hint-called t))))
+      (ai-code-pull-or-review-diff-file)
+      (should hint-called))))
+
+(ert-deftest ai-code-test-pull-or-review-diff-file-skips-config-hint-when-default-set ()
+  "When a default review source is configured, `C-c a v' should skip the hint."
+  (let ((ai-code-default-review-source 'github-mcp)
+        hint-called)
+    (cl-letf (((symbol-function 'ai-code--pull-or-review-pr-with-source)
+               (lambda (_review-source)))
+              ((symbol-function 'ai-code--message-review-source-config-hint)
+               (lambda ()
+                 (setq hint-called t))))
+      (ai-code-pull-or-review-diff-file)
+      (should-not hint-called))))
 
 (provide 'test_ai-code-git)
 
