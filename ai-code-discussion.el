@@ -10,12 +10,12 @@
 ;;; Code:
 
 (require 'which-func)
+(require 'savehist)
 
 (require 'ai-code-input)
 (require 'ai-code-prompt-mode)
 (require 'ai-code-change)
 
-(declare-function ai-code-read-string "ai-code-input")
 (declare-function ai-code--insert-prompt "ai-code-prompt-mode")
 (declare-function ai-code--get-clipboard-text "ai-code")
 (declare-function ai-code-call-gptel-sync "ai-code-prompt-mode")
@@ -25,11 +25,25 @@
 (declare-function ai-code--pull-or-review-action-choice "ai-code-github")
 (declare-function ai-code--pull-or-review-source-instruction "ai-code-github"
                   (review-source &optional review-mode))
+(declare-function org-current-level "org")
+(declare-function org-roam-db-update-file "org-roam-db" (&optional file-path no-require))
+(declare-function org-roam-db-sync "org-roam-db" (&optional force))
 (declare-function dired-get-filename "dired" (&optional localp no-error-if-not-filep))
 (declare-function dired-get-marked-files "dired"
                   (&optional localp arg filter distinguish-one-marked error-if-none-p))
 
 (defvar ai-code--repo-context-info)
+(defvar org-roam-directory)
+(defvar ai-code-note-request-history nil
+  "Minibuffer history for note requests.")
+
+(defun ai-code--ensure-note-request-history ()
+  "Register persistent minibuffer history for note requests.
+Only adds the variable to savehist tracking; does not enable savehist-mode.
+Users should enable savehist-mode in their Emacs configuration to persist history."
+  (add-to-list 'savehist-additional-variables 'ai-code-note-request-history))
+
+(ai-code--ensure-note-request-history)
 
 (defconst ai-code-discussion--question-only-note
   "Note: This is a question only - please do not modify the code."
@@ -661,13 +675,9 @@ This value is used by `ai-code-take-notes' when suggesting where to store notes.
   :type 'string
   :group 'ai-code)
 
-;;;###autoload
-(defcustom ai-code-notes-use-gptel-headline nil
-  "Whether to use GPTel to generate headline for notes.
-If non-nil, call `ai-code-call-gptel-sync` to generate a smart default
-headline based on the selected content.  Otherwise, prompt with empty default."
-  :type 'boolean
-  :group 'ai-code)
+(defconst ai-code-discussion--default-note-request
+  "Content of the most recent AI output"
+  "Default request text for `ai-code-take-notes'.")
 
 (defun ai-code--get-note-candidates (default-note-file)
   "Get a list of candidate note files.
@@ -691,20 +701,6 @@ DEFAULT-NOTE-FILE is included in the list.  Visible org buffers are prioritized.
                      (list default-note-file-truename)
                      org-buffer-files)))))
 
-(defun ai-code--generate-note-headline (content)
-  "Generate a headline for CONTENT using AI if configured."
-  (when ai-code-notes-use-gptel-headline
-    (condition-case err
-        (string-trim
-         (ai-code-call-gptel-sync
-          (format "Generate a concise headline (max 10 words) for this note content. Only return the headline text without quotes or extra formatting:\n\n%s"
-                  (if (> (length content) 500)
-                      (substring content 0 500)
-                    content))))
-      (error
-       (message "GPTel headline generation failed: %s" (error-message-string err))
-       ""))))
-
 (defun ai-code--append-org-note (file title content)
   "Append a note with TITLE and CONTENT to FILE."
   (let ((note-dir (file-name-directory file)))
@@ -722,32 +718,134 @@ DEFAULT-NOTE-FILE is included in the list.  Visible org buffers are prioritized.
       (insert "\n"))
     (save-buffer)))
 
+(defun ai-code--build-note-insert-prompt (file-path line-number note-request)
+  "Build an AI prompt to insert a note into FILE-PATH.
+LINE-NUMBER and NOTE-REQUEST are included in the prompt context."
+  (format (concat
+           "Insert the note into the current Org file.\n"
+           "Target file: %s\n"
+           "Insert location: around line %d (current cursor position)\n\n"
+           "Note request:\n%s\n\n"
+           "Only update the requested insertion location. Do not change unrelated sections. Go ahead and start do the work.")
+          file-path
+          line-number
+          note-request))
+
+(defun ai-code--target-directory-under-org-roam-p (target-dir)
+  "Return non-nil when TARGET-DIR is under `org-roam-directory'.
+Normalizes paths for robustness against symlinks and case sensitivity."
+  (and (ai-code--org-roam-ready-p)
+       (let ((target-expanded (expand-file-name target-dir))
+             (roam-expanded (expand-file-name org-roam-directory)))
+         (string-prefix-p (file-name-as-directory roam-expanded)
+                         (file-name-as-directory target-expanded)))))
+
+(defun ai-code--build-note-create-prompt (target-dir note-request)
+  "Build an AI prompt to create a note under TARGET-DIR.
+NOTE-REQUEST is included in the prompt body."
+  (format (concat
+           "Create a new Org note file under directory: %s\n"
+           "Automatically determine a concise filename from the note title/content you identified. "
+           "Use lowercase letters, numbers, and underscores for the filename, with .org extension.\n\n"
+           "Note request:\n%s\n\n"
+           "%s"
+           "Do not modify unrelated files. Go ahead and start the work.")
+          target-dir
+          note-request
+          (if (ai-code--target-directory-under-org-roam-p target-dir)
+              "After creating the note file, run org-roam-db-sync so it is discoverable by org-roam commands.\n\n"
+            "")))
+
+(defun ai-code--org-roam-ready-p ()
+  "Return non-nil when org-roam is available and configured."
+  (and (or (featurep 'org-roam) (require 'org-roam nil t))
+       (boundp 'org-roam-directory)
+       (stringp org-roam-directory)
+       (not (string-empty-p org-roam-directory))))
+
+(defun ai-code--select-note-target-directory (default-note-directory)
+  "Select note target directory using DEFAULT-NOTE-DIRECTORY as fallback."
+  (let ((fallback-dir (file-name-as-directory default-note-directory)))
+    (if (and (ai-code--org-roam-ready-p)
+             (y-or-n-p (format "Create note under org-roam-directory (%s)? "
+                               org-roam-directory)))
+        (file-name-as-directory (expand-file-name org-roam-directory))
+      (file-name-as-directory
+       (read-directory-name "Directory for new note: "
+                            fallback-dir
+                            fallback-dir
+                            t)))))
+
+(defun ai-code--insert-org-note-at-point (title content)
+  "Insert a note with TITLE and CONTENT at point in current Org buffer."
+  (let ((level (or (org-current-level) 1)))
+    (unless (bolp)
+      (insert "\n"))
+    (insert (make-string level ?*) " " title "\n")
+    (org-insert-time-stamp (current-time) t nil)
+    (insert "\n\n" content "\n")))
+
+(defun ai-code--sync-org-roam-note-if-needed (note-file)
+  "Sync NOTE-FILE into org-roam DB when NOTE-FILE is under `org-roam-directory'."
+  (when (and (ai-code--org-roam-ready-p)
+             (file-in-directory-p (file-truename note-file)
+                                 (file-truename (expand-file-name org-roam-directory))))
+    (condition-case err
+        (progn
+          (when (fboundp 'org-roam-db-update-file)
+            (org-roam-db-update-file note-file t))
+          (when (fboundp 'org-roam-db-sync)
+            (org-roam-db-sync)))
+      (error
+       (message "Failed to sync org-roam note: %s" (error-message-string err))))))
+
+(defun ai-code--read-note-request ()
+  "Prompt user for the note request and return a non-empty string."
+  (let ((note-request (string-trim
+                       (or (read-string "Specification for the note? "
+                                        ai-code-discussion--default-note-request
+                                        'ai-code-note-request-history)
+                           ""))))
+    (when (string-empty-p note-request)
+      (user-error "Note request cannot be empty"))
+    note-request))
+
 ;;;###autoload
-(defun ai-code-take-notes ()
-  "Take notes from selected region and save to a note file.
-When there is a selected region, prompt to select from currently open
-org buffers or the default note file path (.ai.code.notes.org in the
-.ai.code.files/ directory).  Add the section title as a headline at the
-end of the note file, and put the selected region as content of that section."
-  (interactive)
-  (let* ((files-dir (ai-code--ensure-files-directory))
-         (default-note-file (expand-file-name ai-code-notes-file-name files-dir)))
-    (if (not (region-active-p))
-        (find-file-other-window default-note-file)
-      (let* ((region-text (filter-buffer-substring (region-beginning) (region-end) nil))
-             (candidates (ai-code--get-note-candidates default-note-file))
-             (note-file (completing-read "Note file: " candidates))
-             (default-title (ai-code--generate-note-headline region-text))
-             (section-title (ai-code-read-string "Section title: " (or default-title ""))))
-        (when (string-empty-p section-title)
-          (user-error "Section title cannot be empty"))
-        (ai-code--append-org-note note-file section-title region-text)
-        ;; Open note file in other window and scroll to bottom
-        (let ((note-buffer (find-file-other-window note-file)))
-          (with-selected-window (get-buffer-window note-buffer)
-            (goto-char (point-max))
-            (recenter -1)))
-        (message "Notes added to %s under section: %s" note-file section-title)))))
+(defun ai-code-take-notes (&optional arg)
+  "Take notes by AI request and send prompt to the AI session.
+When in an Org buffer with a saved file, generates a prompt to insert note content.
+Otherwise, generates a prompt to create a new note file.
+With prefix ARG, open the default note file in other window instead."
+  (interactive "P")
+  (let ((files-dir (ai-code--ensure-files-directory)))
+    (if arg
+        (let ((note-file (expand-file-name ai-code-notes-file-name files-dir)))
+          (find-file-other-window note-file))
+      (let* ((default-note-dir (file-name-as-directory files-dir))
+             (note-request (ai-code--read-note-request)))
+        (if (derived-mode-p 'org-mode)
+            (if (not buffer-file-name)
+                (user-error "Org buffer must be saved to a file before taking notes")
+              (let* ((target-file buffer-file-name)
+                     (line-number (line-number-at-pos))
+                     (default-prompt (ai-code--build-note-insert-prompt
+                                      target-file
+                                      line-number
+                                      note-request)))
+                (when-let ((final-prompt (ai-code-read-string "Prompt: " default-prompt)))
+                  (ai-code--insert-prompt final-prompt)
+                  (message "Generated AI prompt for note insertion in %s" target-file))))
+          (let* ((target-dir (ai-code--select-note-target-directory default-note-dir))
+                 (default-prompt (ai-code--build-note-create-prompt
+                                  target-dir
+                                  note-request)))
+            (when-let ((final-prompt (ai-code-read-string "Prompt: " default-prompt)))
+              (ai-code--insert-prompt final-prompt)
+              (when (ai-code--target-directory-under-org-roam-p target-dir)
+                (when (require 'org-roam nil t)
+                  (org-roam-db-sync)))
+              (message "Generated AI prompt for note creation under %s" target-dir))))))))
+
 
 (provide 'ai-code-discussion)
 
