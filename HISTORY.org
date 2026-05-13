@@ -2,6 +2,8 @@
 * Release history
 
 ** Main branch change
+- Fix: Rebind file buffers when starting a new AI session
+- Feat: Add dedicated AI note search with a separate menu key
 - Feat: Redesign ai-code-take-notes for Org and Org-roam integration
 
 ** 1.79
