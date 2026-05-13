@@ -1062,11 +1062,12 @@ POST-START-FN is called with (BUFFER PROCESS INSTANCE-NAME) after a new
 session starts successfully."
   (setq process-table (or process-table ai-code-backends-infra--processes))
   (ai-code-backends-infra--cleanup-dead-processes process-table)
-  (let* ((session-context (ai-code-backends-infra--resolve-session-context
-                           working-dir
-                           buffer-name
-                           process-table
-                           prefix
+  (let* ((source-buffer (current-buffer))
+         (session-context (ai-code-backends-infra--resolve-session-context
+                            working-dir
+                            buffer-name
+                            process-table
+                            prefix
                            instance-name
                            force-prompt))
          (resolved-instance (plist-get session-context :instance-name))
@@ -1075,11 +1076,14 @@ session starts successfully."
          (existing-process (plist-get session-context :existing-process))
          (buffer (plist-get session-context :buffer)))
     (if (and existing-process (process-live-p existing-process) buffer)
-        (ai-code-backends-infra--reuse-session-window
-         buffer
-         working-dir
-         prefix
-         multiline-input-sequence)
+        (progn
+          (ai-code-backends-infra--reuse-session-window
+           buffer
+           working-dir
+           prefix
+           multiline-input-sequence)
+          (ai-code-backends-infra--remember-file-session-buffer
+           prefix source-buffer buffer))
       (let* ((buffer-and-process
               (ai-code-backends-infra--create-terminal-session
                resolved-buffer-name working-dir command env-vars))
@@ -1088,23 +1092,26 @@ session starts successfully."
         (puthash session-key process process-table)
         ;; Wait for initialization before checking process status
         (sleep-for ai-code-backends-infra-terminal-initialization-delay)
-        ;; Check if process is still alive after initialization delay
-        (if (and process (process-live-p process))
-            (ai-code-backends-infra--finalize-started-session
-             new-buffer
-             process
-             working-dir
-             resolved-buffer-name
-             process-table
-             resolved-instance
-             prefix
-             escape-fn
-             cleanup-fn
-             multiline-input-sequence
-             post-start-fn)
-          (ai-code-backends-infra--handle-session-start-failure
-           new-buffer
-           session-key
+         ;; Check if process is still alive after initialization delay
+         (if (and process (process-live-p process))
+             (progn
+               (ai-code-backends-infra--finalize-started-session
+                new-buffer
+                process
+                working-dir
+                resolved-buffer-name
+                process-table
+                resolved-instance
+                prefix
+                escape-fn
+                cleanup-fn
+                multiline-input-sequence
+                post-start-fn)
+               (ai-code-backends-infra--remember-file-session-buffer
+                prefix source-buffer new-buffer))
+           (ai-code-backends-infra--handle-session-start-failure
+            new-buffer
+            session-key
            process-table))))))
 
 (defun ai-code-backends-infra--switch-to-session-buffer (buffer-name missing-message

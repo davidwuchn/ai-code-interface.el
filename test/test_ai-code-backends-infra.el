@@ -1008,8 +1008,64 @@
           (should (eq (gethash (cons working-dir "default")
                                ai-code-backends-infra--processes)
                       'mock-process)))
-      (when (buffer-live-p buffer)
-        (kill-buffer buffer)))))
+       (when (buffer-live-p buffer)
+         (kill-buffer buffer)))))
+
+(ert-deftest test-ai-code-backends-infra-toggle-or-create-session-rebinds-source-file ()
+  "Starting a new session from a file buffer should reattach that file."
+  (let* ((prefix "codex")
+         (working-dir "/tmp/ai-code-start-rebind/")
+         (source (generate-new-buffer " *ai-code-source-start-rebind*"))
+         (old-session (get-buffer-create "*codex[ai-code-start-rebind:a]*"))
+         (new-session (get-buffer-create "*codex[ai-code-start-rebind:b]*"))
+         (process-table (make-hash-table :test 'equal))
+         (process 'mock-process))
+    (unwind-protect
+        (progn
+          (clrhash ai-code-backends-infra--directory-buffer-map)
+          (when (boundp 'ai-code-backends-infra--file-session-map)
+            (clrhash ai-code-backends-infra--file-session-map))
+
+          (with-current-buffer source
+            (setq buffer-file-name "/tmp/ai-code-start-rebind/main.el")
+            (setq default-directory working-dir))
+          (with-current-buffer old-session
+            (setq-local ai-code-backends-infra--session-directory working-dir))
+          (ai-code-backends-infra--remember-file-session-buffer prefix source old-session)
+
+          (cl-letf (((symbol-function 'ai-code-backends-infra--cleanup-dead-processes)
+                     (lambda (_table) nil))
+                    ((symbol-function 'ai-code-backends-infra--create-terminal-session)
+                     (lambda (&rest _args)
+                       (cons new-session process)))
+                    ((symbol-function 'sleep-for)
+                     (lambda (&rest _args) nil))
+                    ((symbol-function 'process-live-p)
+                     (lambda (&rest _args) t))
+                    ((symbol-function 'set-process-sentinel)
+                     (lambda (&rest _args) nil))
+                    ((symbol-function 'ai-code-backends-infra--configure-session-buffer)
+                     (lambda (&rest _args) nil))
+                    ((symbol-function 'ai-code-backends-infra--display-buffer-in-side-window)
+                     (lambda (&rest _args) nil)))
+            (with-current-buffer source
+              (ai-code-backends-infra--toggle-or-create-session
+               working-dir
+               nil
+               process-table
+               "echo hi"
+               nil
+               nil
+               "b"
+               prefix)))
+
+          (should (eq (gethash
+                       (ai-code-backends-infra--file-session-map-key prefix source)
+                       ai-code-backends-infra--file-session-map)
+                      new-session)))
+      (dolist (buf (list source old-session new-session))
+        (when (buffer-live-p buf)
+          (kill-buffer buf))))))
 
 (ert-deftest test-ai-code-backends-infra-reuse-session-window-refreshes-hidden-buffer ()
   "Reusing a hidden session should refresh its state and display it."
