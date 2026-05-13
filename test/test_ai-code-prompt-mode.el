@@ -20,6 +20,7 @@
 (defvar ai-code-discussion-auto-follow-up-enabled)
 (defvar ai-code-discussion-auto-follow-up-suffix)
 (defvar ai-code-use-prompt-suffix)
+(defvar org-roam-directory)
 
 ;; Helper macro to set up and tear down the test environment
 (defmacro ai-code-with-test-repo (&rest body)
@@ -294,66 +295,39 @@ and ensures everything is cleaned up afterward."
      (when (file-directory-p files-dir)
        (delete-directory files-dir t)))))
 
-(ert-deftest ai-code-test-create-or-open-task-file-with-prefix-sends-search-prompt ()
-  "Test that prefix arg sends a confirmed search prompt to the AI session."
+(ert-deftest ai-code-test-create-or-open-task-file-prefix-still-opens-directory-for-empty-name ()
+  "Test that a prefix arg still opens the task directory for an empty task name."
   (ai-code-with-test-repo
    (let* ((files-dir (expand-file-name ".ai.code.files" git-root))
-          (search-dir (expand-file-name "notes" files-dir))
-          (read-calls nil)
-          (sent-command nil)
-          (switch-called nil))
-     (make-directory search-dir t)
+          (dired-called nil)
+          (dired-dir nil)
+          (sent-command nil))
      (unwind-protect
          (progn
-           (cl-letf (((symbol-function 'read-string)
-                      (lambda (prompt &optional initial-input history default-value _inherit)
-                        (push (list prompt initial-input history default-value) read-calls)
-                        (if (string-match-p "Directory to search" prompt)
-                            search-dir
-                          (ert-fail (format "Unexpected prompt: %s" prompt)))))
-                     ((symbol-function 'ai-code-read-string)
-                      (lambda (prompt &optional initial-input candidate-list)
-                        (push (list prompt initial-input candidate-list) read-calls)
-                        (cond
-                         ((string-match-p "Search description" prompt) "find todos about auth")
-                         ((string-match-p "Confirm search prompt" prompt) initial-input)
-                         (t (ert-fail (format "Unexpected prompt: %s" prompt))))))
-                     ((symbol-function 'ai-code-cli-send-command)
-                      (lambda (command)
-                        (setq sent-command command)))
-	                     ((symbol-function 'ai-code-cli-switch-to-buffer)
-	                      (lambda ()
-	                        (setq switch-called t)))
-	                     ((symbol-function 'message)
-	                      (lambda (&rest _args) nil)))
-	             (let ((current-prefix-arg '(4))
-	                   (ai-code-prompt-suffix nil)
-	                   (ai-code-auto-test-type nil)
-	                   (ai-code-auto-test-suffix nil)
-	                   (ai-code-discussion-auto-follow-up-enabled nil)
-	                   (ai-code-discussion-auto-follow-up-suffix nil)
-	                   (ai-code-use-prompt-suffix nil))
-	               (call-interactively #'ai-code-create-or-open-task-file))
-	             (should switch-called)
-             (should (equal (car (car (last read-calls)))
-                            "Directory to search org files: "))
-             (should (equal (nth 1 (car (last read-calls))) files-dir))
-             (should (eq (nth 2 (car (last read-calls)))
-                         'ai-code-task-search-directory-history))
-	             (should (equal sent-command
-	                            (concat
-	                             "Search the content of all .org files recursively under directory: "
-	                             "@"
-	                             (file-relative-name search-dir git-root)
-	                             "\n"
-	                             "Search target description: find todos about auth"
-	                             "\n"
-	                             "Focus on matching content inside the files, not just file names."
-	                             "\n"
-	                             "Return the relevant file paths, matched excerpts, and a concise summary."
-	                             "\n")))))
-	       (when (file-directory-p files-dir)
-	         (delete-directory files-dir t))))))
+            (cl-letf (((symbol-function 'completing-read)
+                       (lambda (prompt collection &rest _args)
+                         (cond
+                          ((string-match-p "Task name" prompt)
+                           (should (member "scratch.org" collection))
+                           "")
+                          (t
+                           (ert-fail (format "Unexpected prompt: %s" prompt))))))
+                      ((symbol-function 'dired-other-window)
+                       (lambda (dirname)
+                         (setq dired-called t)
+                         (setq dired-dir dirname)))
+                      ((symbol-function 'ai-code-cli-send-command)
+                       (lambda (command)
+                         (setq sent-command command)))
+                      ((symbol-function 'message)
+                       (lambda (&rest _args) nil)))
+              (let ((current-prefix-arg '(4)))
+                (call-interactively #'ai-code-create-or-open-task-file))
+              (should dired-called)
+              (should (equal dired-dir files-dir))
+              (should-not sent-command)))
+       (when (file-directory-p files-dir)
+         (delete-directory files-dir t))))))
 
 (ert-deftest ai-code-test-read-task-search-directory-expands-relative-input-from-files-dir ()
   "Relative search directories should resolve from AI-CODE-FILES-DIR."
@@ -366,6 +340,118 @@ and ensures everything is cleaned up afterward."
                  (string= dir expected-dir))))
       (should (equal (ai-code--read-task-search-directory ai-code-files-dir)
                      expected-dir)))))
+
+(ert-deftest ai-code-test-search-notes-with-ai-includes-task-and-additional-scopes ()
+  "Test that note search always includes task files and can add note paths."
+  (ai-code-with-test-repo
+   (let* ((files-dir (expand-file-name ".ai.code.files" git-root))
+          (roam-dir (expand-file-name "roam" git-root))
+          (external-dir (make-temp-file "ai-code-external-notes" t))
+          (org-roam-directory roam-dir)
+          (ai-code-note-search-additional-paths (list 'org-roam-directory external-dir))
+          (asked-scopes nil)
+          (sent-command nil)
+          (switch-called nil))
+     (make-directory roam-dir t)
+     (unwind-protect
+         (progn
+             (cl-letf (((symbol-function 'y-or-n-p)
+                        (lambda (prompt)
+                          (push prompt asked-scopes)
+                          t))
+                      ((symbol-function 'ai-code-read-string)
+                       (lambda (prompt &optional initial-input _candidate-list)
+                         (cond
+                          ((string-match-p "Search notes for" prompt)
+                          "auth design notes")
+                         ((string-match-p "Confirm search prompt" prompt)
+                          initial-input)
+                         (t
+                          (ert-fail (format "Unexpected prompt: %s" prompt))))))
+                     ((symbol-function 'ai-code-cli-send-command)
+                      (lambda (command)
+                        (setq sent-command command)))
+                     ((symbol-function 'ai-code-cli-switch-to-buffer)
+                      (lambda ()
+                        (setq switch-called t)))
+                     ((symbol-function 'message)
+                      (lambda (&rest _args) nil)))
+             (let ((ai-code-prompt-suffix nil)
+                   (ai-code-auto-test-type nil)
+                   (ai-code-auto-test-suffix nil)
+                   (ai-code-discussion-auto-follow-up-enabled nil)
+                   (ai-code-discussion-auto-follow-up-suffix nil)
+                    (ai-code-use-prompt-suffix nil))
+                (ai-code-search-notes-with-ai))
+              (should switch-called)
+              (should (= (length asked-scopes) 1))
+              (should (string-match-p
+                       (regexp-quote "Include additional note search paths from `ai-code-note-search-additional-paths`")
+                       (car asked-scopes)))
+              (should (string-match-p (regexp-quote files-dir) (car asked-scopes)))
+              (should (string-match-p
+                       (regexp-quote (concat "Search my notes and related files for: auth design notes\n"
+                                             "Search scope paths:\n"
+                                             "- @" (file-relative-name files-dir git-root) "\n"
+                                             "- @" (file-relative-name roam-dir git-root) "\n"
+                                             "- " external-dir "\n"
+                                             "Use the available search tools to inspect the selected paths.\n"
+                                             "Focus on relevant information inside files, not just file names.\n"
+                                             "Return the most relevant paths, matched excerpts, and a concise answer.\n"))
+                       sent-command))))
+        (when (file-directory-p external-dir)
+          (delete-directory external-dir t))))))
+
+(ert-deftest ai-code-test-search-notes-with-ai-keeps-task-files-when-additional-scopes-declined ()
+  "Test that note search still searches task files when extras are declined."
+  (ai-code-with-test-repo
+   (let* ((files-dir (expand-file-name ".ai.code.files" git-root))
+          (external-dir (make-temp-file "ai-code-external-notes" t))
+          (ai-code-note-search-additional-paths (list external-dir))
+          (asked-scopes nil)
+          (sent-command nil))
+     (cl-letf (((symbol-function 'y-or-n-p)
+                (lambda (prompt)
+                  (push prompt asked-scopes)
+                  nil))
+               ((symbol-function 'ai-code-read-string)
+                (lambda (prompt &optional initial-input _candidate-list)
+                  (cond
+                   ((string-match-p "Search notes for" prompt)
+                    "base only")
+                   ((string-match-p "Confirm search prompt" prompt)
+                    initial-input)
+                   (t
+                    (ert-fail (format "Unexpected prompt: %s" prompt))))))
+               ((symbol-function 'ai-code-cli-send-command)
+                (lambda (command)
+                  (setq sent-command command)))
+                ((symbol-function 'ai-code-cli-switch-to-buffer)
+                 (lambda ()))
+               ((symbol-function 'message)
+                (lambda (&rest _args) nil)))
+       (unwind-protect
+           (progn
+             (let ((ai-code-prompt-suffix nil)
+                   (ai-code-auto-test-type nil)
+                   (ai-code-auto-test-suffix nil)
+                   (ai-code-discussion-auto-follow-up-enabled nil)
+                   (ai-code-discussion-auto-follow-up-suffix nil)
+                   (ai-code-use-prompt-suffix nil))
+               (ai-code-search-notes-with-ai))
+             (should (= (length asked-scopes) 1))
+             (should (string-match-p (regexp-quote files-dir) (car asked-scopes)))
+             (should (string-match-p
+                      (regexp-quote (concat "Search my notes and related files for: base only\n"
+                                            "Search scope paths:\n"
+                                            "- @" (file-relative-name files-dir git-root) "\n"
+                                            "Use the available search tools to inspect the selected paths.\n"
+                                            "Focus on relevant information inside files, not just file names.\n"
+                                            "Return the most relevant paths, matched excerpts, and a concise answer.\n"))
+                      sent-command))
+             (should-not (string-match-p (regexp-quote external-dir) sent-command)))
+         (when (file-directory-p external-dir)
+           (delete-directory external-dir t)))))))
 
 (ert-deftest ai-code-test-create-or-open-task-file-create-new ()
   "Test that ai-code-create-or-open-task-file creates new task file with metadata."
