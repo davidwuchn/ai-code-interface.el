@@ -6,9 +6,11 @@
 
 ;;; Code:
 
+(require 'cl-lib)
 (require 'org)
 (require 'magit)
 
+(defvar ai-code-files-dir-name)
 (defvar yas-snippet-dirs)
 
 (declare-function ai-code--git-root "ai-code-file" (&optional dir))
@@ -421,7 +423,7 @@ If PROMPT-TEXT is a command (starts with /), execute it directly instead."
     (if (and (string-prefix-p "/" processed-prompt)
              (not (string-match-p " " processed-prompt)))
         (ai-code--execute-command processed-prompt)
-      (let* ((append-summary-p (and (derived-mode-p 'ai-code-prompt-mode)
+      (let* ((append-summary-p (and (derived-mode-p 'org-mode)
                                     (ignore-errors (save-excursion (org-back-to-heading t) t))
                                     (y-or-n-p "Append result summary to current section? ")))
              (final-prompt (if append-summary-p
@@ -510,6 +512,18 @@ based on the task name. Otherwise, use cleaned-up task name directly."
 
 (defvar ai-code-task-search-directory-history nil
   "Minibuffer history for task content search directories.")
+
+;;;###autoload
+(defcustom ai-code-note-search-additional-paths nil
+  "Additional paths to offer when searching notes with AI.
+Each entry may be a path string or a symbol whose value is a path string,
+for example `org-roam-directory'."
+  :type '(repeat
+          (choice
+           (directory :tag "Directory")
+           (string :tag "Path")
+           (symbol :tag "Variable")))
+  :group 'ai-code)
 
 (defun ai-code--get-files-directory ()
   "Get the task directory path.
@@ -694,6 +708,70 @@ SEARCH-DESCRIPTION describes what content the AI should search for."
    target-dir
    search-description))
 
+(defun ai-code--resolve-note-search-path (entry)
+  "Resolve note search ENTRY to an existing absolute path, or nil.
+ENTRY may be a path string or a symbol whose value is a path string."
+  (let* ((raw-value
+          (cond
+           ((symbolp entry)
+            (and (boundp entry) (symbol-value entry)))
+           ((stringp entry) entry)))
+         (path (and (stringp raw-value)
+                    (not (string-empty-p raw-value))
+                    (expand-file-name raw-value))))
+    (when (and path (file-exists-p path))
+      path)))
+
+(defun ai-code--note-search-scope-candidates (ai-code-files-dir)
+  "Return candidate note search scopes rooted at AI-CODE-FILES-DIR."
+  (cl-remove-duplicates
+   (delq nil
+         (cons ai-code-files-dir
+               (mapcar #'ai-code--resolve-note-search-path
+                       ai-code-note-search-additional-paths)))
+   :test #'string-equal))
+
+(defun ai-code--note-search-additional-scope-candidates (ai-code-files-dir)
+  "Return additional note search scopes beyond AI-CODE-FILES-DIR."
+  (cl-remove ai-code-files-dir
+             (ai-code--note-search-scope-candidates ai-code-files-dir)
+             :test #'string-equal))
+
+(defun ai-code--read-note-search-scopes (ai-code-files-dir)
+  "Return note search scopes rooted at AI-CODE-FILES-DIR.
+Always include AI-CODE-FILES-DIR.  When configured additional note paths
+exist, prompt once to optionally include them as well."
+  (let ((additional-scopes
+         (ai-code--note-search-additional-scope-candidates ai-code-files-dir)))
+    (if (and additional-scopes
+             (y-or-n-p
+              (format
+               "Include additional note search paths from `ai-code-note-search-additional-paths` along with %s? "
+               ai-code-files-dir)))
+        (cons ai-code-files-dir additional-scopes)
+      (list ai-code-files-dir))))
+
+(defun ai-code--build-note-search-prompt (scopes search-description)
+  "Build a prompt for searching SCOPES for SEARCH-DESCRIPTION."
+  (let ((git-root-truename
+         (when-let ((git-root (ai-code--git-root)))
+           (file-truename git-root))))
+    (format
+     (concat
+       "Search my notes and related files for: %s\n"
+       "Search scope paths:\n%s\n"
+       "Use the available search tools to inspect the selected paths.\n"
+       "Focus on relevant information inside files, not just file names.\n"
+       "Return the most relevant paths, matched excerpts, and a concise answer.")
+      search-description
+      (mapconcat
+      (lambda (scope)
+        (format "- %s"
+                 (if git-root-truename
+                     (ai-code--candidate-path scope git-root-truename)
+                   scope)))
+       scopes "\n"))))
+
 (defun ai-code--search-task-files-with-ai (ai-code-files-dir)
   "Prompt for task file search inputs and send a search request to AI."
   (let* ((target-dir (ai-code--read-task-search-directory ai-code-files-dir))
@@ -703,40 +781,48 @@ SEARCH-DESCRIPTION describes what content the AI should search for."
     (ai-code--insert-prompt confirmed-prompt)))
 
 ;;;###autoload
-(defun ai-code-create-or-open-task-file (&optional arg)
+(defun ai-code-search-notes-with-ai ()
+  "Ask AI to search task files and configured note paths."
+  (interactive)
+  (let* ((ai-code-files-dir (ai-code--ensure-files-directory))
+         (scopes (ai-code--read-note-search-scopes ai-code-files-dir))
+         (search-description (ai-code-read-string "Search notes for: "))
+         (default-prompt (ai-code--build-note-search-prompt scopes search-description))
+         (confirmed-prompt (ai-code-read-string "Confirm search prompt: " default-prompt)))
+    (ai-code--insert-prompt confirmed-prompt)))
+
+;;;###autoload
+(defun ai-code-create-or-open-task-file ()
   "Create or open an AI task file.
-Prompts for a task name. If empty, opens the task directory.
+Prompts for a task name. If empty, opens the task directory in Dired.
 If non-empty, optionally prompts for a URL, generates a filename
-using GPTel, and creates the task file.
-With prefix ARG, prompt AI to search org file content under a target directory."
-  (interactive "P")
+using GPTel, and creates the task file."
+  (interactive)
   (let ((ai-code-files-dir (ai-code--ensure-files-directory)))
-    (if arg
-        (ai-code--search-task-files-with-ai ai-code-files-dir)
-      (let* ((task-file-candidates (ai-code--task-file-candidates ai-code-files-dir))
-             (task-name (ai-code--read-task-name task-file-candidates))
-             (existing-task-file (ai-code--existing-task-file-path task-name task-file-candidates ai-code-files-dir)))
-        (cond
-         ((string-empty-p task-name)
-          (dired-other-window ai-code-files-dir)
-          (message "Opened task directory: %s" ai-code-files-dir))
-         (existing-task-file
-          (ai-code--open-or-create-task-file existing-task-file task-name task-name ""))
-         (t
-          (let* ((task-url (read-string "URL (optional, press Enter to skip): "))
-                 (generated-filename (ai-code--generate-task-filename task-name))
-                 (confirmed-filename (read-string "Confirm task filename (end with / to create subdirectory): " generated-filename))
-                 (current-dir (expand-file-name default-directory))
-                 (selected-dir (ai-code--select-task-target-directory ai-code-files-dir current-dir))
-                 (create-dir-only-p (string-suffix-p "/" confirmed-filename))
-                 (task-file (expand-file-name confirmed-filename selected-dir)))
-            (if create-dir-only-p
-                (let ((subdir (expand-file-name (directory-file-name confirmed-filename) selected-dir)))
-                  (unless (file-directory-p subdir)
-                    (make-directory subdir t))
-                  (dired-other-window subdir)
-                  (message "Opened directory: %s" subdir))
-              (ai-code--open-or-create-task-file task-file confirmed-filename task-name task-url)))))))))
+    (let* ((task-file-candidates (ai-code--task-file-candidates ai-code-files-dir))
+           (task-name (ai-code--read-task-name task-file-candidates))
+           (existing-task-file (ai-code--existing-task-file-path task-name task-file-candidates ai-code-files-dir)))
+      (cond
+       ((string-empty-p task-name)
+        (dired-other-window ai-code-files-dir)
+        (message "Opened task directory: %s" ai-code-files-dir))
+       (existing-task-file
+        (ai-code--open-or-create-task-file existing-task-file task-name task-name ""))
+       (t
+        (let* ((task-url (read-string "URL (optional, press Enter to skip): "))
+               (generated-filename (ai-code--generate-task-filename task-name))
+               (confirmed-filename (read-string "Confirm task filename (end with / to create subdirectory): " generated-filename))
+               (current-dir (expand-file-name default-directory))
+               (selected-dir (ai-code--select-task-target-directory ai-code-files-dir current-dir))
+               (create-dir-only-p (string-suffix-p "/" confirmed-filename))
+               (task-file (expand-file-name confirmed-filename selected-dir)))
+          (if create-dir-only-p
+              (let ((subdir (expand-file-name (directory-file-name confirmed-filename) selected-dir)))
+                (unless (file-directory-p subdir)
+                  (make-directory subdir t))
+                (dired-other-window subdir)
+                (message "Opened directory: %s" subdir))
+            (ai-code--open-or-create-task-file task-file confirmed-filename task-name task-url))))))))
 
 ;;;###autoload
 (add-to-list 'auto-mode-alist

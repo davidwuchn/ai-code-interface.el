@@ -2,6 +2,23 @@
 * Release history
 
 ** Main branch change
+- Fix: Rebind file buffers when starting a new AI session
+- Feat: Add dedicated AI note search with a separate menu key
+- Feat: Redesign ai-code-take-notes for Org and Org-roam integration
+
+** 1.79
+- Refactor: Move GitHub review and PR code to ai-code-github.el
+- Chore: Add code-change explanation flows to ai-code-explain and ai-code-pull-or-review-diff-file
+- Chore: Add AI session side-panel resize shortcuts, inside AI coding session buffer
+  - C-. to increase AI coding session panel size, C-, to decrease
+- Refactor: Move more code from ai-code.el to ai-code-harness.el
+- Feat: Add difftastic integration for AI-generated code review
+- Chore: Support resuming AI sessions from a selected UUID
+
+** 1.78
+- Chore: tweak auto follow up suggestion feature
+  - Turn it on by default. This is just about to let user to choose use it or not (in 2).
+  - Let user use y/n to use it in each non code change question.
 - Chore: Improve ai-code-implement-todo inside org-mode file
 - Fix: Make org TODO headline section work well with ai-code-implement-todo + helm
 - Chore: ai-code-code-change and ai-code-ask-question can trigger ai-code-implement-todo when the cursor is on a TODO comment or TODO org headline

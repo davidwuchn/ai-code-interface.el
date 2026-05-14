@@ -1,4 +1,4 @@
-[[file:./icon.png]]
+[[file:./ai-code-interface.png]]
 
 * AI Code Interface
 
@@ -98,10 +98,9 @@ Enable installation of packages from MELPA by adding an entry to package-archive
     ;; (ai-code-prompt-filepath-completion-mode -1)
     ;; Optional: Ask AI to run test after code changes, for a tighter build-test loop
     (setq ai-code-auto-test-type 'ask-me)
-    ;; Optional: Offer numbered next steps for discussion prompts at send time
-    ;; Customize `ai-code-discussion-auto-follow-up-enabled` to non-nil
-    ;; or set it directly like this:
-    ;; (setq ai-code-discussion-auto-follow-up-enabled t)
+    ;; Optional: Disable numbered next steps for discussion prompts at send time
+    ;; (enabled by default)
+    ;; (setq ai-code-discussion-auto-follow-up-enabled nil)
     ;; Optional: In AI session buffers, SPC in Evil normal state triggers the prompt-enter UI
     (with-eval-after-load 'evil (ai-code-backends-infra-evil-setup))
     ;; Optional: Turn on auto-revert buffer, so that the AI code change automatically appears in the buffer
@@ -134,7 +133,6 @@ Enable installation of packages from MELPA by adding an entry to package-archive
 - `whisper`: For speech-to-text input via `ai-code-speech-to-text-input`. Record audio, press `RET` to stop, then choose whether to insert the transcription into the current buffer, send it to the active AI coding session with editable initial input, or copy it to the clipboard.
 - `gptel`: For intelligent, AI-generated content headlines in the prompt file.
   - ai-code-task-use-gptel-filename: When non-nil, file name created by `ai-code-create-or-open-task-file` or `ai-code-create-file-or-dir` will have auto-generated filenames created by GPTel
-  - ai-code-notes-use-gptel-headline: When non-nil, notes created by `ai-code-take-notes` will have auto-generated headlines created by GPTel
   - ai-code-use-gptel-headline: When non-nil, prompts sent to the AI will have auto-generated headlines created by GPTel, providing better organization and readability in the prompt file
   - ai-code-use-gptel-classify-prompt: When non-nil, and `ai-code-auto-test-type` or `ai-code-discussion-auto-follow-up-enabled` is non-nil, classify whether the current prompt is about code changes so test prompts or discussion follow-up suggestions are only added when relevant
 - `flycheck`: To enable the `ai-code-flycheck-fix-errors-in-scope` command.
@@ -148,6 +146,7 @@ Enable installation of packages from MELPA by adding an entry to package-archive
 - *Transient-Driven Hub (`C-c a`)*: One keystroke opens a contextual transient menu that groups every capability (CLI control, code actions, agile workflows, utilities) so you never need to memorize scattered keybindings.
   - If the default wide layout does not fit your frame well, set `ai-code-menu-layout` to `two-columns` for a narrower menu with the same commands.
 - *AI CLI Session Management*: Start (`a`), resume (`R`), or jump back into (`z`) the active AI CLI buffer, instantly swap backends (`s`), upgrade them (`u`), install backend skills (`S`), edit backend configs (`g`), open backend agent file (`G`), and run prompts against the current file (`|`). It supports multiple sessions per project. The `S` entry is especially useful for installing shared skill packs such as [[https://github.com/obra/superpowers][obra/superpowers]].
+  - In AI session side windows, `C-.` grows and `C-,` shrinks the panel immediately. On left/right side windows it adjusts width; on top/bottom side windows it adjusts height.
 - *Clickable Session Links*: In AI session buffers, supported in-repo file references, nearby code symbols, and `http` / `https` URLs are underlined and clickable. File links such as `src/foo.el:42`, `src/foo.el:42:7`, `src/foo.el:L42-L60`, or `src/foo.el#L42-L60` jump directly to the right location, nearby symbols such as `setq-local`, `ai-code-session-link-enabled`, or `UserService.processRequest()` trigger code navigation in the associated file, and web links open in your browser. Symbol navigation first tries `xref`, then `helm-gtags` when available, and finally falls back to searching in the opened file buffer. Set `ai-code-session-link-enabled` to `nil` if you want to disable this link rendering.
 [[./clickable_link_ai_session.png]]
 - *Context-Aware Code Actions*: The menu exposes dedicated entries for changing code (`c`), implementing TODOs (`i`), asking questions (`q`), explaining code (`x`), sending free-form commands (`<SPC>`), and refreshing AI context (`@`). Each command automatically captures the surrounding function, region, or clipboard contents (via `C-u`) to keep prompts precise.
@@ -163,11 +162,12 @@ Enable installation of packages from MELPA by adding an entry to package-archive
 - *Implementing a TODO*: Write a comment in your code, like `;; TODO: Implement caching for this function`. Place your cursor on that line and press `C-c a`, then `i` (`ai-code-implement-todo`). The AI will generate the implementation based on the comment.
   - Relevant packages for TODO: [[https://github.com/tarsius/hl-todo][hl-todo]], [[https://github.com/alphapapa/magit-todos][magit-todos]]
 - *Asking a Question*: Place your cursor within a function, press `C-c a`, then `q` (`ai-code-ask-question`), type your question, and press Enter. The question, along with context, will be sent to the AI.
-- *Discussion follow-up suggestions*: Customize `ai-code-discussion-auto-follow-up-enabled` to non-nil, or set `(setq ai-code-discussion-auto-follow-up-enabled t)`. Then ask a question with `C-c a q` or use `C-c a <SPC>` for a design discussion. When enabled, AI Code asks at send time whether to append 2-3 numbered next-step suggestions, and the transient toggle on `C-c a F` lets you turn the feature on or off from the menu.
+- *Discussion follow-up suggestions*: `ai-code-discussion-auto-follow-up-enabled` is enabled by default. Set `(setq ai-code-discussion-auto-follow-up-enabled nil)` to turn it off. Then ask a question with `C-c a q` or use `C-c a <SPC>` for a design discussion. When enabled, AI Code asks at send time whether to append 2-3 numbered next-step suggestions, and the transient toggle on `C-c a F` lets you turn the feature on or off from the menu.
 - *Refactoring a Function*: With the cursor in a function, press `C-c a`, then `r` (`ai-code-refactor-book-method`). Select a refactoring technique from the list, provide any required input (e.g., a new method name), and the prompt will be generated.
 - *Automatically run tests after change*: When ai-code-auto-test-type is non-nil, AI will automatically run tests after code changes and follow up on results.
 - *One-prompt TDD with refactoring*: Press `C-c a`, then `t` (`ai-code-tdd-cycle`) and choose `5. Red + Green + Blue (One prompt)` to generate tests, implement code, run tests, and then refactor the changed code in one flow.
 - *Reviewing a Pull Request*: Press `C-c a`, then `v` (`ai-code-pull-or-review-diff-file`). Choose to generate a diff between two branches. The diff will be created in a new buffer, and you'll be prompted to start a review. Set `ai-code-default-review-source` to `github-mcp` or `gh-cli` to skip the review source prompt and always use that backend; leave it `nil` (the default) to be prompted each time.
+- *Reviewing the Current Branch with Difftastic*: Press `C-c a`, then `v`, and choose `Review current branch with difftastic` to run `difftastic-magit-diff` for a structural review of the current branch. If the =difftastic= package is not installed, AI Code will tell you to install it from MELPA or from [[https://github.com/pkryger/difftastic.el][pkryger/difftastic.el]].
 - *Multiple Sessions Support*: Start more AI coding session with C-c a a after launching one. Select active session with C-c a z. Prompt with above command will be sent to the selected session.
 - *Speech to Text Input*: Press `C-c a`, then `:` (`ai-code-speech-to-text-input`). Speak your prompt, press `RET` to stop recording, then choose whether to insert the transcription into the current buffer, send it to the active AI coding session after editing it in `ai-code-read-string`, or copy it to the clipboard.
 

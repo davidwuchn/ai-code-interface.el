@@ -17,6 +17,7 @@
 
 (require 'cl-lib)
 (require 'project)
+(require 'subr-x)
 (require 'ai-code-session-link)
 ;; Terminal-specific implementations live in dedicated modules so this
 ;; file can stay focused on shared session orchestration.
@@ -144,6 +145,22 @@ being sent for the response completion.")
 
 (defvar ai-code-cli-args-history nil
   "History list for CLI args prompts.")
+
+(defconst ai-code-backends-infra--uuid-regexp
+  "[[:xdigit:]]\\{8\\}-[[:xdigit:]]\\{4\\}-[[:xdigit:]]\\{4\\}-[[:xdigit:]]\\{4\\}-[[:xdigit:]]\\{12\\}"
+  "Regexp matching the general UUID 8-4-4-4-12 text structure.
+This validates the textual shape, but not UUID version or variant bits.")
+
+(defun ai-code-backends-infra--selected-session-id ()
+  "Return the active region text when it contains a UUID session id."
+  (when (use-region-p)
+    (let ((candidate
+           (string-trim
+            (buffer-substring-no-properties (region-beginning) (region-end)))))
+      (when (string-match-p
+             (concat "\\`" ai-code-backends-infra--uuid-regexp "\\'")
+             candidate)
+        candidate))))
 
 (defcustom ai-code-backends-infra-idle-delay 5.0
   "Delay in seconds of inactivity before considering response complete.
@@ -854,12 +871,27 @@ If FORCE-PROMPT is nil and there are no existing instances, return \"default\"."
 (defun ai-code-backends-infra--resolve-start-command (program switches arg &optional prompt-label)
   "Build command string for PROGRAM and SWITCHES.
 When ARG is non-nil, prompt for CLI args using SWITCHES as default input.
-PROMPT-LABEL is used in the minibuffer prompt."
-  (let* ((default-args (mapconcat #'identity switches " "))
+PROMPT-LABEL is used in the minibuffer prompt.
+When resuming and the active region contains a UUID, prompt as though ARG
+were non-nil and append that UUID to the default CLI args."
+  (let* ((found-resume-switch
+          (cl-some (lambda (switch)
+                     (member switch '("resume" "--resume")))
+                   switches))
+         (selected-session-id
+          (and (null arg)
+               found-resume-switch
+               (ai-code-backends-infra--selected-session-id)))
+         (prompt-p (or arg selected-session-id))
+         (default-args (mapconcat #'identity
+                                   (append switches
+                                           (and selected-session-id
+                                                (list selected-session-id)))
+                                   " "))
          (prompt (format "%s args: " (or prompt-label "CLI")))
-         (prompt-args (when arg
-                        (read-string prompt default-args 'ai-code-cli-args-history)))
-         (resolved-args (if arg
+         (prompt-args (when prompt-p
+                           (read-string prompt default-args 'ai-code-cli-args-history)))
+         (resolved-args (if prompt-p
                             (split-string-shell-command prompt-args)
                           switches))
          (command (mapconcat #'identity
@@ -1030,11 +1062,12 @@ POST-START-FN is called with (BUFFER PROCESS INSTANCE-NAME) after a new
 session starts successfully."
   (setq process-table (or process-table ai-code-backends-infra--processes))
   (ai-code-backends-infra--cleanup-dead-processes process-table)
-  (let* ((session-context (ai-code-backends-infra--resolve-session-context
-                           working-dir
-                           buffer-name
-                           process-table
-                           prefix
+  (let* ((source-buffer (current-buffer))
+         (session-context (ai-code-backends-infra--resolve-session-context
+                            working-dir
+                            buffer-name
+                            process-table
+                            prefix
                            instance-name
                            force-prompt))
          (resolved-instance (plist-get session-context :instance-name))
@@ -1043,11 +1076,14 @@ session starts successfully."
          (existing-process (plist-get session-context :existing-process))
          (buffer (plist-get session-context :buffer)))
     (if (and existing-process (process-live-p existing-process) buffer)
-        (ai-code-backends-infra--reuse-session-window
-         buffer
-         working-dir
-         prefix
-         multiline-input-sequence)
+        (progn
+          (ai-code-backends-infra--reuse-session-window
+           buffer
+           working-dir
+           prefix
+           multiline-input-sequence)
+          (ai-code-backends-infra--remember-file-session-buffer
+           prefix source-buffer buffer))
       (let* ((buffer-and-process
               (ai-code-backends-infra--create-terminal-session
                resolved-buffer-name working-dir command env-vars))
@@ -1056,23 +1092,26 @@ session starts successfully."
         (puthash session-key process process-table)
         ;; Wait for initialization before checking process status
         (sleep-for ai-code-backends-infra-terminal-initialization-delay)
-        ;; Check if process is still alive after initialization delay
-        (if (and process (process-live-p process))
-            (ai-code-backends-infra--finalize-started-session
-             new-buffer
-             process
-             working-dir
-             resolved-buffer-name
-             process-table
-             resolved-instance
-             prefix
-             escape-fn
-             cleanup-fn
-             multiline-input-sequence
-             post-start-fn)
-          (ai-code-backends-infra--handle-session-start-failure
-           new-buffer
-           session-key
+         ;; Check if process is still alive after initialization delay
+         (if (and process (process-live-p process))
+             (progn
+               (ai-code-backends-infra--finalize-started-session
+                new-buffer
+                process
+                working-dir
+                resolved-buffer-name
+                process-table
+                resolved-instance
+                prefix
+                escape-fn
+                cleanup-fn
+                multiline-input-sequence
+                post-start-fn)
+               (ai-code-backends-infra--remember-file-session-buffer
+                prefix source-buffer new-buffer))
+           (ai-code-backends-infra--handle-session-start-failure
+            new-buffer
+            session-key
            process-table))))))
 
 (defun ai-code-backends-infra--switch-to-session-buffer (buffer-name missing-message
@@ -1167,6 +1206,9 @@ typically in your Emacs configuration with:
             (lookup-key evil-normal-state-map (kbd "SPC"))))
     (define-key evil-normal-state-map (kbd "SPC")
                 #'ai-code-backends-infra--evil-spc-command)))
+
+(require 'ai-code-backends-infra-etc)
+(ai-code-backends-infra-etc-activate)
 
 (provide 'ai-code-backends-infra)
 ;;; ai-code-backends-infra.el ends here
